@@ -1,0 +1,219 @@
+.container {
+	background-color: rgba(30, 30, 30, 0.96);
+	border-radius: 12px;
+	padding: 8px;
+	box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 60px;
+	box-sizing: border-box;
+	border: 1px solid #444;
+	overflow: hidden;
+	position: relative;
+}
+
+.drag-handle {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 8px;
+	-webkit-app-region: drag;
+	cursor: grab;
+	z-index: 10;
+}
+
+.drag-handle:active {
+	cursor: grabbing;
+}
+
+.search-box {
+	display: flex;
+	align-items: center;
+	background-color: #2f2f2f;
+	border-radius: 8px;
+	padding-right: 8px;
+	margin-top: 4px;
+	-webkit-app-region: no-drag;
+}
+
+input {
+	flex: 1;
+	padding: 10px 14px;
+	font-size: 18px;
+	border: none;
+	background-color: transparent;
+	color: white;
+	outline: none;
+	box-sizing: border-box;
+	height: 46px;
+}
+
+input::placeholder {
+	color: #8a8a8a;
+}
+
+.status {
+	margin-top: 6px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: #bdbdbd;
+	font-size: 12px;
+	line-height: 14px;
+	-webkit-app-region: no-drag;
+	user-select: none;
+}
+
+.spinner {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.25);
+	border-top-color: rgba(255, 255, 255, 0.9);
+	animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.results {
+	margin: 10px 0 0 0;
+	padding: 0;
+	flex: 1;
+	-webkit-app-region: no-drag;
+}
+
+.virtual-list {
+	overflow-y: auto !important;
+}
+
+/* 优雅的滚动条样式 */
+.virtual-list::-webkit-scrollbar {
+	width: 6px;
+}
+
+.virtual-list::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.virtual-list::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, 0.15);
+	border-radius: 10px;
+	transition: background 0.2s;
+}
+
+.virtual-list::-webkit-scrollbar-thumb:hover {
+	background: rgba(255, 255, 255, 0.25);
+}
+
+.result-item-wrapper {
+	padding: 0 4px;
+	box-sizing: border-box;
+}
+
+.results li {
+	height: 100%;
+	padding: 0 12px;
+	color: #ccc;
+	cursor: pointer;
+	border-radius: 8px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 16px;
+	box-sizing: border-box;
+	transition: background-color 0.1s;
+}
+
+.results li.selected {
+	background-color: #007acc;
+	color: white;
+}
+
+.results li:hover {
+	background-color: #2d2d2d;
+}
+
+.results li.selected:hover {
+	background-color: #007acc;
+}
+
+.result-icon {
+	width: 24px;
+	height: 24px;
+	object-fit: contain;
+	flex: 0 0 auto;
+}
+
+.result-icon.placeholder {
+	display: inline-block;
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 6px;
+}
+
+.result-meta {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	flex: 1;
+	min-width: 0;
+}
+
+.app-name {
+	font-weight: 600;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.app-path {
+	font-size: 11px;
+	color: #9a9a9a;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	margin-top: 2px;
+}
+
+.results li.selected .app-path {
+	color: rgba(255, 255, 255, 0.75);
+}
+
+.action-group {
+	display: flex;
+	gap: 6px;
+	opacity: 0;
+	transition: opacity 0.2s;
+}
+
+.results li:hover .action-group,
+.results li.selected .action-group {
+	opacity: 1;
+}
+
+.action-btn {
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	color: rgba(255, 255, 255, 0.85);
+	cursor: pointer;
+	font-size: 11px;
+	padding: 4px 8px;
+	border-radius: 6px;
+	transition: background-color 0.2s;
+	white-space: nowrap;
+}
+
+.action-btn:hover {
+	background: rgba(255, 255, 255, 0.2);
+}
+
+.results li.selected .action-btn {
+	background: rgba(255, 255, 255, 0.2);
+	border-color: rgba(255, 255, 255, 0.3);
+}
+
