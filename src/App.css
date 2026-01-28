@@ -13,29 +13,35 @@
 	position: relative;
 }
 
-.drag-handle {
-	position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	height: 8px;
-	-webkit-app-region: drag;
-	cursor: grab;
-	z-index: 10;
-}
-
-.drag-handle:active {
-	cursor: grabbing;
-}
-
 .search-box {
 	display: flex;
 	align-items: center;
 	background-color: #2f2f2f;
 	border-radius: 8px;
-	padding-right: 8px;
 	margin-top: 4px;
 	-webkit-app-region: no-drag;
+}
+
+.drag-icon {
+	width: 20px;
+	height: 32px;
+	margin-right: 12px;
+	cursor: grabbing;
+	-webkit-app-region: drag;
+	background-image: radial-gradient(rgba(255, 255, 255, 0.3) 1.5px, transparent 0);
+	background-size: 6px 6px;
+	background-position: center;
+	opacity: 0.4;
+	transition: opacity 0.2s;
+	flex-shrink: 0;
+}
+
+.drag-icon:hover {
+	opacity: 0.8;
+}
+
+.drag-icon:active {
+	cursor: grabbing;
 }
 
 input {

@@ -119,6 +119,13 @@ function createWindow() {
 		win = null;
 	});
 
+	// 点击空白处（窗口失去焦点）时隐藏
+	win.on('blur', () => {
+		if (win && !win.webContents.isDevToolsOpened()) {
+			win.hide();
+		}
+	});
+
 	if (VITE_DEV_SERVER_URL) win.loadURL(VITE_DEV_SERVER_URL);
 	else win.loadFile(path.join(process.env.DIST || '', 'index.html'));
 
@@ -147,7 +154,7 @@ function ensureTray() {
 			{ type: 'separator' },
 			{ label: '退出', click: () => app.quit() },
 		]);
-		tray.setToolTip('LocalSearch');
+		tray.setToolTip('File Search');
 		tray.setContextMenu(contextMenu);
 		tray.on('click', () => {
 			if (!win || win.isDestroyed()) {

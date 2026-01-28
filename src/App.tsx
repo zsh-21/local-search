@@ -187,7 +187,6 @@ function App() {
 
 	return (
 		<div className="container">
-			<div className="drag-handle" title="拖拽移动窗口" />
 			<div className="search-box">
 				<input
 					ref={inputRef}
@@ -195,9 +194,10 @@ function App() {
 					value={query}
 					onChange={(e) => setQuery(e.target.value)}
 					onKeyDown={handleKeyDown}
-					placeholder="输入文件名/路径（支持模糊）"
+					placeholder="输入文件名/路径（支持部分搜索）"
 					autoFocus
 				/>
+				<div className="drag-icon" title="按住拖拽移动" />
 			</div>
 
 			{statusText && (

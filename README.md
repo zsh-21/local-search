@@ -1,6 +1,6 @@
-# LocalSearch - 极简本地文件 & 应用搜索工具
+# File Search - 极简本地文件 & 应用搜索工具
 
-LocalSearch 是一款基于 **Electron + React + Vite** 开发的轻量级 Windows 桌面搜索工具。它旨在提供类似 macOS Spotlight 或 Listary 的流畅体验，通过全盘索引实现秒级的文件和应用查找。
+File Search 是一款基于 **Electron + React + Vite** 开发的轻量级 Windows 桌面搜索工具。它旨在提供类似 macOS Spotlight 或 Listary 的流畅体验，通过全盘索引实现秒级的文件和应用查找。
 
 ## ✨ 功能特性
 
@@ -68,4 +68,4 @@ npm run build
 
 ---
 
-**LocalSearch** - 让搜索回归简单。
+**File Search** - 让搜索回归简单。

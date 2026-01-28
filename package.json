@@ -1,5 +1,5 @@
 {
-  "name": "local-search",
+  "name": "file-search",
   "version": "1.0.0",
   "private": true,
   "main": "dist-electron/main.js",
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "com.localsearch.app",
-    "productName": "LocalSearch",
+    "productName": "File Search",
     "directories": {
       "output": "release/${version}"
     },
