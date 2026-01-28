@@ -1,10 +1,12 @@
 {
   "name": "file-search",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
+    "predev": "node scripts/generate-icons.cjs",
     "dev": "vite",
+    "prebuild": "node scripts/generate-icons.cjs",
     "build": "tsc && vite build && electron-builder"
   },
   "dependencies": {
@@ -28,7 +30,8 @@
     "appId": "com.localsearch.app",
     "productName": "File Search",
     "directories": {
-      "output": "release/${version}"
+      "buildResources": "build",
+      "output": "release"
     },
     "files": [
       "dist",
@@ -36,6 +39,7 @@
       "package.json"
     ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",

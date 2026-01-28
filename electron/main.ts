@@ -1,6 +1,5 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen } from 'electron';
 import path from 'node:path';
-import os from 'node:os';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { FileIndex } from './fileIndex';
@@ -10,12 +9,18 @@ interface InstalledApp {
 	AppID: string;
 }
 
+interface AppSettings {
+	autoStart: boolean;
+	shortcut: string;
+}
+
 if (!app.isPackaged) {
 	const baseUserData = app.getPath('userData');
 	app.setPath('userData', path.join(baseUserData, 'dev'));
 }
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'window-config.json');
+const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
 
 let win: BrowserWindow | null = null;
@@ -33,6 +38,19 @@ function loadConfig() {
 function saveConfig(bounds: Electron.Rectangle) {
 	try {
 		writeFileSync(CONFIG_PATH, JSON.stringify({ bounds }));
+	} catch {}
+}
+
+function loadSettings(): AppSettings {
+	try {
+		if (existsSync(SETTINGS_PATH)) return JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+	} catch {}
+	return { autoStart: false, shortcut: 'Alt+S' };
+}
+
+function saveSettings(settings: AppSettings) {
+	try {
+		writeFileSync(SETTINGS_PATH, JSON.stringify(settings));
 	} catch {}
 }
 
@@ -107,6 +125,7 @@ function createWindow() {
 		skipTaskbar: true,
 		resizable: false,
 		alwaysOnTop: true,
+		icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
 		},
@@ -136,7 +155,7 @@ function createWindow() {
 
 function ensureTray() {
 	try {
-		const iconPath = path.join(process.env.VITE_PUBLIC || '', 'tray.svg');
+		const iconPath = path.join(process.env.VITE_PUBLIC || '', 'tray.png');
 		tray = new Tray(iconPath);
 		const contextMenu = Menu.buildFromTemplate([
 			{
@@ -149,6 +168,15 @@ function ensureTray() {
 					} else {
 						createWindow();
 					}
+				},
+			},
+			{
+				label: '设置',
+				click: () => {
+					if (!win || win.isDestroyed()) createWindow();
+					win?.show();
+					win?.focus();
+					win?.webContents.send('open-settings');
 				},
 			},
 			{ type: 'separator' },
@@ -172,6 +200,8 @@ function ensureTray() {
 }
 
 function registerShortcuts() {
+	globalShortcut.unregisterAll();
+	const settings = loadSettings();
 	let lastToggleTime = 0;
 	const handler = () => {
 		const now = Date.now();
@@ -202,15 +232,15 @@ function registerShortcuts() {
 		win.webContents.send('reset-search');
 	};
 
-	const ok = globalShortcut.register('Alt+S', handler);
+	const ok = globalShortcut.register(settings.shortcut, handler);
 
-	if (!ok) {
-		const fallback = globalShortcut.register('Control+Alt+S', handler);
+	if (!ok && settings.shortcut !== 'Alt+S') {
+		const fallback = globalShortcut.register('Alt+S', handler);
 		dialog.showErrorBox(
 			'快捷键注册失败',
 			fallback
-				? '无法注册 Alt+S，可能已被其他软件占用。\n已改用 Ctrl+Alt+S 作为备用快捷键。'
-				: '无法注册 Alt+S（且备用 Ctrl+Alt+S 也注册失败）。\n请关闭占用快捷键的软件后重试。'
+				? `无法注册 ${settings.shortcut}，可能已被其他软件占用。\n已回退为 Alt+S。`
+				: `无法注册 ${settings.shortcut}（且 Alt+S 也注册失败）。\n请关闭占用快捷键的软件后重试。`
 		);
 	}
 }
@@ -242,6 +272,7 @@ if (!gotTheLock) {
 
 		createWindow();
 		ensureTray();
+		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, path: app.getPath('exe') });
 		registerShortcuts();
 
 		void fileIndex.buildIfEmpty();
@@ -260,6 +291,46 @@ ipcMain.handle('resize-window', (_event, height: number) => {
 	if (!win) return;
 	const [width] = win.getSize();
 	win.setSize(width, height);
+});
+
+ipcMain.handle('get-settings', () => {
+	return loadSettings();
+});
+
+ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
+	const next: AppSettings = {
+		autoStart: Boolean(settings?.autoStart),
+		shortcut: typeof settings?.shortcut === 'string' && settings.shortcut.trim() ? settings.shortcut.trim() : 'Alt+S',
+	};
+
+	const previous = loadSettings();
+
+	if (next.shortcut !== previous.shortcut) {
+		globalShortcut.unregisterAll();
+		const ok = globalShortcut.register(next.shortcut, () => {
+			if (!win || win.isDestroyed()) {
+				win = null;
+				createWindow();
+				return;
+			}
+			if (win.isVisible()) win.hide();
+			else {
+				win.show();
+				win.focus();
+				win.webContents.send('reset-search');
+			}
+		});
+
+		if (!ok) {
+			registerShortcuts();
+			return { ok: false, message: '快捷键已被占用' };
+		}
+	}
+
+	app.setLoginItemSettings({ openAtLogin: next.autoStart, path: app.getPath('exe') });
+	saveSettings(next);
+	registerShortcuts();
+	return { ok: true };
 });
 
 ipcMain.handle('open-app', async (_event, target: string) => {

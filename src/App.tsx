@@ -15,12 +15,20 @@ interface SearchResponse {
 	isIndexing: boolean;
 }
 
+interface AppSettings {
+	autoStart: boolean;
+	shortcut: string;
+}
+
 function App() {
 	const [query, setQuery] = useState('');
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [results, setResults] = useState<AppItem[]>([]);
 	const [isSearching, setIsSearching] = useState(false);
 	const [isIndexing, setIsIndexing] = useState(false);
+	const [showSettings, setShowSettings] = useState(false);
+	const [settings, setSettings] = useState<AppSettings>({ autoStart: false, shortcut: 'Alt+S' });
+	const [settingsError, setSettingsError] = useState('');
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<any>(null);
 
@@ -34,16 +42,38 @@ function App() {
 			setQuery('');
 			setResults([]);
 			setIsSearching(false);
+			setShowSettings(false);
+			setSettingsError('');
 			setTimeout(() => inputRef.current?.focus(), 50);
 		};
 
+		const handleOpenSettings = () => {
+			setShowSettings(true);
+			setSettingsError('');
+			window.ipcRenderer?.invoke('get-settings').then((s: AppSettings) => {
+				if (s && typeof s === 'object') setSettings(s);
+			});
+		};
+
 		window.ipcRenderer?.on('reset-search', handleReset);
+		window.ipcRenderer?.on('open-settings', handleOpenSettings);
+
+		window.ipcRenderer?.invoke('get-settings').then((s: AppSettings) => {
+			if (s && typeof s === 'object') setSettings(s);
+		});
+
 		return () => {
 			window.ipcRenderer?.removeAllListeners('reset-search');
+			window.ipcRenderer?.removeAllListeners('open-settings');
 		};
 	}, []);
 
 	useEffect(() => {
+		if (showSettings) {
+			window.ipcRenderer?.invoke('resize-window', 260);
+			return;
+		}
+
 		if (!query) {
 			setResults([]);
 			setIsSearching(false);
@@ -90,7 +120,7 @@ function App() {
 		}, 250);
 
 		return () => clearTimeout(timer);
-	}, [query]);
+	}, [query, showSettings]);
 
 	useEffect(() => {
 		if (listRef.current) {
@@ -111,10 +141,17 @@ function App() {
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === 'Escape') {
-			window.ipcRenderer?.invoke('hide-window');
+			if (showSettings) {
+				setShowSettings(false);
+				setSettingsError('');
+				setTimeout(() => inputRef.current?.focus(), 50);
+			} else {
+				window.ipcRenderer?.invoke('hide-window');
+			}
 			return;
 		}
 
+		if (showSettings) return;
 		if (results.length === 0) return;
 
 		if (e.key === 'ArrowDown') {
@@ -126,6 +163,33 @@ function App() {
 		} else if (e.key === 'Enter') {
 			launchApp(results[selectedIndex]);
 		}
+	};
+
+	const openSettings = async () => {
+		setShowSettings(true);
+		setSettingsError('');
+		const s = (await window.ipcRenderer?.invoke('get-settings')) as AppSettings | undefined;
+		if (s && typeof s === 'object') setSettings(s);
+	};
+
+	const normalizeKey = (key: string) => {
+		if (!key) return '';
+		if (key === ' ') return 'Space';
+		if (key.length === 1) return key.toUpperCase();
+		if (key === 'ArrowUp') return 'Up';
+		if (key === 'ArrowDown') return 'Down';
+		if (key === 'ArrowLeft') return 'Left';
+		if (key === 'ArrowRight') return 'Right';
+		return key;
+	};
+
+	const updateSettings = async (next: AppSettings) => {
+		setSettings(next);
+		setSettingsError('');
+		const resp = (await window.ipcRenderer?.invoke('save-settings', next)) as
+			| { ok: boolean; message?: string }
+			| undefined;
+		if (resp && resp.ok === false) setSettingsError(resp.message || '设置保存失败');
 	};
 
 	const statusText = isSearching
@@ -187,37 +251,93 @@ function App() {
 
 	return (
 		<div className="container">
-			<div className="search-box">
-				<input
-					ref={inputRef}
-					type="text"
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					onKeyDown={handleKeyDown}
-					placeholder="输入文件名/路径（支持部分搜索）"
-					autoFocus
-				/>
-				<div className="drag-icon" title="按住拖拽移动" />
-			</div>
+			{!showSettings ? (
+				<>
+					<div className="search-box">
+						<input
+							ref={inputRef}
+							type="text"
+							value={query}
+							onChange={(e) => setQuery(e.target.value)}
+							onKeyDown={handleKeyDown}
+							placeholder="输入文件名/路径（支持部分搜索）"
+							autoFocus
+						/>
+						<button className="settings-btn" onClick={openSettings} title="设置" type="button">
+							设置
+						</button>
+						<div className="drag-icon" title="按住拖拽移动" />
+					</div>
 
-			{statusText && (
-				<div className="status">
-					<span className="spinner" />
-					<span className="status-text">{statusText}</span>
-				</div>
-			)}
+					{statusText && (
+						<div className="status">
+							<span className="spinner" />
+							<span className="status-text">{statusText}</span>
+						</div>
+					)}
 
-			{results.length > 0 && (
-				<div className="results">
-					<List<any>
-						listRef={listRef}
-						style={{ height: listHeight, width: '100%' }}
-						rowCount={results.length}
-						rowHeight={ITEM_HEIGHT}
-						className="virtual-list"
-						rowComponent={Row}
-						rowProps={{}}
-					/>
+					{results.length > 0 && (
+						<div className="results">
+							<List<any>
+								listRef={listRef}
+								style={{ height: listHeight, width: '100%' }}
+								rowCount={results.length}
+								rowHeight={ITEM_HEIGHT}
+								className="virtual-list"
+								rowComponent={Row}
+								rowProps={{}}
+							/>
+						</div>
+					)}
+				</>
+			) : (
+				<div className="settings-panel" onKeyDown={handleKeyDown}>
+					<div className="settings-header">
+						<span>设置</span>
+						<button className="close-settings" onClick={() => setShowSettings(false)} type="button">
+							×
+						</button>
+					</div>
+
+					<div className="settings-content">
+						<label className="setting-row">
+							<input
+								type="checkbox"
+								checked={settings.autoStart}
+								onChange={(e) => updateSettings({ ...settings, autoStart: e.target.checked })}
+							/>
+							<span>跟随此电脑启动自动运行</span>
+						</label>
+
+						<div className="setting-block">
+							<div className="setting-label">全局快捷键</div>
+							<input
+								className="shortcut-input"
+								readOnly
+								value={settings.shortcut}
+								placeholder="按下组合键…"
+								onKeyDown={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+
+									const parts: string[] = [];
+									if (e.ctrlKey) parts.push('CommandOrControl');
+									if (e.altKey) parts.push('Alt');
+									if (e.shiftKey) parts.push('Shift');
+									if (e.metaKey) parts.push('Super');
+
+									const mainKey = normalizeKey(e.key);
+									if (!mainKey) return;
+									if (['Control', 'Alt', 'Shift', 'Meta'].includes(mainKey)) return;
+
+									parts.push(mainKey);
+									const shortcut = parts.join('+');
+									updateSettings({ ...settings, shortcut });
+								}}
+							/>
+							{settingsError ? <div className="settings-error">{settingsError}</div> : null}
+						</div>
+					</div>
 				</div>
 			)}
 		</div>
