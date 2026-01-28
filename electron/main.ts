@@ -103,6 +103,8 @@ function isRectVisibleOnAnyDisplay(rect: Electron.Rectangle) {
 }
 
 function createWindow() {
+	const loginSettings = app.getLoginItemSettings();
+	const startHidden = Boolean(loginSettings.wasOpenedAtLogin);
 	const config = loadConfig();
 	const bounds = config?.bounds;
 	const width = 720;
@@ -119,6 +121,7 @@ function createWindow() {
 		height,
 		x: useBounds ? bounds.x : undefined,
 		y: useBounds ? bounds.y : undefined,
+		show: !startHidden,
 		frame: false,
 		transparent: true,
 		hasShadow: true,
@@ -149,8 +152,10 @@ function createWindow() {
 	else win.loadFile(path.join(process.env.DIST || '', 'index.html'));
 
 	if (!useBounds) win.center();
-	win.show();
-	win.focus();
+	if (!startHidden) {
+		win.show();
+		win.focus();
+	}
 }
 
 function ensureTray() {
@@ -327,7 +332,11 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		}
 	}
 
-	app.setLoginItemSettings({ openAtLogin: next.autoStart, path: app.getPath('exe') });
+	app.setLoginItemSettings({
+		openAtLogin: next.autoStart,
+		openAsHidden: true,
+		path: app.getPath('exe'),
+	});
 	saveSettings(next);
 	registerShortcuts();
 	return { ok: true };

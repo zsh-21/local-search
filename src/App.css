@@ -242,7 +242,8 @@ input::placeholder {
 
 .settings-panel {
 	margin-top: 4px;
-	background: rgba(47, 47, 47, 0.6);
+	background: rgba(30, 30, 30, 0.96);
+	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 10px;
 	padding: 12px;
 	display: flex;
@@ -256,7 +257,14 @@ input::placeholder {
 	justify-content: space-between;
 	align-items: center;
 	font-weight: 600;
-	color: rgba(255, 255, 255, 0.9);
+	color: rgba(255, 255, 255, 0.92);
+	padding-bottom: 10px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-title {
+	font-size: 14px;
+	letter-spacing: 0.2px;
 }
 
 .close-settings {
@@ -265,7 +273,7 @@ input::placeholder {
 	color: rgba(255, 255, 255, 0.7);
 	font-size: 18px;
 	cursor: pointer;
-	padding: 2px 6px;
+	padding: 4px 10px;
 	border-radius: 6px;
 }
 
@@ -277,6 +285,23 @@ input::placeholder {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
+	padding-top: 2px;
+}
+
+.settings-group {
+	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 10px;
+	padding: 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.settings-group-title {
+	color: rgba(255, 255, 255, 0.75);
+	font-size: 12px;
+	font-weight: 600;
 }
 
 .setting-row {
@@ -286,17 +311,6 @@ input::placeholder {
 	color: rgba(255, 255, 255, 0.85);
 	font-size: 13px;
 	user-select: none;
-}
-
-.setting-block {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-}
-
-.setting-label {
-	color: rgba(255, 255, 255, 0.7);
-	font-size: 12px;
 }
 
 .shortcut-input {
@@ -309,10 +323,57 @@ input::placeholder {
 	font-weight: 600;
 	text-align: center;
 	outline: none;
+	cursor: pointer;
+}
+
+.shortcut-input:hover {
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.shortcut-input:focus {
+	border-color: rgba(0, 122, 204, 0.9);
+	background: rgba(0, 122, 204, 0.12);
 }
 
 .settings-error {
 	color: rgba(255, 120, 120, 0.95);
 	font-size: 12px;
+}
+
+.settings-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	padding-top: 10px;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-cancel {
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	color: rgba(255, 255, 255, 0.85);
+	cursor: pointer;
+	font-size: 12px;
+	padding: 8px 14px;
+	border-radius: 10px;
+}
+
+.settings-cancel:hover {
+	background: rgba(255, 255, 255, 0.14);
+}
+
+.settings-confirm {
+	background: rgba(0, 122, 204, 0.95);
+	border: 1px solid rgba(0, 122, 204, 0.95);
+	color: rgba(255, 255, 255, 0.95);
+	cursor: pointer;
+	font-size: 12px;
+	padding: 8px 16px;
+	border-radius: 10px;
+	font-weight: 700;
+}
+
+.settings-confirm:hover {
+	background: rgba(0, 122, 204, 1);
 }
 

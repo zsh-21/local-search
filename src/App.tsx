@@ -28,6 +28,7 @@ function App() {
 	const [isIndexing, setIsIndexing] = useState(false);
 	const [showSettings, setShowSettings] = useState(false);
 	const [settings, setSettings] = useState<AppSettings>({ autoStart: false, shortcut: 'Alt+S' });
+	const [draftSettings, setDraftSettings] = useState<AppSettings>({ autoStart: false, shortcut: 'Alt+S' });
 	const [settingsError, setSettingsError] = useState('');
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<any>(null);
@@ -51,7 +52,10 @@ function App() {
 			setShowSettings(true);
 			setSettingsError('');
 			window.ipcRenderer?.invoke('get-settings').then((s: AppSettings) => {
-				if (s && typeof s === 'object') setSettings(s);
+				if (s && typeof s === 'object') {
+					setSettings(s);
+					setDraftSettings(s);
+				}
 			});
 		};
 
@@ -59,7 +63,10 @@ function App() {
 		window.ipcRenderer?.on('open-settings', handleOpenSettings);
 
 		window.ipcRenderer?.invoke('get-settings').then((s: AppSettings) => {
-			if (s && typeof s === 'object') setSettings(s);
+			if (s && typeof s === 'object') {
+				setSettings(s);
+				setDraftSettings(s);
+			}
 		});
 
 		return () => {
@@ -70,7 +77,7 @@ function App() {
 
 	useEffect(() => {
 		if (showSettings) {
-			window.ipcRenderer?.invoke('resize-window', 260);
+			window.ipcRenderer?.invoke('resize-window', 320);
 			return;
 		}
 
@@ -144,6 +151,7 @@ function App() {
 			if (showSettings) {
 				setShowSettings(false);
 				setSettingsError('');
+				setDraftSettings(settings);
 				setTimeout(() => inputRef.current?.focus(), 50);
 			} else {
 				window.ipcRenderer?.invoke('hide-window');
@@ -169,7 +177,10 @@ function App() {
 		setShowSettings(true);
 		setSettingsError('');
 		const s = (await window.ipcRenderer?.invoke('get-settings')) as AppSettings | undefined;
-		if (s && typeof s === 'object') setSettings(s);
+		if (s && typeof s === 'object') {
+			setSettings(s);
+			setDraftSettings(s);
+		}
 	};
 
 	const normalizeKey = (key: string) => {
@@ -183,13 +194,30 @@ function App() {
 		return key;
 	};
 
-	const updateSettings = async (next: AppSettings) => {
-		setSettings(next);
+	const updateDraftSettings = (next: AppSettings) => {
+		setDraftSettings(next);
 		setSettingsError('');
-		const resp = (await window.ipcRenderer?.invoke('save-settings', next)) as
+	};
+
+	const saveDraftSettings = async () => {
+		setSettingsError('');
+		const resp = (await window.ipcRenderer?.invoke('save-settings', draftSettings)) as
 			| { ok: boolean; message?: string }
 			| undefined;
-		if (resp && resp.ok === false) setSettingsError(resp.message || '设置保存失败');
+		if (resp?.ok === false) {
+			setSettingsError(resp.message || '设置保存失败');
+			return;
+		}
+		setSettings(draftSettings);
+		setShowSettings(false);
+		setTimeout(() => inputRef.current?.focus(), 50);
+	};
+
+	const closeSettings = () => {
+		setShowSettings(false);
+		setSettingsError('');
+		setDraftSettings(settings);
+		setTimeout(() => inputRef.current?.focus(), 50);
 	};
 
 	const statusText = isSearching
@@ -293,29 +321,32 @@ function App() {
 			) : (
 				<div className="settings-panel" onKeyDown={handleKeyDown}>
 					<div className="settings-header">
-						<span>设置</span>
-						<button className="close-settings" onClick={() => setShowSettings(false)} type="button">
+						<span className="settings-title">设置</span>
+						<button className="close-settings" onClick={closeSettings} type="button" aria-label="关闭">
 							×
 						</button>
 					</div>
 
 					<div className="settings-content">
-						<label className="setting-row">
+						<div className="settings-group">
+							<div className="settings-group-title">启动</div>
+							<label className="setting-row">
 							<input
 								type="checkbox"
-								checked={settings.autoStart}
-								onChange={(e) => updateSettings({ ...settings, autoStart: e.target.checked })}
+								checked={draftSettings.autoStart}
+								onChange={(e) => updateDraftSettings({ ...draftSettings, autoStart: e.target.checked })}
 							/>
-							<span>跟随此电脑启动自动运行</span>
-						</label>
+								<span>跟随此电脑启动自动运行</span>
+							</label>
+						</div>
 
-						<div className="setting-block">
-							<div className="setting-label">全局快捷键</div>
+						<div className="settings-group">
+							<div className="settings-group-title">快捷键</div>
 							<input
 								className="shortcut-input"
 								readOnly
-								value={settings.shortcut}
-								placeholder="按下组合键…"
+								value={draftSettings.shortcut}
+								placeholder="点击后按下组合键…"
 								onKeyDown={(e) => {
 									e.preventDefault();
 									e.stopPropagation();
@@ -332,11 +363,20 @@ function App() {
 
 									parts.push(mainKey);
 									const shortcut = parts.join('+');
-									updateSettings({ ...settings, shortcut });
+									updateDraftSettings({ ...draftSettings, shortcut });
 								}}
 							/>
 							{settingsError ? <div className="settings-error">{settingsError}</div> : null}
 						</div>
+					</div>
+
+					<div className="settings-footer">
+						<button className="settings-cancel" type="button" onClick={closeSettings}>
+							取消
+						</button>
+						<button className="settings-confirm" type="button" onClick={saveDraftSettings}>
+							确认
+						</button>
 					</div>
 				</div>
 			)}
