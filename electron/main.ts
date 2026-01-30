@@ -11,7 +11,10 @@ interface InstalledApp {
 
 interface AppSettings {
 	autoStart: boolean;
-	shortcut: string;
+	searchShortcut: string;
+	settingsShortcut: string;
+	theme: 'dark' | 'light';
+	historyLimit: number;
 }
 
 if (!app.isPackaged) {
@@ -21,9 +24,17 @@ if (!app.isPackaged) {
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'window-config.json');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
+const SETTINGS_WINDOW_CONFIG_PATH = path.join(app.getPath('userData'), 'settings-window-config.json');
 const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
+const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
+
+const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
+const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
+const DEFAULT_THEME: AppSettings['theme'] = 'dark';
+const DEFAULT_HISTORY_LIMIT = 5;
 
 let win: BrowserWindow | null = null;
+let settingsWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
 const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 750_000 });
@@ -43,14 +54,104 @@ function saveConfig(bounds: Electron.Rectangle) {
 
 function loadSettings(): AppSettings {
 	try {
-		if (existsSync(SETTINGS_PATH)) return JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+		if (existsSync(SETTINGS_PATH)) {
+			const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+			const theme = raw?.theme === 'light' ? 'light' : 'dark';
+			const legacyShortcut =
+				typeof raw?.shortcut === 'string' && raw.shortcut.trim() ? raw.shortcut.trim() : undefined;
+			return {
+				autoStart: Boolean(raw?.autoStart),
+				searchShortcut:
+					typeof raw?.searchShortcut === 'string' && raw.searchShortcut.trim()
+						? raw.searchShortcut.trim()
+						: legacyShortcut || DEFAULT_SEARCH_SHORTCUT,
+				settingsShortcut:
+					typeof raw?.settingsShortcut === 'string' && raw.settingsShortcut.trim()
+						? raw.settingsShortcut.trim()
+						: DEFAULT_SETTINGS_SHORTCUT,
+				theme,
+				historyLimit:
+					typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)
+						? Math.min(50, Math.max(0, Math.floor(raw.historyLimit)))
+						: DEFAULT_HISTORY_LIMIT,
+			};
+		}
 	} catch {}
-	return { autoStart: false, shortcut: 'Alt+S' };
+	return {
+		autoStart: false,
+		searchShortcut: DEFAULT_SEARCH_SHORTCUT,
+		settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
+		theme: DEFAULT_THEME,
+		historyLimit: DEFAULT_HISTORY_LIMIT,
+	};
 }
 
 function saveSettings(settings: AppSettings) {
 	try {
 		writeFileSync(SETTINGS_PATH, JSON.stringify(settings));
+	} catch {}
+}
+
+type HistoryItem = { name: string; path: string; type: string; lastUsed: number };
+
+function loadHistory(): HistoryItem[] {
+	try {
+		if (!existsSync(HISTORY_PATH)) return [];
+		const raw = JSON.parse(readFileSync(HISTORY_PATH, 'utf-8'));
+		if (!Array.isArray(raw)) return [];
+		return raw
+			.map((x) => ({
+				name: typeof x?.name === 'string' ? x.name : '',
+				path: typeof x?.path === 'string' ? x.path : '',
+				type: typeof x?.type === 'string' ? x.type : 'file',
+				lastUsed: typeof x?.lastUsed === 'number' ? x.lastUsed : 0,
+			}))
+			.filter((x) => x.name && x.path);
+	} catch {
+		return [];
+	}
+}
+
+function saveHistory(items: HistoryItem[]) {
+	try {
+		writeFileSync(HISTORY_PATH, JSON.stringify(items));
+	} catch {}
+}
+
+function isExistingTarget(target: { path: string; type?: string }) {
+	const p = target.path;
+	if (!p) return false;
+	if (target.type === 'app') return true;
+	const resolved = resolveAppId(p);
+	if (!resolved.includes('\\') && !resolved.includes('/')) return true;
+	return existsSync(resolved);
+}
+
+function recordHistoryItem(item: { name: string; path: string; type?: string }) {
+	if (!item?.name || !item?.path) return;
+	if (!isExistingTarget(item)) return;
+
+	const now = Date.now();
+	const current = loadHistory();
+	const next: HistoryItem[] = [
+		{ name: item.name, path: item.path, type: item.type || 'file', lastUsed: now },
+		...current.filter((h) => h.path !== item.path),
+	].filter((h) => isExistingTarget(h));
+
+	const limit = loadSettings().historyLimit;
+	saveHistory(limit > 0 ? next.slice(0, limit) : []);
+}
+
+function loadSettingsWindowConfig() {
+	try {
+		if (existsSync(SETTINGS_WINDOW_CONFIG_PATH)) return JSON.parse(readFileSync(SETTINGS_WINDOW_CONFIG_PATH, 'utf-8'));
+	} catch {}
+	return null;
+}
+
+function saveSettingsWindowConfig(bounds: Electron.Rectangle) {
+	try {
+		writeFileSync(SETTINGS_WINDOW_CONFIG_PATH, JSON.stringify({ bounds }));
 	} catch {}
 }
 
@@ -158,6 +259,86 @@ function createWindow() {
 	}
 }
 
+function createSettingsWindow() {
+	const config = loadSettingsWindowConfig();
+	const bounds = config?.bounds;
+	const width = 680;
+	const height = 520;
+
+	settingsWin = new BrowserWindow({
+		width,
+		height,
+		x: typeof bounds?.x === 'number' ? bounds.x : undefined,
+		y: typeof bounds?.y === 'number' ? bounds.y : undefined,
+		frame: false,
+		transparent: true,
+		hasShadow: true,
+		skipTaskbar: false,
+		resizable: true,
+		minWidth: 560,
+		minHeight: 520,
+		maximizable: true,
+		minimizable: true, 
+		icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),
+		webPreferences: {
+			preload: path.join(__dirname, 'preload.js'),
+		},
+	});
+
+	settingsWin.on('moved', () => {
+		if (settingsWin) saveSettingsWindowConfig(settingsWin.getBounds());
+	});
+	settingsWin.on('resize', () => {
+		if (settingsWin) saveSettingsWindowConfig(settingsWin.getBounds());
+	});
+	settingsWin.on('closed', () => {
+		settingsWin = null;
+	});
+
+	if (VITE_DEV_SERVER_URL) {
+		const u = new URL(VITE_DEV_SERVER_URL);
+		u.searchParams.set('view', 'settings');
+		settingsWin.loadURL(u.toString());
+	} else {
+		settingsWin.loadFile(path.join(process.env.DIST || '', 'index.html'), { query: { view: 'settings' } });
+	}
+
+	settingsWin.show();
+	settingsWin.focus();
+	settingsWin.webContents.send('settings-window-opened');
+}
+
+function openSearchWindow() {
+	if (win && !win.isDestroyed()) {
+		win.show();
+		win.focus();
+		win.webContents.send('reset-search');
+		return;
+	}
+	win = null;
+	createWindow();
+}
+
+function toggleSearchWindow() {
+	if (win && !win.isDestroyed()) {
+		if (win.isVisible()) win.hide();
+		else openSearchWindow();
+		return;
+	}
+	openSearchWindow();
+}
+
+function showSettingsWindow() {
+	if (settingsWin && !settingsWin.isDestroyed()) {
+		if (!settingsWin.isVisible()) settingsWin.show();
+		settingsWin.focus();
+		settingsWin.webContents.send('settings-window-opened');
+		return;
+	}
+	settingsWin = null;
+	createSettingsWindow();
+}
+
 function ensureTray() {
 	try {
 		const iconPath = path.join(process.env.VITE_PUBLIC || '', 'tray.png');
@@ -165,24 +346,11 @@ function ensureTray() {
 		const contextMenu = Menu.buildFromTemplate([
 			{
 				label: '显示搜索框',
-				click: () => {
-					if (win && !win.isDestroyed()) {
-						win.show();
-						win.focus();
-						win.webContents.send('reset-search');
-					} else {
-						createWindow();
-					}
-				},
+				click: () => toggleSearchWindow(),
 			},
 			{
 				label: '设置',
-				click: () => {
-					if (!win || win.isDestroyed()) createWindow();
-					win?.show();
-					win?.focus();
-					win?.webContents.send('open-settings');
-				},
+				click: () => showSettingsWindow(),
 			},
 			{ type: 'separator' },
 			{ label: '退出', click: () => app.quit() },
@@ -190,16 +358,7 @@ function ensureTray() {
 		tray.setToolTip('File Search');
 		tray.setContextMenu(contextMenu);
 		tray.on('click', () => {
-			if (!win || win.isDestroyed()) {
-				createWindow();
-				return;
-			}
-			if (win.isVisible()) win.hide();
-			else {
-				win.show();
-				win.focus();
-				win.webContents.send('reset-search');
-			}
+			toggleSearchWindow();
 		});
 	} catch {}
 }
@@ -207,47 +366,12 @@ function ensureTray() {
 function registerShortcuts() {
 	globalShortcut.unregisterAll();
 	const settings = loadSettings();
-	let lastToggleTime = 0;
-	const handler = () => {
-		const now = Date.now();
-		if (now - lastToggleTime < 200) return;
-		lastToggleTime = now;
 
-		if (!win || win.isDestroyed()) {
-			win = null;
-			createWindow();
-			return;
-		}
+	const okSearch = globalShortcut.register(settings.searchShortcut, () => toggleSearchWindow());
+	const okSettings = globalShortcut.register(settings.settingsShortcut, () => showSettingsWindow());
 
-		if (win.isVisible()) {
-			win.hide();
-			return;
-		}
-
-		const b = win.getBounds();
-		if (!isRectVisibleOnAnyDisplay({ x: b.x, y: b.y, width: b.width, height: b.height })) {
-			win.center();
-		}
-
-		const bounds = win.getBounds();
-		win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width || 720, height: 76 });
-		win.show();
-		win.setAlwaysOnTop(true);
-		win.focus();
-		win.webContents.send('reset-search');
-	};
-
-	const ok = globalShortcut.register(settings.shortcut, handler);
-
-	if (!ok && settings.shortcut !== 'Alt+S') {
-		const fallback = globalShortcut.register('Alt+S', handler);
-		dialog.showErrorBox(
-			'快捷键注册失败',
-			fallback
-				? `无法注册 ${settings.shortcut}，可能已被其他软件占用。\n已回退为 Alt+S。`
-				: `无法注册 ${settings.shortcut}（且 Alt+S 也注册失败）。\n请关闭占用快捷键的软件后重试。`
-		);
-	}
+	if (!okSearch) dialog.showErrorBox('快捷键注册失败', `无法注册呼出搜索框快捷键：${settings.searchShortcut}`);
+	if (!okSettings) dialog.showErrorBox('快捷键注册失败', `无法注册呼出设置界面快捷键：${settings.settingsShortcut}`);
 }
 
 app.on('window-all-closed', () => {
@@ -266,9 +390,7 @@ if (!gotTheLock) {
 	app.quit();
 } else {
 	app.on('second-instance', () => {
-		if (!win || win.isDestroyed()) return;
-		if (!win.isVisible()) win.show();
-		win.focus();
+		openSearchWindow();
 	});
 
 	app.whenReady().then(async () => {
@@ -277,7 +399,7 @@ if (!gotTheLock) {
 
 		createWindow();
 		ensureTray();
-		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, path: app.getPath('exe') });
+		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, openAsHidden: true, path: app.getPath('exe') });
 		registerShortcuts();
 
 		void fileIndex.buildIfEmpty();
@@ -288,14 +410,27 @@ app.on('will-quit', () => {
 	globalShortcut.unregisterAll();
 });
 
-ipcMain.handle('hide-window', () => {
-	win?.hide();
+ipcMain.handle('hide-window', (event) => {
+	BrowserWindow.fromWebContents(event.sender)?.hide();
 });
 
-ipcMain.handle('resize-window', (_event, height: number) => {
-	if (!win) return;
-	const [width] = win.getSize();
-	win.setSize(width, height);
+ipcMain.handle('resize-window', (event, height: number) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (!w) return;
+	const [width] = w.getSize();
+	w.setSize(width, height);
+});
+
+ipcMain.handle('open-settings-window', () => {
+	showSettingsWindow();
+});
+
+ipcMain.handle('toggle-maximize', (event) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (!w) return { maximized: false };
+	if (w.isMaximized()) w.unmaximize();
+	else w.maximize();
+	return { maximized: w.isMaximized() };
 });
 
 ipcMain.handle('get-settings', () => {
@@ -305,31 +440,35 @@ ipcMain.handle('get-settings', () => {
 ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	const next: AppSettings = {
 		autoStart: Boolean(settings?.autoStart),
-		shortcut: typeof settings?.shortcut === 'string' && settings.shortcut.trim() ? settings.shortcut.trim() : 'Alt+S',
+		searchShortcut:
+			typeof settings?.searchShortcut === 'string' && settings.searchShortcut.trim()
+				? settings.searchShortcut.trim()
+				: DEFAULT_SEARCH_SHORTCUT,
+		settingsShortcut:
+			typeof settings?.settingsShortcut === 'string' && settings.settingsShortcut.trim()
+				? settings.settingsShortcut.trim()
+				: DEFAULT_SETTINGS_SHORTCUT,
+		theme: settings?.theme === 'light' ? 'light' : 'dark',
+		historyLimit:
+			typeof settings?.historyLimit === 'number' && Number.isFinite(settings.historyLimit)
+				? Math.min(50, Math.max(0, Math.floor(settings.historyLimit)))
+				: DEFAULT_HISTORY_LIMIT,
 	};
 
-	const previous = loadSettings();
+	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };
 
-	if (next.shortcut !== previous.shortcut) {
-		globalShortcut.unregisterAll();
-		const ok = globalShortcut.register(next.shortcut, () => {
-			if (!win || win.isDestroyed()) {
-				win = null;
-				createWindow();
-				return;
-			}
-			if (win.isVisible()) win.hide();
-			else {
-				win.show();
-				win.focus();
-				win.webContents.send('reset-search');
-			}
-		});
+	globalShortcut.unregisterAll();
+	const okSearch = globalShortcut.register(next.searchShortcut, () => toggleSearchWindow());
+	const okSettings = globalShortcut.register(next.settingsShortcut, () => showSettingsWindow());
+	globalShortcut.unregisterAll();
 
-		if (!ok) {
-			registerShortcuts();
-			return { ok: false, message: '快捷键已被占用' };
-		}
+	if (!okSearch) {
+		registerShortcuts();
+		return { ok: false, message: '呼出搜索框快捷键已被占用' };
+	}
+	if (!okSettings) {
+		registerShortcuts();
+		return { ok: false, message: '呼出设置界面快捷键已被占用' };
 	}
 
 	app.setLoginItemSettings({
@@ -338,23 +477,65 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		path: app.getPath('exe'),
 	});
 	saveSettings(next);
+	// historyLimit 变化时裁剪历史
+	const history = loadHistory();
+	saveHistory(next.historyLimit > 0 ? history.filter((h) => isExistingTarget(h)).slice(0, next.historyLimit) : []);
 	registerShortcuts();
+	win?.webContents.send('settings-updated', next);
+	settingsWin?.webContents.send('settings-updated', next);
 	return { ok: true };
 });
 
-ipcMain.handle('open-app', async (_event, target: string) => {
+ipcMain.handle('get-history', async () => {
+	const settings = loadSettings();
+	const history = settings.historyLimit > 0 ? loadHistory().filter((h) => isExistingTarget(h)).slice(0, settings.historyLimit) : [];
+
+	const results = await Promise.all(
+		history.map(async (h) => {
+			let iconData = '';
+			try {
+				if (h.type !== 'app') {
+					const resolved = resolveAppId(h.path);
+					if (existsSync(resolved)) {
+						const icon = await app.getFileIcon(resolved);
+						iconData = icon.toDataURL();
+					}
+				}
+			} catch {}
+			return { name: h.name, path: h.path, type: h.type, icon: iconData };
+		})
+	);
+
+	return { results };
+});
+
+ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
 	try {
-		const resolved = resolveAppId(target);
+		if (item?.name && item?.path) recordHistoryItem(item);
+
+		const resolved = resolveAppId(item?.path);
 		if (resolved.includes('\\') || resolved.includes('/')) await shell.openPath(resolved);
 		else await shell.openExternal(`shell:AppsFolder\\${resolved}`);
-		win?.hide();
+		BrowserWindow.fromWebContents(event.sender)?.hide();
 		return true;
 	} catch {
 		return false;
 	}
 });
 
-ipcMain.handle('open-folder', async (_event, filePath: string) => {
+ipcMain.handle('open-app', async (event, target: string) => {
+	try {
+		const resolved = resolveAppId(target);
+		if (resolved.includes('\\') || resolved.includes('/')) await shell.openPath(resolved);
+		else await shell.openExternal(`shell:AppsFolder\\${resolved}`);
+		BrowserWindow.fromWebContents(event.sender)?.hide();
+		return true;
+	} catch {
+		return false;
+	}
+});
+
+ipcMain.handle('open-folder', async (event, filePath: string) => {
 	try {
 		const resolved = resolveAppId(filePath);
 		if (resolved.includes('\\') || resolved.includes('/')) {
@@ -363,7 +544,7 @@ ipcMain.handle('open-folder', async (_event, filePath: string) => {
 			// For AppIDs, just open the apps folder
 			await shell.openExternal(`shell:AppsFolder`);
 		}
-		win?.hide();
+		BrowserWindow.fromWebContents(event.sender)?.hide();
 		return true;
 	} catch {
 		return false;
@@ -416,8 +597,9 @@ ipcMain.handle('search-files', async (_event, query: string) => {
 
 	const fileSearch = fileIndex.search(query, 40);
 
-	const fileResults = await Promise.all(
+	const fileResults = (await Promise.all(
 		fileSearch.results.slice(0, 30).map(async (r) => {
+			if (!existsSync(r.path)) return null;
 			let iconData = '';
 			try {
 				const icon = await app.getFileIcon(r.path);
@@ -431,7 +613,7 @@ ipcMain.handle('search-files', async (_event, query: string) => {
 				score: r.score,
 			};
 		})
-	);
+	)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
 
 	const merged = [...appResults, ...fileResults]
 		.sort((a, b) => (b.score || 0) - (a.score || 0))

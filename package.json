@@ -31,7 +31,7 @@
     "productName": "File Search",
     "directories": {
       "buildResources": "build",
-      "output": "release"
+      "output": "release-build"
     },
     "files": [
       "dist",
