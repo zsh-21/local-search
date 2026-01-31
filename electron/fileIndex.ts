@@ -48,16 +48,24 @@ function fuzzySubsequenceScore(target: string, query: string) {
 	return q === query.length ? score : -1;
 }
 
-function scoreEntry(entry: FileIndexEntry, queryLower: string) {
+function scoreEntry(entry: FileIndexEntry, queryLower: string, queryParts: string[]) {
 	const base = normalizeForMatch(entry.name);
 	const fullPathLower = entry.path.toLowerCase();
 
 	let score = 0;
+
+	// Check if all query parts are present in the name or path
+	const allPartsMatch = queryParts.every(part => base.includes(part) || fullPathLower.includes(part));
+	if (!allPartsMatch) return 0;
+
+	// Higher score for matches in the name
+	const namePartsMatchCount = queryParts.filter(part => base.includes(part)).length;
+	score += namePartsMatchCount * 500;
+
 	if (base === queryLower) score += 2000;
 	if (base.startsWith(queryLower)) score += 1200;
 	if (base.includes(queryLower)) score += 900;
-	if (fullPathLower.includes(queryLower)) score += 200;
-
+	
 	const subseq = fuzzySubsequenceScore(base, queryLower);
 	if (subseq > 0) score += subseq;
 
@@ -107,6 +115,7 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 export class FileIndex {
 	private entries: FileIndexEntry[] = [];
 	private buckets = new Map<string, number[]>();
+	private pathSet = new Set<string>();
 	private readonly cachePath: string;
 	private readonly maxEntries: number;
 	private isIndexing = false;
@@ -125,13 +134,20 @@ export class FileIndex {
 
 	private addEntry(entry: FileIndexEntry) {
 		if (this.entries.length >= this.maxEntries) return;
+		if (this.pathSet.has(entry.path)) return;
 		const index = this.entries.length;
 		this.entries.push(entry);
+		this.pathSet.add(entry.path);
 		const key = bucketKey2(entry.name);
 		if (!key) return;
 		const arr = this.buckets.get(key);
 		if (arr) arr.push(index);
 		else this.buckets.set(key, [index]);
+	}
+
+	ingestPath(entryPath: string, isDirectory: boolean) {
+		if (!entryPath) return;
+		this.addEntry({ path: entryPath, name: path.basename(entryPath), isDirectory });
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -228,6 +244,7 @@ export class FileIndex {
 
 			this.entries = nextEntries;
 			this.buckets = nextBuckets;
+			this.pathSet = new Set(nextEntries.map((e) => e.path));
 		} finally {
 			this.isIndexing = false;
 		}
@@ -237,20 +254,21 @@ export class FileIndex {
 		const queryLower = query.trim().toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing };
 
-		const key = queryLower.length >= 2 ? queryLower.slice(0, 2) : queryLower;
-		const candidateIdx = this.buckets.get(key) ?? [];
+		const queryParts = queryLower.split(/\s+/).filter(Boolean);
 		const scored: FileIndexSearchResult[] = [];
 
-		for (const idx of candidateIdx) {
-			const entry = this.entries[idx];
-			if (!entry) continue;
-			const score = scoreEntry(entry, queryLower);
+		// Full scan for better partial matching support
+		for (let i = 0; i < this.entries.length; i++) {
+			const entry = this.entries[i];
+			const score = scoreEntry(entry, queryLower, queryParts);
 			if (score <= 0) continue;
 			scored.push({ ...entry, score });
+			
+			// If we have too many candidates, we might want to stop early or just keep going
+			// For 750k entries, a full scan is usually < 50ms
 		}
 
 		scored.sort((a, b) => b.score - a.score);
 		return { results: scored.slice(0, limit), isIndexing: this.isIndexing };
 	}
 }
-

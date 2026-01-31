@@ -1,6 +1,6 @@
 {
-  "name": "local-search",
-  "version": "1.0.0",
+  "name": "file-search",
+  "version": "1.0.4",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -26,9 +26,10 @@
   },
   "build": {
     "appId": "com.localsearch.app",
-    "productName": "LocalSearch",
+    "productName": "File Search",
     "directories": {
-      "output": "release/${version}"
+      "buildResources": "build",
+      "output": "release-build"
     },
     "files": [
       "dist",
@@ -36,6 +37,7 @@
       "package.json"
     ],
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
