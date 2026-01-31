@@ -1,6 +1,6 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen } from 'electron';
 import path from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { FileIndex } from './fileIndex';
 
@@ -15,6 +15,8 @@ interface AppSettings {
 	settingsShortcut: string;
 	theme: 'dark' | 'light';
 	historyLimit: number;
+	defaultSearchTypeId: string;
+	customSearchTypes: string[];
 }
 
 if (!app.isPackaged) {
@@ -33,12 +35,100 @@ const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
 const DEFAULT_THEME: AppSettings['theme'] = 'dark';
 const DEFAULT_HISTORY_LIMIT = 5;
 const HOTKEY_COOLDOWN_MS = 300;
+const DEFAULT_SEARCH_TYPE_ID = 'all';
+const WIN_CONTEXT_MENU_VERB_KEY = 'FileSearchAddToQuickList';
+const WIN_CONTEXT_MENU_LABEL = '添加到FileSearch的快捷列表';
 
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
 const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 750_000 });
+const userDirWatchers: Array<ReturnType<typeof watch>> = [];
+const startMenuShortcutIndex = new Map<string, string>();
+const iconDataCache = new Map<string, string>();
+const ICON_CACHE_MAX = 1500;
+
+function setIconCache(key: string, value: string) {
+	if (!key) return;
+	if (iconDataCache.size >= ICON_CACHE_MAX && !iconDataCache.has(key)) {
+		const firstKey = iconDataCache.keys().next().value;
+		if (firstKey) iconDataCache.delete(firstKey);
+	}
+	iconDataCache.set(key, value);
+}
+
+function buildStartMenuShortcutIndex() {
+	if (process.platform !== 'win32') return;
+	const roots = [
+		process.env.ProgramData ? path.join(process.env.ProgramData, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
+		process.env.APPDATA ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
+	].filter((p) => p && existsSync(p));
+
+	const walk = (dir: string) => {
+		let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }> = [];
+		try {
+			entries = readdirSync(dir, { withFileTypes: true }) as any;
+		} catch {
+			return;
+		}
+		for (const ent of entries) {
+			const full = path.join(dir, ent.name);
+			if (ent.isDirectory()) {
+				walk(full);
+				continue;
+			}
+			if (!ent.isFile()) continue;
+			if (!ent.name.toLowerCase().endsWith('.lnk')) continue;
+			const key = path.basename(ent.name, '.lnk').toLowerCase();
+			if (!startMenuShortcutIndex.has(key)) startMenuShortcutIndex.set(key, full);
+		}
+	};
+
+	for (const r of roots) walk(r);
+}
+
+function findStartMenuShortcutByName(name: string) {
+	const n = (name || '').trim().toLowerCase();
+	if (!n) return '';
+	const exact = startMenuShortcutIndex.get(n);
+	if (exact) return exact;
+	for (const [k, v] of startMenuShortcutIndex.entries()) {
+		if (k.includes(n) || n.includes(k)) return v;
+	}
+	return '';
+}
+
+async function getFileIconData(filePath: string) {
+	const key = `file:${filePath}`;
+	const cached = iconDataCache.get(key);
+	if (typeof cached === 'string') return cached;
+	let iconData = '';
+	try {
+		const icon = await app.getFileIcon(filePath);
+		iconData = icon.toDataURL();
+	} catch {}
+	setIconCache(key, iconData);
+	return iconData;
+}
+
+async function getAppIconData(appName: string, appId: string) {
+	const key = `app:${appId}`;
+	const cached = iconDataCache.get(key);
+	if (typeof cached === 'string') return cached;
+	let iconData = '';
+	try {
+		const resolved = resolveAppId(appId);
+		if ((resolved.includes('\\') || resolved.includes('/')) && existsSync(resolved)) {
+			iconData = await getFileIconData(resolved);
+		} else {
+			const shortcut = findStartMenuShortcutByName(appName);
+			if (shortcut && existsSync(shortcut)) iconData = await getFileIconData(shortcut);
+		}
+	} catch {}
+	setIconCache(key, iconData);
+	return iconData;
+}
 
 function loadConfig() {
 	try {
@@ -60,6 +150,28 @@ function loadSettings(): AppSettings {
 			const theme = raw?.theme === 'light' ? 'light' : 'dark';
 			const legacyShortcut =
 				typeof raw?.shortcut === 'string' && raw.shortcut.trim() ? raw.shortcut.trim() : undefined;
+			const customSearchTypes: string[] = Array.isArray(raw?.customSearchTypes)
+				? Array.from(
+						new Set<string>(
+							raw.customSearchTypes
+								.map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+								.map((x: string) => x.toLowerCase())
+								.filter((x: string) => /^\.[a-z0-9]{1,10}$/i.test(x))
+						)
+					)
+				: [];
+
+			const defaultSearchTypeIdRaw = typeof raw?.defaultSearchTypeId === 'string' ? raw.defaultSearchTypeId.trim() : '';
+			const defaultSearchTypeId =
+				defaultSearchTypeIdRaw === 'all' ||
+				defaultSearchTypeIdRaw === 'file' ||
+				defaultSearchTypeIdRaw === 'folder' ||
+				(defaultSearchTypeIdRaw.startsWith('ext:') &&
+					/^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
+					customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
+					? defaultSearchTypeIdRaw
+					: DEFAULT_SEARCH_TYPE_ID;
+
 			return {
 				autoStart: Boolean(raw?.autoStart),
 				searchShortcut:
@@ -75,6 +187,8 @@ function loadSettings(): AppSettings {
 					typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)
 						? Math.min(50, Math.max(0, Math.floor(raw.historyLimit)))
 						: DEFAULT_HISTORY_LIMIT,
+				defaultSearchTypeId,
+				customSearchTypes,
 			};
 		}
 	} catch {}
@@ -84,6 +198,8 @@ function loadSettings(): AppSettings {
 		settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
 		theme: DEFAULT_THEME,
 		historyLimit: DEFAULT_HISTORY_LIMIT,
+		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
+		customSearchTypes: [],
 	};
 }
 
@@ -117,6 +233,61 @@ function saveHistory(items: HistoryItem[]) {
 	try {
 		writeFileSync(HISTORY_PATH, JSON.stringify(items));
 	} catch {}
+}
+
+function addToQuickListFromPath(targetPath: string) {
+	try {
+		if (!targetPath || typeof targetPath !== 'string') return;
+		const trimmed = targetPath.trim();
+		if (!trimmed) return;
+		const ext = path.extname(trimmed);
+		const base = ext ? path.basename(trimmed, ext) : path.basename(trimmed);
+		const name = base || path.basename(trimmed) || '快捷项';
+		recordHistoryItem({ name, path: trimmed, type: 'file' });
+		win?.webContents.send('reset-search');
+	} catch {}
+}
+
+function handleAddToQuickListArgv(argv: string[]) {
+	const idx = argv.indexOf('--add-to-quick-list');
+	if (idx < 0) return false;
+	const p = argv[idx + 1];
+	if (!p) return true;
+	addToQuickListFromPath(p);
+	return true;
+}
+
+function regAddString(key: string, valueName: string | null, data: string) {
+	return new Promise<void>((resolve) => {
+		try {
+			const args = ['add', key];
+			if (valueName) args.push('/v', valueName);
+			else args.push('/ve');
+			args.push('/t', 'REG_SZ', '/d', data, '/f');
+			const ps = spawn('reg', args, { windowsHide: true });
+			ps.on('close', () => resolve());
+			ps.on('error', () => resolve());
+		} catch {
+			resolve();
+		}
+	});
+}
+
+async function ensureWindowsAppContextMenu() {
+	if (process.platform !== 'win32') return;
+	if (!app.isPackaged) return;
+
+	const exe = process.execPath;
+	if (!exe) return;
+	const command = `"${exe}" --add-to-quick-list "%1"`;
+
+	const classes = ['lnkfile', 'exefile'];
+	for (const cls of classes) {
+		const baseKey = `HKCU\\Software\\Classes\\${cls}\\shell\\${WIN_CONTEXT_MENU_VERB_KEY}`;
+		await regAddString(baseKey, null, WIN_CONTEXT_MENU_LABEL);
+		await regAddString(baseKey, 'Icon', exe);
+		await regAddString(`${baseKey}\\command`, null, command);
+	}
 }
 
 function isExistingTarget(target: { path: string; type?: string }) {
@@ -205,8 +376,6 @@ function isRectVisibleOnAnyDisplay(rect: Electron.Rectangle) {
 }
 
 function createWindow() {
-	const loginSettings = app.getLoginItemSettings();
-	const startHidden = Boolean(loginSettings.wasOpenedAtLogin);
 	const config = loadConfig();
 	const bounds = config?.bounds;
 	const width = 720;
@@ -223,7 +392,7 @@ function createWindow() {
 		height,
 		x: useBounds ? bounds.x : undefined,
 		y: useBounds ? bounds.y : undefined,
-		show: !startHidden,
+		show: false,
 		frame: false,
 		transparent: true,
 		hasShadow: true,
@@ -254,10 +423,6 @@ function createWindow() {
 	else win.loadFile(path.join(process.env.DIST || '', 'index.html'));
 
 	if (!useBounds) win.center();
-	if (!startHidden) {
-		win.show();
-		win.focus();
-	}
 }
 
 function createSettingsWindow() {
@@ -309,6 +474,32 @@ function createSettingsWindow() {
 	settingsWin.webContents.send('settings-window-opened');
 }
 
+function startUserDirectoryWatchers() {
+	const roots = [
+		app.getPath('desktop'),
+		app.getPath('documents'),
+		app.getPath('downloads'),
+	].filter((p) => typeof p === 'string' && p.trim());
+
+	for (const root of roots) {
+		if (!existsSync(root)) continue;
+		try {
+			const w = watch(root, { recursive: true }, (_eventType, filename) => {
+				if (!filename) return;
+				const fullPath = path.join(root, filename.toString());
+				setTimeout(() => {
+					try {
+						if (!existsSync(fullPath)) return;
+						const st = statSync(fullPath);
+						fileIndex.ingestPath(fullPath, st.isDirectory());
+					} catch {}
+				}, 80);
+			});
+			userDirWatchers.push(w);
+		} catch {}
+	}
+}
+
 function openSearchWindow() {
 	if (win && !win.isDestroyed()) {
 		if (win.isVisible()) {
@@ -348,6 +539,25 @@ function showSettingsWindow() {
 	createSettingsWindow();
 }
 
+async function addQuickItemFromDialog() {
+	try {
+		const result = await dialog.showOpenDialog({
+			title: '添加到 File Search 快捷列表',
+			buttonLabel: '添加',
+			properties: ['openFile'],
+			filters: [{ name: '应用/快捷方式', extensions: ['exe', 'lnk', 'url'] }],
+		});
+		if (result.canceled) return;
+		const targetPath = result.filePaths?.[0];
+		if (!targetPath) return;
+
+		const ext = path.extname(targetPath).toLowerCase();
+		const name = path.basename(targetPath, ext) || path.basename(targetPath) || '快捷项';
+		recordHistoryItem({ name, path: targetPath, type: 'file' });
+		win?.webContents.send('reset-search');
+	} catch {}
+}
+
 function ensureTray() {
 	try {
 		const iconPath = path.join(process.env.VITE_PUBLIC || '', 'tray.png');
@@ -356,6 +566,10 @@ function ensureTray() {
 			{
 				label: '显示搜索框',
 				click: () => toggleSearchWindow(),
+			},
+			{
+				label: '新增文件到FileSearch的快捷列表',
+				click: () => void addQuickItemFromDialog(),
 			},
 			{
 				label: '设置',
@@ -412,15 +626,22 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
 	app.quit();
 } else {
-	app.on('second-instance', () => {
+	app.on('second-instance', (_event, argv) => {
+		if (Array.isArray(argv) && handleAddToQuickListArgv(argv)) return;
 		openSearchWindow();
 	});
 
 	app.whenReady().then(async () => {
 		loadInstalledApps();
 		await fileIndex.loadCache();
+		buildStartMenuShortcutIndex();
 
 		createWindow();
+		void ensureWindowsAppContextMenu();
+		try {
+			handleAddToQuickListArgv(process.argv);
+		} catch {}
+		startUserDirectoryWatchers();
 		ensureTray();
 		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, openAsHidden: true, path: app.getPath('exe') });
 		registerShortcuts();
@@ -431,10 +652,19 @@ if (!gotTheLock) {
 
 app.on('will-quit', () => {
 	globalShortcut.unregisterAll();
+	for (const w of userDirWatchers) {
+		try {
+			w.close();
+		} catch {}
+	}
 });
 
 ipcMain.handle('hide-window', (event) => {
 	BrowserWindow.fromWebContents(event.sender)?.hide();
+});
+
+ipcMain.handle('minimize-window', (event) => {
+	BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
 ipcMain.handle('resize-window', (event, height: number) => {
@@ -461,6 +691,29 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
+	const customSearchTypes: string[] = Array.isArray(settings?.customSearchTypes)
+		? Array.from(
+				new Set<string>(
+					settings.customSearchTypes
+						.map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+						.map((x: string) => x.toLowerCase())
+						.filter((x: string) => /^\.[a-z0-9]{1,10}$/i.test(x))
+				)
+			)
+		: [];
+
+	const defaultSearchTypeIdRaw =
+		typeof settings?.defaultSearchTypeId === 'string' ? settings.defaultSearchTypeId.trim() : DEFAULT_SEARCH_TYPE_ID;
+	const defaultSearchTypeId =
+		defaultSearchTypeIdRaw === 'all' ||
+		defaultSearchTypeIdRaw === 'file' ||
+		defaultSearchTypeIdRaw === 'folder' ||
+		(defaultSearchTypeIdRaw.startsWith('ext:') &&
+			/^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
+			customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
+			? defaultSearchTypeIdRaw
+			: DEFAULT_SEARCH_TYPE_ID;
+
 	const next: AppSettings = {
 		autoStart: Boolean(settings?.autoStart),
 		searchShortcut:
@@ -476,6 +729,8 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 			typeof settings?.historyLimit === 'number' && Number.isFinite(settings.historyLimit)
 				? Math.min(50, Math.max(0, Math.floor(settings.historyLimit)))
 				: DEFAULT_HISTORY_LIMIT,
+		defaultSearchTypeId,
+		customSearchTypes,
 	};
 
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };
@@ -515,21 +770,40 @@ ipcMain.handle('get-history', async () => {
 
 	const results = await Promise.all(
 		history.map(async (h) => {
-			let iconData = '';
 			try {
-				if (h.type !== 'app') {
-					const resolved = resolveAppId(h.path);
-					if (existsSync(resolved)) {
-						const icon = await app.getFileIcon(resolved);
-						iconData = icon.toDataURL();
-					}
+				if (h.type === 'app') {
+					const iconData = await getAppIconData(h.name, h.path);
+					return { name: h.name, path: h.path, type: h.type, icon: iconData };
+				}
+				const resolved = resolveAppId(h.path);
+				if (existsSync(resolved)) {
+					const iconData = await getFileIconData(resolved);
+					return { name: h.name, path: h.path, type: h.type, icon: iconData };
 				}
 			} catch {}
-			return { name: h.name, path: h.path, type: h.type, icon: iconData };
+			return { name: h.name, path: h.path, type: h.type, icon: '' };
 		})
 	);
 
 	return { results };
+});
+
+ipcMain.handle('clear-history', () => {
+	saveHistory([]);
+	win?.webContents.send('reset-search');
+	settingsWin?.webContents.send('reset-search');
+	return { ok: true };
+});
+
+ipcMain.handle('delete-history-item', (_event, targetPath: string) => {
+	if (typeof targetPath !== 'string' || !targetPath.trim()) return { ok: false };
+	const trimmed = targetPath.trim();
+	const history = loadHistory();
+	const next = history.filter((h) => h.path !== trimmed);
+	saveHistory(next);
+	win?.webContents.send('reset-search');
+	settingsWin?.webContents.send('reset-search');
+	return { ok: true };
 });
 
 ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
@@ -579,7 +853,7 @@ ipcMain.handle('rebuild-file-index', async () => {
 	return fileIndex.getStatus();
 });
 
-ipcMain.handle('search-files', async (_event, query: string) => {
+ipcMain.handle('search-files', async (_event, query: string, options?: { searchTypeId?: string }) => {
 	if (!query || query.trim().length < 2) return { results: [], isIndexing: fileIndex.getStatus().isIndexing };
 
 	const lowerQuery = query.trim().toLowerCase();
@@ -598,14 +872,7 @@ ipcMain.handle('search-files', async (_event, query: string) => {
 			const nameLower = appItem.Name.toLowerCase();
 			if (!keywords.some((k) => nameLower.includes(k))) continue;
 
-			let iconData = '';
-			try {
-				const resolved = resolveAppId(appItem.AppID);
-				if (resolved.includes('\\') || resolved.includes('/')) {
-					const icon = await app.getFileIcon(resolved);
-					iconData = icon.toDataURL();
-				}
-			} catch {}
+			const iconData = await getAppIconData(appItem.Name, appItem.AppID);
 
 			results.push({
 				name: appItem.Name,
@@ -623,11 +890,7 @@ ipcMain.handle('search-files', async (_event, query: string) => {
 	const fileResults = (await Promise.all(
 		fileSearch.results.slice(0, 30).map(async (r) => {
 			if (!existsSync(r.path)) return null;
-			let iconData = '';
-			try {
-				const icon = await app.getFileIcon(r.path);
-				iconData = icon.toDataURL();
-			} catch {}
+			const iconData = await getFileIconData(r.path);
 			return {
 				name: r.name,
 				path: r.path,
@@ -638,7 +901,15 @@ ipcMain.handle('search-files', async (_event, query: string) => {
 		})
 	)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
 
-	const merged = [...appResults, ...fileResults]
+	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
+	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
+
+	let combined = [...appResults, ...fileResults];
+	if (searchTypeId === 'file') combined = combined.filter((x) => x.type === 'file');
+	else if (searchTypeId === 'folder') combined = combined.filter((x) => x.type === 'folder');
+	else if (extFilter) combined = combined.filter((x) => x.type === 'file' && path.extname(x.path).toLowerCase() === extFilter);
+
+	const merged = combined
 		.sort((a, b) => (b.score || 0) - (a.score || 0))
 		.slice(0, 20)
 		.map(({ score, ...rest }) => rest);

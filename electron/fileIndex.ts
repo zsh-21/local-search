@@ -115,6 +115,7 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 export class FileIndex {
 	private entries: FileIndexEntry[] = [];
 	private buckets = new Map<string, number[]>();
+	private pathSet = new Set<string>();
 	private readonly cachePath: string;
 	private readonly maxEntries: number;
 	private isIndexing = false;
@@ -133,13 +134,20 @@ export class FileIndex {
 
 	private addEntry(entry: FileIndexEntry) {
 		if (this.entries.length >= this.maxEntries) return;
+		if (this.pathSet.has(entry.path)) return;
 		const index = this.entries.length;
 		this.entries.push(entry);
+		this.pathSet.add(entry.path);
 		const key = bucketKey2(entry.name);
 		if (!key) return;
 		const arr = this.buckets.get(key);
 		if (arr) arr.push(index);
 		else this.buckets.set(key, [index]);
+	}
+
+	ingestPath(entryPath: string, isDirectory: boolean) {
+		if (!entryPath) return;
+		this.addEntry({ path: entryPath, name: path.basename(entryPath), isDirectory });
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -236,6 +244,7 @@ export class FileIndex {
 
 			this.entries = nextEntries;
 			this.buckets = nextBuckets;
+			this.pathSet = new Set(nextEntries.map((e) => e.path));
 		} finally {
 			this.isIndexing = false;
 		}
@@ -263,4 +272,3 @@ export class FileIndex {
 		return { results: scored.slice(0, limit), isIndexing: this.isIndexing };
 	}
 }
-

@@ -1,5 +1,6 @@
 * {
   box-sizing: border-box;
+  user-select: none;
 }
 .container,
 .settings-panel,
@@ -111,7 +112,7 @@ html[data-theme="dark"] {
 }
 
 html[data-theme="light"] {
-  --fs-bg: rgba(248, 248, 248, 0.92);
+  --fs-bg: rgba(248, 248, 248, 1);
   --fs-surface: rgba(255, 255, 255, 0.86);
   --fs-surface-2: rgba(0, 0, 0, 0.04);
   --fs-border: rgba(0, 0, 0, 0.12);
@@ -145,7 +146,7 @@ html[data-theme="light"] {
 
 .container {
   background-color: var(--fs-bg);
-  border-radius: 6px;
+  /* border-radius: 6px; */
   padding: 8px;
   box-shadow: var(--fs-shadow);
   display: flex;
@@ -159,6 +160,8 @@ html[data-theme="light"] {
   position: relative;
   backdrop-filter: blur(18px) saturate(1.1);
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-app-region: no-drag;  
+
 }
 
 .search-box {
@@ -192,6 +195,83 @@ html[data-theme="light"] {
   background: var(--fs-surface-2);
   border-color: var(--fs-border);
   color: var(--fs-text);
+}
+
+.type-select {
+  position: relative;
+  margin-right: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.type-select-btn {
+  height: 34px;
+  max-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-text);
+  cursor: pointer;
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.type-select-btn:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+
+.type-select-label {
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-select-caret {
+  color: var(--fs-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.type-select-menu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  min-width: 160px;
+  background: var(--fs-bg);
+  border: 1px solid var(--fs-border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: var(--fs-shadow);
+  z-index: 80;
+}
+
+.type-select-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-text);
+  border-radius: 10px;
+  padding: 10px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.type-select-item:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+
+.type-select-item.active {
+  background: var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+  color: var(--fs-accent);
 }
 
 .drag-icon {
@@ -264,6 +344,19 @@ input::placeholder {
   padding: 0;
   flex: 1;
   -webkit-app-region: no-drag;
+}
+
+.empty-state {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-muted);
+  font-size: 12px;
+  user-select: none;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: 12px;
 }
 
 .virtual-list {
@@ -396,6 +489,22 @@ input::placeholder {
   background: rgba(255, 255, 255, 0.12);
 }
 
+.action-btn.delete-btn {
+  color: var(--fs-muted);
+}
+
+.action-btn.delete-btn:hover {
+  background: rgba(255, 77, 79, 0.14);
+  border-color: rgba(255, 77, 79, 0.55);
+  color: rgba(255, 77, 79, 1);
+}
+
+.results li.selected .action-btn.delete-btn:hover {
+  background: rgba(255, 77, 79, 0.22);
+  border-color: rgba(255, 77, 79, 0.75);
+  color: rgba(255, 255, 255, 0.98);
+}
+
 .results li.selected .action-btn {
   background: rgba(255, 255, 255, 0.22);
   border-color: rgba(255, 255, 255, 0.35);
@@ -472,7 +581,7 @@ input::placeholder {
 }
 
 .window-btn {
-  width: 34px;
+  width: 30px;
   height: 30px;
   border-radius: 5px;
   background: transparent;
@@ -529,7 +638,7 @@ input::placeholder {
 
 .form-row {
   display: grid;
-  grid-template-columns: 92px 1fr;
+  grid-template-columns: 92px 1fr auto;
   gap: 10px;
   align-items: center;
 }
@@ -565,6 +674,132 @@ input::placeholder {
 .number-input:focus {
   border-color: var(--fs-accent);
   background: var(--fs-accent-soft);
+}
+
+.select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--fs-surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fs-muted) 50%),
+    linear-gradient(135deg, var(--fs-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 52%,
+    calc(100% - 11px) 52%;
+  background-size:
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text);
+  border-radius: 10px;
+  padding: 10px 32px 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  min-width: 0;
+}
+
+.select-input:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background-color: var(--fs-surface-2);
+}
+
+.select-input:focus {
+  border-color: var(--fs-accent);
+  background-color: var(--fs-accent-soft);
+}
+
+.select-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.select-input option {
+  background: var(--fs-bg);
+  color: var(--fs-text);
+}
+
+.text-input {
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  min-width: 0;
+  height: 36px;
+}
+
+.text-input::placeholder {
+  color: var(--fs-muted);
+}
+
+.text-input:focus {
+  border-color: var(--fs-accent);
+  background: var(--fs-accent-soft);
+}
+
+.small-btn {
+  height: 36px;
+  padding: 0 12px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.small-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 5px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  border-radius: 999px;
+}
+
+.type-pill-label {
+  color: var(--fs-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.type-pill-del {
+  width: 11px;
+  height: 22px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.type-pill-del:hover {
+  /* background: rgba(255, 80, 80, 0.18);
+  border-color: rgba(255, 80, 80, 0.3); */
+  color: rgba(255, 80, 80, 0.626);
 }
 
 .settings-body {

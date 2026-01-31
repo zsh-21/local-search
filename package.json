@@ -4,9 +4,7 @@
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "predev": "node scripts/generate-icons.cjs",
     "dev": "vite",
-    "prebuild": "node scripts/generate-icons.cjs",
     "build": "tsc && vite build && electron-builder"
   },
   "dependencies": {
