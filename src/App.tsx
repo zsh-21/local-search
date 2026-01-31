@@ -23,6 +23,7 @@ interface AppSettings {
   historyLimit: number;
   defaultSearchTypeId: string;
   customSearchTypes: string[];
+  searchTypeOrder: string[];
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -33,6 +34,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   historyLimit: 5,
   defaultSearchTypeId: "all",
   customSearchTypes: [],
+  searchTypeOrder: ["all", "file"],
 };
 
 function normalizeSettings(s: any): AppSettings {
@@ -46,6 +48,52 @@ function normalizeSettings(s: any): AppSettings {
       ? s.settingsShortcut.trim()
       : DEFAULT_SETTINGS.settingsShortcut;
 
+  const customSearchTypes: string[] = Array.isArray(s?.customSearchTypes)
+    ? Array.from(
+        new Set(
+          s.customSearchTypes
+            .map((x: any) => (typeof x === "string" ? x.trim() : ""))
+            .map((x: string) => x.toLowerCase())
+            .filter((x: string) => /^\.[a-z0-9]{1,10}$/i.test(x)),
+        ),
+      )
+    : [];
+
+  const defaultSearchTypeIdRaw =
+    typeof s?.defaultSearchTypeId === "string" && s.defaultSearchTypeId.trim()
+      ? s.defaultSearchTypeId.trim()
+      : "all";
+  const defaultSearchTypeId =
+    defaultSearchTypeIdRaw === "all" ||
+    defaultSearchTypeIdRaw === "file" ||
+    defaultSearchTypeIdRaw === "folder" ||
+    (defaultSearchTypeIdRaw.startsWith("ext:") &&
+      /^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
+      customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
+      ? defaultSearchTypeIdRaw
+      : "all";
+
+  const normalizeSearchTypeOrder = (order: any) => {
+    const baseIds = ["all", "file"];
+    const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
+    const allowed = new Set<string>([...baseIds, ...customIds]);
+    const raw: string[] = Array.isArray(order)
+      ? order
+          .map((x: any) => (typeof x === "string" ? x.trim() : ""))
+          .filter(Boolean)
+      : [];
+    const out: string[] = [];
+    for (const id of raw) {
+      if (!allowed.has(id)) continue;
+      if (out.includes(id)) continue;
+      out.push(id);
+    }
+    for (const id of [...baseIds, ...customIds]) {
+      if (!out.includes(id)) out.push(id);
+    }
+    return out;
+  };
+
   return {
     autoStart: Boolean(s?.autoStart),
     searchShortcut,
@@ -55,21 +103,45 @@ function normalizeSettings(s: any): AppSettings {
       typeof s?.historyLimit === "number" && Number.isFinite(s.historyLimit)
         ? Math.min(50, Math.max(0, Math.floor(s.historyLimit)))
         : 5,
-    defaultSearchTypeId:
-      typeof s?.defaultSearchTypeId === "string" && s.defaultSearchTypeId.trim()
-        ? s.defaultSearchTypeId.trim()
-        : "all",
-    customSearchTypes: Array.isArray(s?.customSearchTypes)
-      ? Array.from(
-          new Set(
-            s.customSearchTypes
-              .map((x: any) => (typeof x === "string" ? x.trim() : ""))
-              .map((x: string) => x.toLowerCase())
-              .filter((x: string) => /^\.[a-z0-9]{1,10}$/i.test(x)),
-          ),
-        )
-      : [],
+    defaultSearchTypeId,
+    customSearchTypes,
+    searchTypeOrder: normalizeSearchTypeOrder(s?.searchTypeOrder),
   };
+}
+
+type SearchTypeOption = { id: string; label: string };
+
+function getSearchTypeOptions(customTypes: string[], order: string[] | undefined) {
+  const base: SearchTypeOption[] = [
+    { id: "all", label: "所有文件" },
+    { id: "file", label: "文件" },
+    // { id: "folder", label: "文件夹" },
+  ];
+  const custom: SearchTypeOption[] = (customTypes || []).map((ext) => ({
+    id: `ext:${ext}`,
+    label: `${ext.replace(".", "").toUpperCase()} 文件`,
+  }));
+  const all = [...base, ...custom];
+  const byId = new Map(all.map((x) => [x.id, x]));
+  const allowedIds = new Set(all.map((x) => x.id));
+  const seen = new Set<string>();
+  const out: SearchTypeOption[] = [];
+
+  const raw = Array.isArray(order) ? order : [];
+  for (const id of raw) {
+    if (!allowedIds.has(id)) continue;
+    if (seen.has(id)) continue;
+    const opt = byId.get(id);
+    if (!opt) continue;
+    seen.add(id);
+    out.push(opt);
+  }
+  for (const opt of all) {
+    if (seen.has(opt.id)) continue;
+    seen.add(opt.id);
+    out.push(opt);
+  }
+  return out;
 }
 
 function normalizeKey(key: string) {
@@ -143,6 +215,7 @@ function SearchView() {
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 420;
   const EMPTY_HEIGHT = 54;
+  const TYPE_MENU_MIN_LIST_SPACE = 240;
 
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
@@ -183,6 +256,10 @@ function SearchView() {
       listContentHeight = EMPTY_HEIGHT + 10;
     }
 
+    if (typeMenuOpen) {
+      listContentHeight = Math.max(listContentHeight, TYPE_MENU_MIN_LIST_SPACE);
+    }
+
     window.ipcRenderer?.invoke(
       "resize-window",
       containerPadding + searchBoxHeight + statusHeight + listContentHeight,
@@ -192,23 +269,21 @@ function SearchView() {
     isSearching,
     isIndexing,
     query,
+    typeMenuOpen,
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
     EMPTY_HEIGHT,
+    TYPE_MENU_MIN_LIST_SPACE,
   ]);
 
-  const searchTypeOptions = useMemo(() => {
-    const base = [
-      { id: "all", label: "所有文件" },
-      { id: "file", label: "文件" },
-      // { id: "folder", label: "文件夹" },
-    ];
-    const custom = (settings.customSearchTypes || []).map((ext) => ({
-      id: `ext:${ext}`,
-      label: `${ext.replace(".", "").toUpperCase()} 文件`,
-    }));
-    return [...base, ...custom];
-  }, [settings.customSearchTypes]);
+  const searchTypeOptions = useMemo(
+    () =>
+      getSearchTypeOptions(
+        settings.customSearchTypes || [],
+        settings.searchTypeOrder,
+      ),
+    [settings.customSearchTypes, settings.searchTypeOrder],
+  );
 
   useEffect(() => {
     const valid = searchTypeOptions.some((t) => t.id === searchTypeId);
@@ -347,6 +422,7 @@ function SearchView() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
+      setTypeMenuOpen(false)
       window.ipcRenderer?.invoke("hide-window");
       return;
     }
@@ -357,7 +433,7 @@ function SearchView() {
         0,
         searchTypeOptions.findIndex((t) => t.id === searchTypeId),
       );
-      const next = searchTypeOptions[(idx + 1) % searchTypeOptions.length];
+      const next = searchTypeOptions[(idx + 1)>searchTypeOptions.length-1?0:idx+1];
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
       return;
@@ -525,14 +601,13 @@ function SearchView() {
     results.length === 0;
 
   return (
-    <div className="container">
+    <div className="container" onKeyDownCapture={handleKeyDown}>
       <div className="search-box">
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoFocus
         />
@@ -644,6 +719,7 @@ function SettingsView() {
     settings.historyLimit,
     settings.defaultSearchTypeId,
     settings.customSearchTypes,
+    settings.searchTypeOrder,
   ]);
 
   useEffect(() => {
@@ -692,6 +768,22 @@ function SettingsView() {
       return;
     }
     window.ipcRenderer?.invoke("hide-window");
+  };
+
+  const typeOptions = useMemo(
+    () => getSearchTypeOptions(draft.customSearchTypes || [], draft.searchTypeOrder),
+    [draft.customSearchTypes, draft.searchTypeOrder],
+  );
+
+  const moveTypeId = (list: string[], fromId: string, toId: string) => {
+    const from = list.indexOf(fromId);
+    const to = list.indexOf(toId);
+    if (from === -1 || to === -1) return list;
+    if (from === to) return list;
+    const next = list.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    return next;
   };
 
   const setShortcut = (
@@ -867,12 +959,9 @@ function SettingsView() {
                           setError("");
                         }}
                       >
-                        <option value="all">所有文件</option>
-                        <option value="file">文件</option>
-                        {/* <option value="folder">文件夹</option> */}
-                        {draft.customSearchTypes.map((ext) => (
-                          <option key={ext} value={`ext:${ext}`}>
-                            {`${ext.replace(".", "").toUpperCase()} 文件`}
+                        {typeOptions.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
                           </option>
                         ))}
                       </select>
@@ -905,9 +994,15 @@ function SettingsView() {
                             setError("该类型已存在");
                             return;
                           }
+                          const nextCustom = [...draft.customSearchTypes, ext];
+                          const nextOrder = getSearchTypeOptions(nextCustom, [
+                            ...(draft.searchTypeOrder || []),
+                            `ext:${ext}`,
+                          ]).map((x) => x.id);
                           setDraft({
                             ...draft,
-                            customSearchTypes: [...draft.customSearchTypes, ext],
+                            customSearchTypes: nextCustom,
+                            searchTypeOrder: nextOrder,
                           });
                           setNewTypeExt("");
                           setError("");
@@ -917,36 +1012,53 @@ function SettingsView() {
                       </button>
                     </div>
 
-                    {draft.customSearchTypes.length > 0 ? (
-                      <div className="type-list">
-                        {draft.customSearchTypes.map((ext) => (
-                          <div key={ext} className="type-pill">
-                            <span className="type-pill-label">{`${ext.replace(".", "").toUpperCase()} 文件`}</span>
-                            <button
-                              type="button"
-                              className="type-pill-del"
-                              aria-label="删除"
-                              title="删除"
-                              onClick={() => {
-                                const nextList = draft.customSearchTypes.filter((x) => x !== ext);
-                                const nextDefault =
-                                  draft.defaultSearchTypeId === `ext:${ext}` ? "all" : draft.defaultSearchTypeId;
-                                setDraft({
-                                  ...draft,
-                                  customSearchTypes: nextList,
-                                  defaultSearchTypeId: nextDefault,
-                                });
-                                setError("");
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
                     {error ? <div className="settings-error">{error}</div> : null}
+                  </div>
+
+                  <div className="settings-group">
+                    <div className="settings-group-title">类型顺序</div>
+                    <div className="type-order-list">
+                      {typeOptions.map((opt) => (
+                        <TypeOrderItem
+                          key={opt.id}
+                          id={opt.id}
+                          label={opt.label}
+                          isCustom={opt.id.startsWith("ext:")}
+                          orderedIds={typeOptions.map((x) => x.id)}
+                          onMove={(fromId, toId) => {
+                            const nextOrder = moveTypeId(
+                              typeOptions.map((x) => x.id),
+                              fromId,
+                              toId,
+                            );
+                            setDraft({ ...draft, searchTypeOrder: nextOrder });
+                            setError("");
+                          }}
+                          onDelete={(targetId) => {
+                            if (!targetId.startsWith("ext:")) return;
+                            const ext = targetId.slice(4);
+                            const nextCustom = (draft.customSearchTypes || []).filter(
+                              (x) => x !== ext,
+                            );
+                            const nextDefault =
+                              draft.defaultSearchTypeId === targetId
+                                ? "all"
+                                : draft.defaultSearchTypeId;
+                            const nextOrder = getSearchTypeOptions(
+                              nextCustom,
+                              (draft.searchTypeOrder || []).filter((x) => x !== targetId),
+                            ).map((x) => x.id);
+                            setDraft({
+                              ...draft,
+                              customSearchTypes: nextCustom,
+                              defaultSearchTypeId: nextDefault,
+                              searchTypeOrder: nextOrder,
+                            });
+                            setError("");
+                          }}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : null}
@@ -1018,7 +1130,10 @@ function SettingsView() {
             </div>
           </div>
 
-          <div className="settings-footer">
+          
+        </div>
+      </div>
+      <div className="settings-footer">
             <button className="settings-cancel" type="button" onClick={onClose}>
               取消
             </button>
@@ -1026,8 +1141,71 @@ function SettingsView() {
               确认
             </button>
           </div>
-        </div>
-      </div>
+    </div>
+  );
+}
+
+function TypeOrderItem({
+  id,
+  label,
+  isCustom,
+  orderedIds,
+  onMove,
+  onDelete,
+}: {
+  id: string;
+  label: string;
+  isCustom: boolean;
+  orderedIds: string[];
+  onMove: (fromId: string, toId: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <div
+      className={`type-order-item ${dragging ? "dragging" : ""}`}
+      draggable
+      onDragStart={(e) => {
+        setDragging(true);
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", id);
+      }}
+      onDragEnd={() => setDragging(false)}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const fromId = e.dataTransfer.getData("text/plain");
+        if (!fromId) return;
+        if (!orderedIds.includes(fromId) || !orderedIds.includes(id)) return;
+        if (fromId === id) return;
+        onMove(fromId, id);
+        setDragging(false);
+      }}
+    >
+      <span className="type-order-handle" aria-hidden="true" />
+      <span className="type-order-label">{label}</span>
+      <span className="type-order-spacer" />
+      {isCustom ? (
+        <button
+          type="button"
+          className="type-order-del"
+          aria-label="删除"
+          title="删除"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDelete(id);
+          }}
+        >
+          ×
+        </button>
+      ) : (
+        <span className="type-order-fixed">内置</span>
+      )}
     </div>
   );
 }

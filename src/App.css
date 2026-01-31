@@ -248,6 +248,11 @@ html[data-theme="light"] {
   padding: 6px;
   box-shadow: var(--fs-shadow);
   z-index: 80;
+  max-height: 240px;
+  overflow-y: auto;
+  gap: 4px;
+  display: flex;
+  flex-direction: column;
 }
 
 .type-select-item {
@@ -257,7 +262,7 @@ html[data-theme="light"] {
   border: 1px solid transparent;
   color: var(--fs-text);
   border-radius: 10px;
-  padding: 10px 10px;
+  padding: 5px 10px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
@@ -364,21 +369,21 @@ input::placeholder {
 }
 
 /* 优雅的滚动条样式 */
-.virtual-list::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 6px;
 }
 
-.virtual-list::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.virtual-list::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 5px;
   transition: background 0.2s;
 }
 
-.virtual-list::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
 
@@ -512,17 +517,18 @@ input::placeholder {
 }
 
 .settings-panel {
-  margin-top: 4px;
+  /* margin-top: 4px; */
   background: var(--fs-bg);
   border: 1px solid var(--fs-border);
   border-radius: 7px;
-  padding: 12px;
+  /* padding: 12px; */
   display: flex;
   flex-direction: column;
   gap: 12px;
   -webkit-app-region: no-drag;
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 
 .settings-shell {
@@ -657,6 +663,7 @@ input::placeholder {
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
+  height: 36px;
   outline: none;
   min-width: 0;
 }
@@ -765,6 +772,89 @@ input::placeholder {
   gap: 8px;
 }
 
+.type-order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.type-order-item {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  cursor: grab;
+  -webkit-app-region: no-drag;
+}
+
+.type-order-item:hover {
+  background: var(--fs-surface-2);
+}
+
+.type-order-item.dragging {
+  opacity: 0.7;
+}
+
+.type-order-handle {
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  flex: 0 0 auto;
+  background-image: radial-gradient(var(--fs-dots) 1.4px, transparent 0);
+  background-size: 6px 6px;
+  background-position: center;
+  opacity: 0.55;
+}
+
+.type-order-label {
+  color: var(--fs-text);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.type-order-spacer {
+  flex: 1;
+}
+
+.type-order-del {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.type-order-del:hover {
+  color: rgba(255, 80, 80, 0.72);
+  background: rgba(255, 80, 80, 0.14);
+  border-color: rgba(255, 80, 80, 0.22);
+}
+
+.type-order-fixed {
+  color: var(--fs-muted);
+  font-size: 12px;
+  font-weight: 700;
+  /* border: 1px solid var(--fs-border); */
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
 .type-pill {
   display: inline-flex;
   align-items: center;
@@ -807,20 +897,20 @@ input::placeholder {
   gap: 12px;
   flex: 1;
   min-height: 0;
-  padding-top: 12px;
+  /* padding-top: 12px; */
 }
 
 .settings-nav {
   width: 160px;
   flex: 0 0 auto;
   background: var(--fs-surface);
-  border: 1px solid var(--fs-border);
-  border-radius: 6px;
+  border-right: 1px solid var(--fs-border);
+  border-radius: 6px 0 0 6px;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 10px;
+  /* margin-bottom: 10px; */
   -webkit-app-region: no-drag;
 }
 
@@ -858,6 +948,10 @@ input::placeholder {
   align-items: center;
   flex-direction: column;
   -webkit-app-region: no-drag;
+  padding: 10px 5px;
+  overflow-y: auto;
+  max-height: calc(100% - 0px);
+  
 }
 
 @media (max-width: 500px) {
@@ -1004,7 +1098,8 @@ input::placeholder {
   justify-content: flex-end;
   gap: 10px;
   padding-top: 10px;
-  border-top: 1px solid var(--fs-border);
+  padding-right: 30px;
+  /* border-top: 1px solid var(--fs-border); */
   margin-top: auto;
 }
 

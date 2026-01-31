@@ -17,6 +17,7 @@ interface AppSettings {
 	historyLimit: number;
 	defaultSearchTypeId: string;
 	customSearchTypes: string[];
+	searchTypeOrder: string[];
 }
 
 if (!app.isPackaged) {
@@ -172,6 +173,24 @@ function loadSettings(): AppSettings {
 					? defaultSearchTypeIdRaw
 					: DEFAULT_SEARCH_TYPE_ID;
 
+			const baseTypeIds = ['all', 'file'];
+			const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
+			const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
+			const rawOrder: string[] = Array.isArray(raw?.searchTypeOrder)
+				? raw.searchTypeOrder
+						.map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+						.filter((x: string) => x)
+				: [];
+			const searchTypeOrder: string[] = [];
+			for (const id of rawOrder) {
+				if (!allowedTypeIds.has(id)) continue;
+				if (searchTypeOrder.includes(id)) continue;
+				searchTypeOrder.push(id);
+			}
+			for (const id of [...baseTypeIds, ...customTypeIds]) {
+				if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
+			}
+
 			return {
 				autoStart: Boolean(raw?.autoStart),
 				searchShortcut:
@@ -189,6 +208,7 @@ function loadSettings(): AppSettings {
 						: DEFAULT_HISTORY_LIMIT,
 				defaultSearchTypeId,
 				customSearchTypes,
+				searchTypeOrder,
 			};
 		}
 	} catch {}
@@ -200,6 +220,7 @@ function loadSettings(): AppSettings {
 		historyLimit: DEFAULT_HISTORY_LIMIT,
 		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
 		customSearchTypes: [],
+		searchTypeOrder: ['all', 'file'],
 	};
 }
 
@@ -714,6 +735,24 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 			? defaultSearchTypeIdRaw
 			: DEFAULT_SEARCH_TYPE_ID;
 
+	const baseTypeIds = ['all', 'file'];
+	const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
+	const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
+	const rawOrder: string[] = Array.isArray(settings?.searchTypeOrder)
+		? settings.searchTypeOrder
+				.map((x: any) => (typeof x === 'string' ? x.trim() : ''))
+				.filter((x: string) => x)
+		: [];
+	const searchTypeOrder: string[] = [];
+	for (const id of rawOrder) {
+		if (!allowedTypeIds.has(id)) continue;
+		if (searchTypeOrder.includes(id)) continue;
+		searchTypeOrder.push(id);
+	}
+	for (const id of [...baseTypeIds, ...customTypeIds]) {
+		if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
+	}
+
 	const next: AppSettings = {
 		autoStart: Boolean(settings?.autoStart),
 		searchShortcut:
@@ -731,6 +770,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 				: DEFAULT_HISTORY_LIMIT,
 		defaultSearchTypeId,
 		customSearchTypes,
+		searchTypeOrder,
 	};
 
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };
