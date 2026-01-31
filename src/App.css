@@ -102,6 +102,7 @@ html[data-theme="dark"] {
   --fs-surface-2: rgba(255, 255, 255, 0.06);
   --fs-border: rgba(255, 255, 255, 0.12);
   --fs-text: rgba(255, 255, 255, 0.92);
+  --fs-search-text: rgba(255, 255, 255, 0.92);
   --fs-muted: rgba(255, 255, 255, 0.68);
   --fs-accent: rgba(0, 122, 204, 1);
   --fs-accent-soft: rgba(0, 122, 204, 0.14);
@@ -115,6 +116,7 @@ html[data-theme="light"] {
   --fs-surface-2: rgba(0, 0, 0, 0.04);
   --fs-border: rgba(0, 0, 0, 0.12);
   --fs-text: rgba(0, 0, 0, 0.86);
+  --fs-search-text: rgba(0, 0, 0, 0.66);
   --fs-muted: rgba(0, 0, 0, 0.55);
   --fs-accent: rgba(0, 122, 204, 1);
   --fs-accent-soft: rgba(0, 122, 204, 0.12);
@@ -342,6 +344,7 @@ input::placeholder {
 
 .app-name {
   font-weight: 600;
+  color: var(--fs-search-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

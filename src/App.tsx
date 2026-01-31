@@ -123,9 +123,13 @@ function SearchView() {
 
   useEffect(() => {
     inputRef.current?.focus();
-    const handleReset = () => {
+    const handleReset = async() => {
       setQuery("");
-      setResults([]);
+	  const resp = (await window.ipcRenderer?.invoke("get-history")) as
+          | { results: AppItem[] }
+          | undefined;
+        const historyItems = resp?.results ?? [];
+     setResults(historyItems);
       setIsSearching(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     };

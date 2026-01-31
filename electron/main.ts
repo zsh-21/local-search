@@ -32,6 +32,7 @@ const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
 const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
 const DEFAULT_THEME: AppSettings['theme'] = 'dark';
 const DEFAULT_HISTORY_LIMIT = 5;
+const HOTKEY_COOLDOWN_MS = 300;
 
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
@@ -127,7 +128,7 @@ function isExistingTarget(target: { path: string; type?: string }) {
 	return existsSync(resolved);
 }
 
-function recordHistoryItem(item: { name: string; path: string; type?: string }) {
+export function recordHistoryItem(item: { name: string; path: string; type?: string }) {
 	if (!item?.name || !item?.path) return;
 	if (!isExistingTarget(item)) return;
 
@@ -310,6 +311,11 @@ function createSettingsWindow() {
 
 function openSearchWindow() {
 	if (win && !win.isDestroyed()) {
+		if (win.isVisible()) {
+			win.focus();
+			return;
+		}
+
 		win.show();
 		win.focus();
 		win.webContents.send('reset-search');
@@ -317,6 +323,9 @@ function openSearchWindow() {
 	}
 	win = null;
 	createWindow();
+	setTimeout(() => {
+		win?.webContents.send('reset-search');
+	}, 60);
 }
 
 function toggleSearchWindow() {
@@ -367,8 +376,22 @@ function registerShortcuts() {
 	globalShortcut.unregisterAll();
 	const settings = loadSettings();
 
-	const okSearch = globalShortcut.register(settings.searchShortcut, () => toggleSearchWindow());
-	const okSettings = globalShortcut.register(settings.settingsShortcut, () => showSettingsWindow());
+	let lastSearchAt = 0;
+	let lastSettingsAt = 0;
+
+	const okSearch = globalShortcut.register(settings.searchShortcut, () => {
+		const now = Date.now();
+		if (now - lastSearchAt < HOTKEY_COOLDOWN_MS) return;
+		lastSearchAt = now;
+		openSearchWindow();
+	});
+
+	const okSettings = globalShortcut.register(settings.settingsShortcut, () => {
+		const now = Date.now();
+		if (now - lastSettingsAt < HOTKEY_COOLDOWN_MS) return;
+		lastSettingsAt = now;
+		showSettingsWindow();
+	});
 
 	if (!okSearch) dialog.showErrorBox('快捷键注册失败', `无法注册呼出搜索框快捷键：${settings.searchShortcut}`);
 	if (!okSettings) dialog.showErrorBox('快捷键注册失败', `无法注册呼出设置界面快捷键：${settings.settingsShortcut}`);
@@ -458,7 +481,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };
 
 	globalShortcut.unregisterAll();
-	const okSearch = globalShortcut.register(next.searchShortcut, () => toggleSearchWindow());
+	const okSearch = globalShortcut.register(next.searchShortcut, () => openSearchWindow());
 	const okSettings = globalShortcut.register(next.settingsShortcut, () => showSettingsWindow());
 	globalShortcut.unregisterAll();
 
