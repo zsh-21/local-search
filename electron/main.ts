@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen, nativeImage } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -18,6 +18,9 @@ interface AppSettings {
 	defaultSearchTypeId: string;
 	customSearchTypes: string[];
 	searchTypeOrder: string[];
+	keepStateOnClose: boolean;
+	enableHistory: boolean;
+	accentColor: string;
 }
 
 if (!app.isPackaged) {
@@ -100,14 +103,33 @@ function findStartMenuShortcutByName(name: string) {
 	return '';
 }
 
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
+
 async function getFileIconData(filePath: string) {
 	const key = `file:${filePath}`;
 	const cached = iconDataCache.get(key);
 	if (typeof cached === 'string') return cached;
 	let iconData = '';
 	try {
-		const icon = await app.getFileIcon(filePath);
-		iconData = icon.toDataURL();
+		const ext = path.extname(filePath).toLowerCase();
+		if (IMAGE_EXTENSIONS.has(ext) && existsSync(filePath)) {
+			try {
+				// 对于图片，尝试生成缩略图
+				const img = nativeImage.createFromPath(filePath);
+				if (!img.isEmpty()) {
+					// 缩放图片以提高性能，宽度 64 像素足够预览使用
+					iconData = img.resize({ width: 64, height: 64, quality: 'better' }).toDataURL();
+				}
+			} catch (err) {
+				console.error('Failed to generate image thumbnail:', err);
+			}
+		}
+
+		// 如果不是图片或者生成缩略图失败，使用系统图标
+		if (!iconData) {
+			const icon = await app.getFileIcon(filePath);
+			iconData = icon.toDataURL();
+		}
 	} catch {}
 	setIconCache(key, iconData);
 	return iconData;
@@ -209,6 +231,9 @@ function loadSettings(): AppSettings {
 				defaultSearchTypeId,
 				customSearchTypes,
 				searchTypeOrder,
+				keepStateOnClose: Boolean(raw?.keepStateOnClose),
+				enableHistory: raw?.enableHistory !== false,
+				accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : '#38bdf8',
 			};
 		}
 	} catch {}
@@ -221,6 +246,9 @@ function loadSettings(): AppSettings {
 		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
 		customSearchTypes: [],
 		searchTypeOrder: ['all', 'file'],
+		keepStateOnClose: false,
+		enableHistory: true,
+		accentColor: '#38bdf8',
 	};
 }
 
@@ -322,6 +350,8 @@ function isExistingTarget(target: { path: string; type?: string }) {
 
 export function recordHistoryItem(item: { name: string; path: string; type?: string }) {
 	if (!item?.name || !item?.path) return;
+	const settings = loadSettings();
+	if (!settings.enableHistory) return;
 	if (!isExistingTarget(item)) return;
 
 	const now = Date.now();
@@ -331,7 +361,7 @@ export function recordHistoryItem(item: { name: string; path: string; type?: str
 		...current.filter((h) => h.path !== item.path),
 	].filter((h) => isExistingTarget(h));
 
-	const limit = loadSettings().historyLimit;
+	const limit = settings.historyLimit;
 	saveHistory(limit > 0 ? next.slice(0, limit) : []);
 }
 
@@ -433,7 +463,7 @@ function createWindow() {
 		win = null;
 	});
 
-	// 点击空白处（窗口失去焦点）时隐藏
+	// FLAG 点击空白处（窗口失去焦点）时隐藏
 	win.on('blur', () => {
 		if (win && !win.webContents.isDevToolsOpened()) {
 			win.hide();
@@ -529,24 +559,25 @@ function openSearchWindow() {
 		}
 
 		win.show();
-		win.focus();
-		win.webContents.send('reset-search');
-		return;
-	}
-	win = null;
-	createWindow();
-	setTimeout(() => {
-		win?.webContents.send('reset-search');
-	}, 60);
+	win.focus();
+	// reset-search 事件在渲染进程中根据 keepStateOnClose 设置决定是否真的重置
+	win.webContents.send('reset-search');
+	return;
+}
+win = null;
+createWindow();
+setTimeout(() => {
+	win?.webContents.send('reset-search');
+}, 60);
 }
 
 function toggleSearchWindow() {
-	if (win && !win.isDestroyed()) {
-		if (win.isVisible()) win.hide();
-		else openSearchWindow();
-		return;
-	}
-	openSearchWindow();
+if (win && !win.isDestroyed()) {
+	if (win.isVisible()) win.hide();
+	else openSearchWindow();
+	return;
+}
+openSearchWindow();
 }
 
 function showSettingsWindow() {
@@ -688,11 +719,33 @@ ipcMain.handle('minimize-window', (event) => {
 	BrowserWindow.fromWebContents(event.sender)?.minimize();
 });
 
-ipcMain.handle('resize-window', (event, height: number) => {
+ipcMain.handle('resize-window', (event, height: number, width?: number) => {
 	const w = BrowserWindow.fromWebContents(event.sender);
 	if (!w) return;
-	const [width] = w.getSize();
-	w.setSize(width, height);
+	const [currentWidth] = w.getSize();
+	const nextWidth = width ?? currentWidth;
+	
+	// 如果宽度发生变化，且是从左侧拖拽（需要保持右侧不动），或者只是普通调整
+	// 这里我们简单处理：如果是从 React 传来的 width，我们直接 setSize
+	// 如果要实现左侧拖拽不位移，需要在 React 端计算好偏移并调用 setBounds
+	w.setSize(Math.round(nextWidth), Math.round(height));
+});
+
+ipcMain.handle('get-window-bounds', (event) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	return w?.getBounds();
+});
+
+ipcMain.handle('set-window-bounds', (event, bounds: Partial<Electron.Rectangle>) => {
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (!w) return;
+	const current = w.getBounds();
+	w.setBounds({
+		x: bounds.x ?? current.x,
+		y: bounds.y ?? current.y,
+		width: bounds.width ?? current.width,
+		height: bounds.height ?? current.height
+	});
 });
 
 ipcMain.handle('open-settings-window', () => {
@@ -771,6 +824,9 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		defaultSearchTypeId,
 		customSearchTypes,
 		searchTypeOrder,
+		keepStateOnClose: Boolean(settings?.keepStateOnClose),
+		enableHistory: settings?.enableHistory !== false,
+		accentColor: typeof settings?.accentColor === 'string' ? settings.accentColor : '#38bdf8',
 	};
 
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };
@@ -893,7 +949,7 @@ ipcMain.handle('rebuild-file-index', async () => {
 	return fileIndex.getStatus();
 });
 
-ipcMain.handle('search-files', async (_event, query: string, options?: { searchTypeId?: string }) => {
+ipcMain.handle('search-files', async (event, query: string, options?: { searchTypeId?: string }) => {
 	if (!query || query.trim().length < 2) return { results: [], isIndexing: fileIndex.getStatus().isIndexing };
 
 	const lowerQuery = query.trim().toLowerCase();
@@ -906,7 +962,13 @@ ipcMain.handle('search-files', async (_event, query: string, options?: { searchT
 	};
 	const keywords = aliases[lowerQuery] || [lowerQuery];
 
+	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
+	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
+
 	const appResults = await (async () => {
+		// 如果指定了搜索类型且不是 'all' 或 'file'，则不显示应用结果
+		if (searchTypeId !== 'all' && searchTypeId !== 'file') return [];
+		
 		const results: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [];
 		for (const appItem of installedAppsCache) {
 			const nameLower = appItem.Name.toLowerCase();
@@ -925,11 +987,22 @@ ipcMain.handle('search-files', async (_event, query: string, options?: { searchT
 		return results;
 	})();
 
-	const fileSearch = fileIndex.search(query, 40);
+	const fileSearch = fileIndex.search(query, 500); // 增加搜索结果上限
 
-	const fileResults = (await Promise.all(
-		fileSearch.results.slice(0, 30).map(async (r) => {
-			if (!existsSync(r.path)) return null;
+	// 预过滤文件，避免为不需要的文件提取图标
+	const filteredFiles = fileSearch.results.filter((r) => {
+		if (searchTypeId === 'file' && r.isDirectory) return false;
+		if (searchTypeId === 'folder' && !r.isDirectory) return false;
+		if (extFilter && (r.isDirectory || path.extname(r.path).toLowerCase() !== extFilter)) return false;
+		return existsSync(r.path);
+	});
+
+	// 取前 100 个立即返回（提高初始展示数量）
+	const first100Files = filteredFiles.slice(0, 100);
+	const remainingFiles = filteredFiles.slice(100); // 后续结果通过后台发送
+
+	const first100Results = (await Promise.all(
+		first100Files.map(async (r) => {
 			const iconData = await getFileIconData(r.path);
 			return {
 				name: r.name,
@@ -941,18 +1014,45 @@ ipcMain.handle('search-files', async (_event, query: string, options?: { searchT
 		})
 	)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
 
-	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
-	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
-
-	let combined = [...appResults, ...fileResults];
-	if (searchTypeId === 'file') combined = combined.filter((x) => x.type === 'file');
-	else if (searchTypeId === 'folder') combined = combined.filter((x) => x.type === 'folder');
-	else if (extFilter) combined = combined.filter((x) => x.type === 'file' && path.extname(x.path).toLowerCase() === extFilter);
-
+	let combined = [...appResults, ...first100Results];
 	const merged = combined
 		.sort((a, b) => (b.score || 0) - (a.score || 0))
-		.slice(0, 20)
+		.slice(0, 100) // 初始返回 100 条
 		.map(({ score, ...rest }) => rest);
 
-	return { results: merged, isIndexing: fileSearch.isIndexing };
+	// 如果有更多结果，在后台继续搜索并发送
+	if (remainingFiles.length > 0) {
+		(async () => {
+			// 分批处理图标提取，避免一次性 Promise.all 太多导致卡顿
+			const batchSize = 50;
+			for (let i = 0; i < remainingFiles.length; i += batchSize) {
+				const batch = remainingFiles.slice(i, i + batchSize);
+				const backgroundResults = (await Promise.all(
+					batch.map(async (r) => {
+						if (!existsSync(r.path)) return null;
+						const iconData = await getFileIconData(r.path);
+						return {
+							name: r.name,
+							path: r.path,
+							type: r.isDirectory ? 'folder' : 'file',
+							icon: iconData,
+							score: r.score,
+						};
+					})
+				)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
+
+				if (backgroundResults.length > 0) {
+					event.sender.send('more-results', { query, results: backgroundResults });
+				}
+				// 给一点喘息时间
+				await new Promise(resolve => setTimeout(resolve, 50));
+			}
+		})();
+	}
+
+	return { 
+		results: merged, 
+		isIndexing: fileSearch.isIndexing,
+		hasMore: remainingFiles.length > 0 
+	};
 });

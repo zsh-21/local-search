@@ -24,6 +24,9 @@ interface AppSettings {
   defaultSearchTypeId: string;
   customSearchTypes: string[];
   searchTypeOrder: string[];
+  keepStateOnClose: boolean;
+  enableHistory: boolean;
+  accentColor: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -35,6 +38,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultSearchTypeId: "all",
   customSearchTypes: [],
   searchTypeOrder: ["all", "file"],
+  keepStateOnClose: false,
+  enableHistory: true,
+  accentColor: "#38bdf8",
 };
 
 function normalizeSettings(s: any): AppSettings {
@@ -106,6 +112,9 @@ function normalizeSettings(s: any): AppSettings {
     defaultSearchTypeId,
     customSearchTypes,
     searchTypeOrder: normalizeSearchTypeOrder(s?.searchTypeOrder),
+    keepStateOnClose: Boolean(s?.keepStateOnClose),
+    enableHistory: s?.enableHistory !== false,
+    accentColor: typeof s?.accentColor === "string" ? s.accentColor : DEFAULT_SETTINGS.accentColor,
   };
 }
 
@@ -193,7 +202,15 @@ function useSettings() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
-  }, [settings.theme]);
+    document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
+    // 设置初始透明度颜色
+    const r = parseInt(settings.accentColor.slice(1, 3), 16);
+    const g = parseInt(settings.accentColor.slice(3, 5), 16);
+    const b = parseInt(settings.accentColor.slice(5, 7), 16);
+    document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
+    document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
+    document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
+  }, [settings]);
 
   return settings;
 }
@@ -206,16 +223,34 @@ function SearchView() {
   );
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [lastSelectedBy, setLastSelectedBy] = useState<"keyboard" | "mouse">("keyboard");
   const [results, setResults] = useState<AppItem[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
   const [isSearching, setIsSearching] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<any>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const typeSelectRef = useRef<HTMLDivElement>(null);
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 420;
-  const EMPTY_HEIGHT = 54;
   const TYPE_MENU_MIN_LIST_SPACE = 240;
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (typeSelectRef.current && !typeSelectRef.current.contains(e.target as Node)) {
+        setTypeMenuOpen(false);
+      }
+    };
+    if (typeMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [typeMenuOpen]);
 
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
@@ -232,12 +267,92 @@ function SearchView() {
     return items;
   };
 
+  const [width, setWidth] = useState(720);
+
+  useEffect(() => {
+    window.ipcRenderer?.invoke("get-window-bounds").then((bounds: any) => {
+      if (bounds) setWidth(bounds.width);
+    });
+  }, []);
+
+  const isResizingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+  const startXPosRef = useRef(0);
+  const resizeDirRef = useRef<"left" | "right" | null>(null);
+
+  const startResizing = async (e: React.MouseEvent, dir: "left" | "right") => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const bounds = await window.ipcRenderer?.invoke("get-window-bounds");
+    if (!bounds) return;
+
+    isResizingRef.current = true;
+    startXRef.current = e.screenX;
+    startWidthRef.current = bounds.width;
+    startXPosRef.current = bounds.x;
+    resizeDirRef.current = dir;
+    document.body.style.cursor = "ew-resize";
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+
+      const deltaX = e.screenX - startXRef.current;
+      let newWidth = startWidthRef.current;
+      let newX = startXPosRef.current;
+
+      if (resizeDirRef.current === "right") {
+        newWidth = startWidthRef.current + deltaX;
+      } else if (resizeDirRef.current === "left") {
+        newWidth = startWidthRef.current - deltaX;
+        newX = startXPosRef.current + deltaX;
+      }
+
+      // 限制宽度
+      if (newWidth < 450) {
+        if (resizeDirRef.current === "left") {
+          newX = startXPosRef.current + (startWidthRef.current - 450);
+        }
+        newWidth = 450;
+      } else if (newWidth > 1000) {
+        if (resizeDirRef.current === "left") {
+          newX = startXPosRef.current - (1000 - startWidthRef.current);
+        }
+        newWidth = 1000;
+      }
+
+      setWidth(newWidth);
+      window.ipcRenderer?.invoke("set-window-bounds", {
+        width: Math.round(newWidth),
+        x: Math.round(newX)
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        resizeDirRef.current = null;
+        document.body.style.cursor = "";
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []); // Remove width dependency to avoid re-binding during resize
+
   // 监听状态变化，自动调整窗口高度
   useEffect(() => {
-    const containerPadding = 16;
-    const searchBoxHeight = 52;
+    const containerPadding = 20; // 10px * 2
+    const searchBoxHeight = 50; // 46px + 2px border + 2px margin
     const hasStatus = isSearching || isIndexing;
-    const statusHeight = hasStatus ? 20 : 0;
+    const statusHeight = hasStatus ? 24 : 0;
 
     const showEmptyState =
       query.trim().length >= 1 &&
@@ -247,23 +362,24 @@ function SearchView() {
 
     let listContentHeight = 0;
     if (isSearching) {
-      // 搜索时强制收起列表，仅显示状态
       listContentHeight = 0;
     } else if (results.length > 0) {
       listContentHeight =
-        Math.min(results.length * ITEM_HEIGHT, MAX_LIST_HEIGHT) + 10;
+        Math.min(results.length * ITEM_HEIGHT, 377) + 10;
     } else if (showEmptyState) {
-      listContentHeight = EMPTY_HEIGHT + 10;
+      listContentHeight = 70; // 空状态固定高度
+    } else {
+      // 没有任何内容时（包括历史记录也为空时）
+      listContentHeight = 0;
     }
 
     if (typeMenuOpen) {
       listContentHeight = Math.max(listContentHeight, TYPE_MENU_MIN_LIST_SPACE);
     }
 
-    window.ipcRenderer?.invoke(
-      "resize-window",
-      containerPadding + searchBoxHeight + statusHeight + listContentHeight,
-    );
+    // 只有当高度真正变化时才调用
+    const totalHeight = containerPadding + searchBoxHeight + statusHeight + listContentHeight;
+    window.ipcRenderer?.invoke("resize-window", Math.ceil(totalHeight));
   }, [
     results.length,
     isSearching,
@@ -272,8 +388,6 @@ function SearchView() {
     typeMenuOpen,
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
-    EMPTY_HEIGHT,
-    TYPE_MENU_MIN_LIST_SPACE,
   ]);
 
   const searchTypeOptions = useMemo(
@@ -290,16 +404,6 @@ function SearchView() {
     if (!valid) setSearchTypeId(settings.defaultSearchTypeId || "all");
   }, [searchTypeId, searchTypeOptions, settings.defaultSearchTypeId]);
 
-  useEffect(() => {
-    if (!typeMenuOpen) return;
-    const onDoc = () => setTypeMenuOpen(false);
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [typeMenuOpen]);
-
-  const currentTypeLabel =
-    searchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有文件";
-
   const placeholder = useMemo(() => {
     if (searchTypeId === "all") return "搜索所有文件与文件夹...";
     if (searchTypeId === "file") return "搜索文件（不含文件夹）...";
@@ -314,6 +418,11 @@ function SearchView() {
   useEffect(() => {
     inputRef.current?.focus();
     const handleReset = async() => {
+      if (settings.keepStateOnClose) {
+        // 如果开启了保留状态，只重新聚焦，不重置
+        setTimeout(() => inputRef.current?.focus(), 50);
+        return;
+      }
       const nextTypeId = settings.defaultSearchTypeId || "all";
       setSearchTypeId(nextTypeId);
       setQuery("");
@@ -322,6 +431,7 @@ function SearchView() {
           | undefined;
         const historyItems = resp?.results ?? [];
      setResults(filterItemsBySearchType(historyItems, nextTypeId));
+     setVisibleCount(50);
       setIsSearching(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     };
@@ -329,84 +439,52 @@ function SearchView() {
     return () => {
       window.ipcRenderer?.removeAllListeners("reset-search");
     };
-  }, [settings.defaultSearchTypeId]);
+  }, [settings.defaultSearchTypeId, settings.keepStateOnClose]);
 
   useEffect(() => {
-    if (!query) {
-      (async () => {
-        const resp = (await window.ipcRenderer?.invoke("get-history")) as
-          | { results: AppItem[] }
-          | undefined;
-        const historyItems = resp?.results ?? [];
-        const filtered = filterItemsBySearchType(historyItems, searchTypeId);
-        setResults(filtered);
-        setSelectedIndex(0);
-        setIsSearching(false);
-        setIsIndexing(false);
+    const handler = (_event: any, { query: respQuery, results: moreResults }: { query: string, results: AppItem[] }) => {
+      if (respQuery === query) {
+        // 再次过滤确保结果类型一致性
+        const filteredMore = filterItemsBySearchType(moreResults, searchTypeId);
+        if (filteredMore.length > 0) {
+          setResults(prev => [...prev, ...filteredMore]);
+        }
+      }
+    };
+    window.ipcRenderer?.on("more-results", handler);
+    return () => {
+      window.ipcRenderer?.removeAllListeners("more-results");
+    };
+  }, [query, searchTypeId]);
 
-        const containerPadding = 16;
-        const searchBoxHeight = 52;
-        const listHeight =
-          filtered.length > 0
-            ? Math.min(filtered.length * ITEM_HEIGHT, MAX_LIST_HEIGHT) + 10
-            : 0;
-        window.ipcRenderer?.invoke(
-          "resize-window",
-          containerPadding + searchBoxHeight + listHeight,
-        );
-      })();
+  useEffect(() => {
+    if (!query || query.trim().length < 2) {
+      if (query.trim().length === 0) {
+        refreshHistory();
+      } else {
+        setResults([]);
+        setVisibleCount(50);
+        setIsSearching(false);
+        setHasMore(false);
+      }
       return;
     }
 
+    setIsSearching(true);
+    setHasMore(false);
     const timer = setTimeout(async () => {
-      if (query.length < 1) {
-        const resp = (await window.ipcRenderer?.invoke("get-history")) as
-          | { results: AppItem[] }
-          | undefined;
-        const historyItems = resp?.results ?? [];
-        const filtered = filterItemsBySearchType(historyItems, searchTypeId);
-        setResults(filtered);
-        setSelectedIndex(0);
-        setIsSearching(false);
-        setIsIndexing(false);
-
-        const containerPadding = 16;
-        const searchBoxHeight = 52;
-        const listHeight =
-          filtered.length > 0
-            ? Math.min(filtered.length * ITEM_HEIGHT, MAX_LIST_HEIGHT) + 10
-            : 0;
-        window.ipcRenderer?.invoke(
-          "resize-window",
-          containerPadding + searchBoxHeight + listHeight,
-        );
-        return;
-      }
-
-      setIsSearching(true);
-      window.ipcRenderer?.invoke("resize-window", 88);
       try {
         const resp = (await window.ipcRenderer?.invoke(
           "search-files",
           query,
           { searchTypeId },
-        )) as SearchResponse | undefined;
+        )) as (SearchResponse & { hasMore?: boolean }) | undefined;
         const nextResults = resp?.results ?? [];
         setResults(nextResults);
+        setVisibleCount(50);
         setSelectedIndex(0);
         setIsIndexing(Boolean(resp?.isIndexing));
-
-        const containerPadding = 16;
-        const searchBoxHeight = 52;
-        const statusHeight = resp?.isIndexing ? 20 : 0;
-        const listHeight = nextResults.length > 0
-          ? Math.min(nextResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT) + 10
-          : resp?.isIndexing ? 0 : EMPTY_HEIGHT;
-
-        window.ipcRenderer?.invoke(
-          "resize-window",
-          containerPadding + searchBoxHeight + statusHeight + listHeight,
-        );
+        setHasMore(Boolean(resp?.hasMore));
       } finally {
         setIsSearching(false);
       }
@@ -416,9 +494,38 @@ function SearchView() {
   }, [query, searchTypeId]);
 
   useEffect(() => {
-    if (listRef.current)
-      listRef.current.scrollToRow({ index: selectedIndex, align: "auto" });
-  }, [selectedIndex]);
+    const handleMoreResults = (_: any, data: { query: string; results: AppItem[] }) => {
+      if (data.query === query) {
+        setResults(prev => [...prev, ...data.results]);
+      }
+    };
+    window.ipcRenderer?.on("more-results", handleMoreResults);
+    return () => {
+      window.ipcRenderer?.off("more-results", handleMoreResults);
+    };
+  }, [query]);
+
+  useEffect(() => {
+    // 只有在通过键盘导航（上下键）改变选中索引时，才执行自动滚动
+    if (listRef.current && lastSelectedBy === "keyboard") {
+      // 检查当前 react-window List 版本支持的方法
+      if (typeof listRef.current.scrollToItem === 'function') {
+        listRef.current.scrollToItem(selectedIndex, 'auto');
+      } else if (typeof listRef.current.scrollToRow === 'function') {
+        listRef.current.scrollToRow({ index: selectedIndex, align: "auto" });
+      }
+    }
+  }, [selectedIndex, lastSelectedBy]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        window.ipcRenderer?.send("hide-window");
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -442,9 +549,11 @@ function SearchView() {
     if (results.length === 0) return;
 
     if (e.key === "ArrowDown") {
+      setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => (prev + 1) % results.length);
       e.preventDefault();
     } else if (e.key === "ArrowUp") {
+      setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
       e.preventDefault();
     } else if (e.key === "Enter") {
@@ -496,30 +605,64 @@ function SearchView() {
       ? "正在建立本地文件索引…"
       : "";
 
+  const getExtension = (path: string) => {
+    const parts = path.split(".");
+    return parts.length > 1 ? parts.pop()?.toUpperCase() : "";
+  };
+
+  const isImageFile = (path: string) => {
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
+  };
+
   const Row = ({
     index,
     style,
+    ariaAttributes,
   }: {
     index: number;
     style: React.CSSProperties;
+    ariaAttributes?: any;
   }) => {
-    const item = results[index];
+    const item = visibleResults[index];
     if (!item) return null;
+
+    const isSelected = index === selectedIndex;
+    const isImg = item.type === "file" && isImageFile(item.path);
 
     return (
       <div
         style={style}
-        className={`result-item-wrapper ${index === selectedIndex ? "selected" : ""}`}
+        {...ariaAttributes}
+        className={`result-item-wrapper ${isSelected ? "selected" : ""}`}
         onClick={() => launchApp(item)}
+        onMouseEnter={() => {
+          if (selectedIndex !== index) {
+            setLastSelectedBy("mouse");
+            setSelectedIndex(index);
+          }
+        }}
       >
         <li className={index === selectedIndex ? "selected" : ""}>
           {item.icon ? (
-            <img className="result-icon" src={item.icon} alt="" />
+            <img 
+              className={`result-icon ${isImg ? "image-preview" : ""}`} 
+              src={item.icon} 
+              alt="" 
+            />
           ) : (
             <span className="result-icon placeholder" />
           )}
           <div className="result-meta">
-            <span className="app-name">{item.name}</span>
+            <div className="result-name-row">
+              <span className="app-name">{item.name}</span>
+              {item.type === "file" && (
+                <span className="file-ext-badge">{getExtension(item.path)}</span>
+              )}
+              {index === selectedIndex && (
+                <span className="shortcut-hint">ENTER</span>
+              )}
+            </div>
             <span className="app-path" title={item.path}>
               {item.path}
             </span>
@@ -554,16 +697,11 @@ function SearchView() {
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path
-                  d="M9 9h10v10H9V9Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"
+                  d="M8 4V3c0-.6.4-1 1-1h10c.6 0 1 .4 1 1v10c0 .6-.4 1-1 1h-1M4 8v12c0 .6.4 1 1 1h10c.6 0 1-.4 1-1V8c0-.6-.4-1-1-1H5c-.6 0-1 .4-1 1Z"
                   stroke="currentColor"
                   strokeWidth="1.8"
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               </svg>
             </button>
@@ -593,16 +731,105 @@ function SearchView() {
     );
   };
 
-  const listHeight = Math.min(results.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
+  const visibleResults = useMemo(() => {
+    return results.slice(0, visibleCount);
+  }, [results, visibleCount]);
+
+  const getSearchTypeIcon = (opt: any) => {
+    if (opt.id === "all") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+      );
+    }
+    if (opt.id === "file") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+      );
+    }
+    if (opt.id === "folder") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>
+        </svg>
+      );
+    }
+    if (opt.id.startsWith("ext:")) {
+      return <span className="type-icon-text">{opt.id.slice(4).toUpperCase()}</span>;
+    }
+    return null;
+  };
+
+  const currentTypeLabel = useMemo(() => {
+    return searchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有文件";
+  }, [searchTypeId, searchTypeOptions]);
+
+  const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
+  
   const showEmptyState =
     query.trim().length >= 1 &&
     !isSearching &&
     !isIndexing &&
     results.length === 0;
 
+  const scrollToTop = () => {
+    if (scrollContainerRef.current) {
+      // 使用原生 scrollTo 实现平滑滚动
+      scrollContainerRef.current.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+      setSelectedIndex(0);
+    }
+  };
+
+  const onItemsRendered = (
+    visibleRows: { startIndex: number; stopIndex: number },
+    _allRows: { startIndex: number; stopIndex: number },
+  ) => {
+    if (visibleRows.stopIndex >= visibleResults.length - 1 && visibleResults.length < results.length) {
+      setVisibleCount(prev => prev + 50);
+    }
+  };
+
+  // 渲染底部信息的组件，作为虚拟列表的最后一个元素
+  const BottomInfo = () => {
+    if (results.length === 0) return null;
+    return (
+      <div className="list-bottom-info">
+        {visibleResults.length < results.length ? (
+          <div className="loading-more">
+            <span className="spinner" />
+            <span>正在加载更多结果...</span>
+          </div>
+        ) : (
+          <div className="no-more-results">
+            {isHistoryMode ? `已显示全部 ${results.length} 条历史记录` : `已显示全部 ${results.length} 个结果`}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="container" onKeyDownCapture={handleKeyDown}>
+      <div
+        className="resize-handle left"
+        onMouseDown={(e) => startResizing(e, "left")}
+      />
+      <div
+        className="resize-handle right"
+        onMouseDown={(e) => startResizing(e, "right")}
+      />
       <div className="search-box">
+        <div className="search-icon-wrapper">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="search-icon-svg">
+            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
         <input
           ref={inputRef}
           type="text"
@@ -611,34 +838,59 @@ function SearchView() {
           placeholder={placeholder}
           autoFocus
         />
-        <div className="type-select" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            className="type-select-btn"
-            type="button"
-            onClick={() => setTypeMenuOpen((v) => !v)}
-            aria-label="切换搜索类型"
-            title="切换搜索类型"
-          >
-            <span className="type-select-label">{currentTypeLabel}</span>
-            <span className="type-select-caret">▾</span>
-          </button>
-          {typeMenuOpen ? (
-            <div className="type-select-menu" role="menu">
-              {searchTypeOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`type-select-item ${opt.id === searchTypeId ? "active" : ""}`}
-                  onClick={() => {
-                    setSearchTypeId(opt.id);
-                    setTypeMenuOpen(false);
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+        <div className="search-box-right">
+          <div className="result-count">
+            {results.length > 0 ? `${results.length} 条结果` : ""}
+          </div>
+          <div className="type-select" ref={typeSelectRef}>
+            <button
+              className="type-select-btn"
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setTypeMenuOpen((v) => !v);
+              }}
+              aria-haspopup="menu"
+              aria-expanded={typeMenuOpen}
+              aria-label="切换搜索类型"
+              title="切换搜索类型"
+            >
+              <span className="type-select-label">{currentTypeLabel}</span>
+              <span className="type-select-caret">▾</span>
+            </button>
+            {typeMenuOpen ? (
+              <div 
+                className="type-select-menu" 
+                role="menu"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="type-select-menu-inner">
+                  {searchTypeOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`type-select-item ${opt.id === searchTypeId ? "active" : ""}`}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSearchTypeId(opt.id);
+                        setTypeMenuOpen(false);
+                      }}
+                    >
+                      <div className="type-select-item-left">
+                        {/* <div className="type-item-icon">
+                          {getSearchTypeIcon(opt)}
+                        </div> */}
+                        <span>{opt.label}</span>
+                      </div>
+                      {opt.id === searchTypeId && <span className="check-mark">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
         <button
           className="settings-btn"
@@ -678,20 +930,42 @@ function SearchView() {
         </div>
       )}
 
-      {(results.length > 0 || showEmptyState) && (
+      {(visibleResults.length > 0 || showEmptyState) && (
         <div className="results">
           {showEmptyState ? (
-            <div className="empty-state">暂无无结果...😭</div>
+            <div className="empty-state">暂无搜索结果...😭</div>
           ) : (
-            <List<any>
-              listRef={listRef}
-              style={{ height: listHeight, width: "100%" }}
-              rowCount={results.length}
-              rowHeight={ITEM_HEIGHT}
-              className="virtual-list"
-              rowComponent={Row}
-              rowProps={{}}
-            />
+            <>
+              <div 
+                ref={scrollContainerRef}
+                className="results-scroll-container" 
+                style={{ maxHeight: MAX_LIST_HEIGHT, overflowY: 'auto' }}
+              >
+                <List<any>
+                  listRef={listRef}
+                  style={{ height: listHeight, width: "100%", overflow: 'visible' }}
+                  rowCount={visibleResults.length}
+                  rowHeight={ITEM_HEIGHT}
+                  className="virtual-list"
+                  rowComponent={Row}
+                  rowProps={{}}
+                  onRowsRendered={onItemsRendered}
+                />
+                <BottomInfo />
+              </div>
+              {selectedIndex > 8 && (
+                <button 
+                  className="back-to-top-btn" 
+                  onClick={scrollToTop}
+                  title="返回顶部"
+                  type="button"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m18 15-6-6-6 6"/>
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -720,6 +994,7 @@ function SettingsView() {
     settings.defaultSearchTypeId,
     settings.customSearchTypes,
     settings.searchTypeOrder,
+    settings.accentColor,
   ]);
 
   useEffect(() => {
@@ -729,6 +1004,14 @@ function SettingsView() {
       setActiveKey("general");
       setNewTypeExt("");
       document.documentElement.dataset.theme = settings.theme;
+      document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
+      // 重置带透明度的颜色
+      const r = parseInt(settings.accentColor.slice(1, 3), 16);
+      const g = parseInt(settings.accentColor.slice(3, 5), 16);
+      const b = parseInt(settings.accentColor.slice(5, 7), 16);
+      document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
+      document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
+      document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
     };
     window.ipcRenderer?.on("settings-window-opened", handler as any);
     return () => {
@@ -736,8 +1019,17 @@ function SettingsView() {
     };
   }, [settings]);
 
-  const applyThemePreview = (theme: AppSettings["theme"]) => {
+  const applyThemePreview = (theme: AppSettings["theme"], accentColor: string) => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.style.setProperty("--fs-accent", accentColor);
+    // 计算带透明度的主题色
+    const r = parseInt(accentColor.slice(1, 3), 16);
+    const g = parseInt(accentColor.slice(3, 5), 16);
+    const b = parseInt(accentColor.slice(5, 7), 16);
+    document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
+    document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
+    document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
+
     document.documentElement.classList.add("theme-anim");
     window.setTimeout(() => {
       document.documentElement.classList.remove("theme-anim");
@@ -748,6 +1040,14 @@ function SettingsView() {
     setError("");
     setDraft(settings);
     document.documentElement.dataset.theme = settings.theme;
+    document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
+    // 重置带透明度的颜色
+    const r = parseInt(settings.accentColor.slice(1, 3), 16);
+    const g = parseInt(settings.accentColor.slice(3, 5), 16);
+    const b = parseInt(settings.accentColor.slice(5, 7), 16);
+    document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
+    document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
+    document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
     window.ipcRenderer?.invoke("hide-window");
   };
 
@@ -767,6 +1067,8 @@ function SettingsView() {
       setError(resp.message || "设置保存失败");
       return;
     }
+    // 保存成功后，立即确保本地主题色是最新的
+    applyThemePreview(draft.theme, draft.accentColor);
     window.ipcRenderer?.invoke("hide-window");
   };
 
@@ -775,14 +1077,21 @@ function SettingsView() {
     [draft.customSearchTypes, draft.searchTypeOrder],
   );
 
-  const moveTypeId = (list: string[], fromId: string, toId: string) => {
-    const from = list.indexOf(fromId);
-    const to = list.indexOf(toId);
-    if (from === -1 || to === -1) return list;
-    if (from === to) return list;
+  const moveTypeId = (list: string[], fromId: string, toId: string, position: "before" | "after") => {
+    const fromIndex = list.indexOf(fromId);
+    let toIndex = list.indexOf(toId);
+    if (fromIndex === -1 || toIndex === -1) return list;
+    
     const next = list.slice();
-    const [item] = next.splice(from, 1);
-    next.splice(to, 0, item);
+    const [item] = next.splice(fromIndex, 1);
+    
+    // 重新计算 toIndex，因为 splice 之后索引可能变化
+    toIndex = next.indexOf(toId);
+    if (position === "after") {
+      next.splice(toIndex + 1, 0, item);
+    } else {
+      next.splice(toIndex, 0, item);
+    }
     return next;
   };
 
@@ -814,6 +1123,47 @@ function SettingsView() {
     [],
   );
 
+  const getSearchTypeIcon = (opt: any) => {
+    if (opt.id === "all") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+      );
+    }
+    if (opt.id === "file") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+      );
+    }
+    if (opt.id === "folder") {
+      return (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>
+        </svg>
+      );
+    }
+    if (opt.id.startsWith("ext:")) {
+      return <span className="type-icon-text">{opt.id.slice(4).toUpperCase()}</span>;
+    }
+    return null;
+  };
+
+  const themeColors = [
+    { name: "天际蓝", color: "#38bdf8" },
+    { name: "罗兰紫", color: "#818cf8" },
+    { name: "极光绿", color: "#34d399" },
+    { name: "珊瑚红", color: "#fb7185" },
+    { name: "琥珀橙", color: "#fbbf24" },
+    { name: "翡翠绿", color: "#10b981" },
+    { name: "深海蓝", color: "#2563eb" },
+    { name: "丁香紫", color: "#a855f7" },
+    { name: "玫瑰金", color: "#f43f5e" },
+    { name: "钛金灰", color: "#64748b" },
+  ];
+
   return (
     <div className="container" onKeyDown={handleKeyDown}>
       <div
@@ -828,6 +1178,7 @@ function SettingsView() {
           }}
           title="双击全屏/取消全屏"
         >
+          <img src="/tray.svg" className="settings-logo" alt="logo" />
           <span className="settings-title">设置</span>
         </div>
         <div className="settings-header-spacer" />
@@ -885,255 +1236,317 @@ function SettingsView() {
             </div>
 
             <div className="settings-main">
-              {activeKey === "general" ? (
-                <div className="settings-content">
-                  <div className="settings-group">
-                    <div className="settings-group-title">启动</div>
-                    <label className="setting-row">
-                      <input
-                        type="checkbox"
-                        checked={draft.autoStart}
-                        onChange={(e) => {
-                          setDraft({ ...draft, autoStart: e.target.checked });
-                          setError("");
-                        }}
-                      />
-                      <span>跟随此电脑启动自动运行</span>
-                    </label>
-                  </div>
-                  <div className="settings-group">
-                    <div className="settings-group-title">历史记录</div>
-                    <div className="form-row">
-                      <div className="form-label">最大展示数量</div>
-                      <input
-                        className="number-input"
-                        type="number"
-                        min={0}
-                        max={50}
-                        step={1}
-                        value={draft.historyLimit}
-                        onChange={(e) => {
-                          const n = Number(e.target.value);
-                          setDraft({
-                            ...draft,
-                            historyLimit: Number.isFinite(n)
-                              ? Math.min(50, Math.max(0, Math.floor(n)))
-                              : 5,
-                          });
-                          setError("");
-                        }}
-                      />
-                    </div>
-                    <div className="form-row">
-                      <div className="form-label">历史操作</div>
-                      <button
-                        type="button"
-                        className="small-btn"
-                        onClick={async () => {
-                          setError("");
-                          const ok = window.confirm(
-                            "确定要清除所有历史记录吗？此操作不可恢复。",
-                          );
-                          if (!ok) return;
-                          await window.ipcRenderer?.invoke("clear-history");
-                        }}
-                      >
-                        清除所有历史
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {activeKey === "search" ? (
-                <div className="settings-content">
-                  <div className="settings-group">
-                    <div className="settings-group-title">默认类型</div>
-                    <div className="form-row">
-                      <div className="form-label">默认选择</div>
-                      <select
-                        className="select-input"
-                        value={draft.defaultSearchTypeId}
-                        onChange={(e) => {
-                          setDraft({ ...draft, defaultSearchTypeId: e.target.value });
-                          setError("");
-                        }}
-                      >
-                        {typeOptions.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="settings-group">
-                    <div className="settings-group-title">自定义类型</div>
-                    <div className="form-row">
-                      <div className="form-label">新增后缀</div>
-                      <input
-                        className="text-input"
-                        value={newTypeExt}
-                        placeholder=".docx"
-                        onChange={(e) => {
-                          setNewTypeExt(e.target.value);
-                          setError("");
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="small-btn"
-                        onClick={() => {
-                          const ext = newTypeExt.trim().toLowerCase();
-                          if (!/^\.[a-z0-9]{1,10}$/i.test(ext)) {
-                            setError("后缀格式不合法（例如 .docx）");
-                            return;
-                          }
-                          if (draft.customSearchTypes.includes(ext)) {
-                            setError("该类型已存在");
-                            return;
-                          }
-                          const nextCustom = [...draft.customSearchTypes, ext];
-                          const nextOrder = getSearchTypeOptions(nextCustom, [
-                            ...(draft.searchTypeOrder || []),
-                            `ext:${ext}`,
-                          ]).map((x) => x.id);
-                          setDraft({
-                            ...draft,
-                            customSearchTypes: nextCustom,
-                            searchTypeOrder: nextOrder,
-                          });
-                          setNewTypeExt("");
-                          setError("");
-                        }}
-                      >
-                        添加
-                      </button>
-                    </div>
-
-                    {error ? <div className="settings-error">{error}</div> : null}
-                  </div>
-
-                  <div className="settings-group">
-                    <div className="settings-group-title">类型顺序</div>
-                    <div className="type-order-list">
-                      {typeOptions.map((opt) => (
-                        <TypeOrderItem
-                          key={opt.id}
-                          id={opt.id}
-                          label={opt.label}
-                          isCustom={opt.id.startsWith("ext:")}
-                          orderedIds={typeOptions.map((x) => x.id)}
-                          onMove={(fromId, toId) => {
-                            const nextOrder = moveTypeId(
-                              typeOptions.map((x) => x.id),
-                              fromId,
-                              toId,
-                            );
-                            setDraft({ ...draft, searchTypeOrder: nextOrder });
+              <div className="settings-main-inner">
+                {activeKey === "general" ? (
+                  <div className="settings-content">
+                    <div className="settings-group">
+                      <div className="settings-group-title">启动</div>
+                      <label className="setting-row">
+                        <input
+                          type="checkbox"
+                          checked={draft.autoStart}
+                          onChange={(e) => {
+                            setDraft({ ...draft, autoStart: e.target.checked });
                             setError("");
                           }}
-                          onDelete={(targetId) => {
-                            if (!targetId.startsWith("ext:")) return;
-                            const ext = targetId.slice(4);
-                            const nextCustom = (draft.customSearchTypes || []).filter(
-                              (x) => x !== ext,
-                            );
-                            const nextDefault =
-                              draft.defaultSearchTypeId === targetId
-                                ? "all"
-                                : draft.defaultSearchTypeId;
-                            const nextOrder = getSearchTypeOptions(
-                              nextCustom,
-                              (draft.searchTypeOrder || []).filter((x) => x !== targetId),
-                            ).map((x) => x.id);
+                        />
+                        <span>跟随此电脑启动自动运行</span>
+                      </label>
+                    </div>
+                    <div className="settings-group">
+                      <div className="settings-group-title">搜索状态</div>
+                      <label className="setting-row">
+                        <input
+                          type="checkbox"
+                          checked={draft.keepStateOnClose}
+                          onChange={(e) => {
+                            setDraft({ ...draft, keepStateOnClose: e.target.checked });
+                            setError("");
+                          }}
+                        />
+                        <span>呼出面板时保留上一次的状态</span>
+                      </label>
+                    </div>
+                    <div className="settings-group">
+                      <div className="settings-group-title">历史记录</div>
+                      <label className="setting-row">
+                        <input
+                          type="checkbox"
+                          checked={draft.enableHistory}
+                          onChange={(e) => {
+                            setDraft({ ...draft, enableHistory: e.target.checked });
+                            setError("");
+                          }}
+                        />
+                        <span>记录历史操作</span>
+                      </label>
+                      <div className="form-row">
+                        <div className="form-label">最大展示数量</div>
+                        <input
+                          className="number-input"
+                          type="number"
+                          min={0}
+                          max={50}
+                          step={1}
+                          value={draft.historyLimit}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
                             setDraft({
                               ...draft,
-                              customSearchTypes: nextCustom,
-                              defaultSearchTypeId: nextDefault,
-                              searchTypeOrder: nextOrder,
+                              historyLimit: Number.isFinite(n)
+                                ? Math.min(50, Math.max(0, Math.floor(n)))
+                                : 5,
                             });
                             setError("");
                           }}
                         />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {activeKey === "shortcuts" ? (
-                <div className="settings-content">
-                  <div className="settings-group">
-                    <div className="settings-group-title">快捷键</div>
-                    <div className="shortcut-grid">
-                      <div className="shortcut-row">
-                        <div className="shortcut-label">呼出搜索框</div>
-                        <input
-                          className="shortcut-input"
-                          readOnly
-                          value={draft.searchShortcut}
-                          placeholder="按下组合键…"
-                          onKeyDown={(e) => setShortcut("searchShortcut", e)}
-                        />
                       </div>
-                      <div className="shortcut-row">
-                        <div className="shortcut-label">呼出设置界面</div>
-                        <input
-                          className="shortcut-input"
-                          readOnly
-                          value={draft.settingsShortcut}
-                          placeholder="按下组合键…"
-                          onKeyDown={(e) => setShortcut("settingsShortcut", e)}
-                        />
+                      <div className="form-row">
+                        <div className="form-label">历史操作</div>
+                        <button
+                          type="button"
+                          className="small-btn"
+                          onClick={async () => {
+                            setError("");
+                            const ok = window.confirm(
+                              "确定要清除所有历史记录吗？此操作不可恢复。",
+                            );
+                            if (!ok) return;
+                            await window.ipcRenderer?.invoke("clear-history");
+                          }}
+                        >
+                          清除所有历史
+                        </button>
                       </div>
                     </div>
                   </div>
-                  {error ? <div className="settings-error">{error}</div> : null}
-                </div>
-              ) : null}
+                ) : null}
 
-              {activeKey === "appearance" ? (
-                <div className="settings-content">
-                  <div className="settings-group">
-                    <div className="settings-group-title">外观</div>
-                    <div
-                      className="theme-segment"
-                      role="radiogroup"
-                      aria-label="主题"
-                    >
-                      <button
-                        type="button"
-                        className={`theme-option ${draft.theme === "light" ? "active" : ""}`}
-                        onClick={() => {
-                          setDraft({ ...draft, theme: "light" });
-                          applyThemePreview("light");
-                        }}
-                      >
-                        明亮
-                      </button>
-                      <button
-                        type="button"
-                        className={`theme-option ${draft.theme === "dark" ? "active" : ""}`}
-                        onClick={() => {
-                          setDraft({ ...draft, theme: "dark" });
-                          applyThemePreview("dark");
-                        }}
-                      >
-                        暗黑
-                      </button>
+                {activeKey === "search" ? (
+                  <div className="settings-content">
+                    <div className="settings-group">
+                      <div className="settings-group-title">默认类型</div>
+                      <div className="form-row">
+                        <div className="form-label">默认选择</div>
+                        <select
+                          className="select-input"
+                          value={draft.defaultSearchTypeId}
+                          onChange={(e) => {
+                            setDraft({ ...draft, defaultSearchTypeId: e.target.value });
+                            setError("");
+                          }}
+                        >
+                          {typeOptions.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="settings-group">
+                      <div className="settings-group-title">自定义类型</div>
+                      <div className="form-row">
+                        <div className="form-label">新增后缀</div>
+                        <div className="input-with-btn">
+                          <input
+                            type="text"
+                            className="text-input"
+                            value={newTypeExt}
+                            placeholder=".docx"
+                            onChange={(e) => {
+                              setNewTypeExt(e.target.value);
+                              setError("");
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="small-btn"
+                            onClick={() => {
+                              const ext = newTypeExt.trim().toLowerCase();
+                              if (!/^\.[a-z0-9]{1,10}$/i.test(ext)) {
+                                setError("后缀格式不合法（例如 .docx）");
+                                return;
+                              }
+                              if (draft.customSearchTypes.includes(ext)) {
+                                setError("该类型已存在");
+                                return;
+                              }
+                              const nextCustom = [...draft.customSearchTypes, ext];
+                              const nextOrder = getSearchTypeOptions(nextCustom, [
+                                ...(draft.searchTypeOrder || []),
+                                `ext:${ext}`,
+                              ]).map((x) => x.id);
+                              setDraft({
+                                ...draft,
+                                customSearchTypes: nextCustom,
+                                searchTypeOrder: nextOrder,
+                              });
+                              setNewTypeExt("");
+                              setError("");
+                            }}
+                          >
+                            添加
+                          </button>
+                        </div>
+
+                        {error ? <div className="settings-error">{error}</div> : null}
+                      </div>
+
+                      <div className="settings-group">
+                        <div className="settings-group-title">类型顺序</div>
+                        <div className="type-order-list">
+                          <div className="type-order-list-inner">
+                            {typeOptions.map((opt) => (
+                              <TypeOrderItem
+                                key={opt.id}
+                                id={opt.id}
+                                label={opt.label}
+                                isCustom={opt.id.startsWith("ext:")}
+                                orderedIds={typeOptions.map((x) => x.id)}
+                                onMove={(fromId, toId, position) => {
+                                  const nextOrder = moveTypeId(
+                                    typeOptions.map((x) => x.id),
+                                    fromId,
+                                    toId,
+                                    position
+                                  );
+                                  setDraft({ ...draft, searchTypeOrder: nextOrder });
+                                  setError("");
+                                }}
+                                onDelete={(targetId) => {
+                                  if (!targetId.startsWith("ext:")) return;
+                                  const ext = targetId.slice(4);
+                                  const nextCustom = (draft.customSearchTypes || []).filter(
+                                    (x) => x !== ext,
+                                  );
+                                  const nextDefault =
+                                    draft.defaultSearchTypeId === targetId
+                                      ? "all"
+                                      : draft.defaultSearchTypeId;
+                                  const nextOrder = getSearchTypeOptions(
+                                    nextCustom,
+                                    (draft.searchTypeOrder || []).filter((x) => x !== targetId),
+                                  ).map((x) => x.id);
+                                  setDraft({
+                                    ...draft,
+                                    customSearchTypes: nextCustom,
+                                    defaultSearchTypeId: nextDefault,
+                                    searchTypeOrder: nextOrder,
+                                  });
+                                  setError("");
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
+
+                {activeKey === "shortcuts" ? (
+                  <div className="settings-content">
+                    <div className="settings-group">
+                      <div className="settings-group-title">快捷键</div>
+                      <div className="shortcut-grid">
+                        <div className="shortcut-row">
+                          <div className="shortcut-label">呼出搜索框</div>
+                          <input
+                            className="shortcut-input"
+                            readOnly
+                            value={draft.searchShortcut}
+                            placeholder="点击设置快捷键"
+                            onKeyDown={(e) => {
+                              e.preventDefault();
+                              const acc = toAccelerator(e);
+                              if (acc) {
+                                setDraft({ ...draft, searchShortcut: acc });
+                                setError("");
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="shortcut-row">
+                          <div className="shortcut-label">打开设置</div>
+                          <input
+                            className="shortcut-input"
+                            readOnly
+                            value={draft.settingsShortcut}
+                            placeholder="点击设置快捷键"
+                            onKeyDown={(e) => {
+                              e.preventDefault();
+                              const acc = toAccelerator(e);
+                              if (acc) {
+                                setDraft({ ...draft, settingsShortcut: acc });
+                                setError("");
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeKey === "appearance" ? (
+                  <div className="settings-content">
+                    <div className="settings-group">
+                      <div className="settings-group-title">主题界面</div>
+                      <div className="theme-grid">
+                        <button
+                          type="button"
+                          className={`theme-card dark ${draft.theme === "dark" ? "active" : ""}`}
+                          onClick={() => {
+                            setDraft({ ...draft, theme: "dark" });
+                            document.documentElement.dataset.theme = "dark";
+                          }}
+                        >
+                          <div className="theme-preview" />
+                          <span>深色模式</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`theme-card light ${draft.theme === "light" ? "active" : ""}`}
+                          onClick={() => {
+                            setDraft({ ...draft, theme: "light" });
+                            document.documentElement.dataset.theme = "light";
+                          }}
+                        >
+                          <div className="theme-preview" />
+                          <span>浅色模式</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="settings-group">
+                      <div className="settings-group-title">主题色</div>
+                      <div className="accent-color-grid">
+                        {themeColors.map((item) => (
+                          <button
+                            key={item.color}
+                            type="button"
+                            className={`accent-color-item ${draft.accentColor === item.color ? "active" : ""}`}
+                            style={{ "--item-color": item.color } as any}
+                            onClick={() => {
+                              setDraft({ ...draft, accentColor: item.color });
+                              applyThemePreview(draft.theme, item.color);
+                            }}
+                            title={item.name}
+                          >
+                            <div className="accent-color-dot" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          
-        </div>
-      </div>
-      <div className="settings-footer">
+          <div className="settings-footer">
             <button className="settings-cancel" type="button" onClick={onClose}>
               取消
             </button>
@@ -1141,6 +1554,8 @@ function SettingsView() {
               确认
             </button>
           </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1157,33 +1572,48 @@ function TypeOrderItem({
   label: string;
   isCustom: boolean;
   orderedIds: string[];
-  onMove: (fromId: string, toId: string) => void;
+  onMove: (fromId: string, toId: string, position: "before" | "after") => void;
   onDelete: (id: string) => void;
 }) {
-  const [dragging, setDragging] = useState(false);
+  const [dragOverPos, setDragOverPos] = useState<"top" | "bottom" | null>(null);
 
   return (
     <div
-      className={`type-order-item ${dragging ? "dragging" : ""}`}
+      className={`type-order-item ${dragOverPos ? `drag-over-${dragOverPos}` : ""}`}
       draggable
       onDragStart={(e) => {
-        setDragging(true);
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", id);
+        // 设置拖拽预览图透明度
+        const target = e.currentTarget as HTMLElement;
+        target.classList.add("dragging-source");
+        setTimeout(() => target.classList.remove("dragging-source"), 0);
       }}
-      onDragEnd={() => setDragging(false)}
       onDragOver={(e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        setDragOverPos(e.clientY < midY ? "top" : "bottom");
+      }}
+      onDragLeave={() => {
+        setDragOverPos(null);
       }}
       onDrop={(e) => {
         e.preventDefault();
+        setDragOverPos(null);
         const fromId = e.dataTransfer.getData("text/plain");
-        if (!fromId) return;
+        if (!fromId || fromId === id) return;
         if (!orderedIds.includes(fromId) || !orderedIds.includes(id)) return;
-        if (fromId === id) return;
-        onMove(fromId, id);
-        setDragging(false);
+        
+        const rect = e.currentTarget.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const isTop = e.clientY < midY;
+        
+        // 如果是往下拖且放到下半部，或者往上拖且放到上半部，才执行移动
+        // 简化逻辑：直接根据 drop 的位置触发移动
+        onMove(fromId, id, isTop ? "before" : "after");
       }}
     >
       <span className="type-order-handle" aria-hidden="true" />

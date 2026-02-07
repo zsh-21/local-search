@@ -85,9 +85,7 @@ function shouldSkipDirName(name: string) {
 	if (lower === '$recycle.bin') return true;
 	if (lower === 'system volume information') return true;
 	if (lower === 'windows') return true;
-	if (lower === 'program files') return true;
-	if (lower === 'program files (x86)') return true;
-	if (lower === 'programdata') return true;
+	// Allow Program Files and ProgramData as users might want to search for apps/files there
 	return false;
 }
 
@@ -250,7 +248,7 @@ export class FileIndex {
 		}
 	}
 
-	search(query: string, limit = 20): { results: FileIndexSearchResult[]; isIndexing: boolean } {
+	search(query: string, limit = 100): { results: FileIndexSearchResult[]; isIndexing: boolean } {
 		const queryLower = query.trim().toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing };
 
@@ -263,9 +261,6 @@ export class FileIndex {
 			const score = scoreEntry(entry, queryLower, queryParts);
 			if (score <= 0) continue;
 			scored.push({ ...entry, score });
-			
-			// If we have too many candidates, we might want to stop early or just keep going
-			// For 750k entries, a full scan is usually < 50ms
 		}
 
 		scored.sort((a, b) => b.score - a.score);
