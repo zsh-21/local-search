@@ -281,7 +281,7 @@ html[data-theme="light"] .settings-logo {
   flex-direction: column;
   height: 100%;
   min-width: 400px;
-  overflow: hidden; /* 改为 hidden 以防止滚动条超出圆角 */
+  overflow: visible; /* 改为 hidden 以防止滚动条超出圆角 */
   min-height: 60px;
   box-sizing: border-box;
   border: 1px solid var(--fs-border);

@@ -235,7 +235,7 @@ function SearchView() {
   const typeSelectRef = useRef<HTMLDivElement>(null);
 
   const ITEM_HEIGHT = 52;
-  const MAX_LIST_HEIGHT = 420;
+  const MAX_LIST_HEIGHT = 382;
   const TYPE_MENU_MIN_LIST_SPACE = 240;
 
   useEffect(() => {
@@ -776,12 +776,8 @@ function SearchView() {
     results.length === 0;
 
   const scrollToTop = () => {
-    if (scrollContainerRef.current) {
-      // 使用原生 scrollTo 实现平滑滚动
-      scrollContainerRef.current.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
+    if (scrollContainerRef.current&&listRef.current) {
+      listRef.current.scrollToRow({ index: 0, align: "auto",behavior: "smooth" });
       setSelectedIndex(0);
     }
   };
