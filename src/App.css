@@ -292,6 +292,10 @@ html[data-theme="light"] .settings-logo {
   border-radius: 14px;
 }
 
+.container.search-container {
+  height: auto;
+}
+
 .search-box {
   display: flex;
   align-items: center;
@@ -653,7 +657,6 @@ input::placeholder {
 .results {
   margin: 10px 0 0 0;
   padding: 0;
-  flex: 1;
   -webkit-app-region: no-drag; /* 结果列表不可拖拽，保证滚动 */
   position: relative;
   z-index: 1; /* 保证在搜索框之下 */

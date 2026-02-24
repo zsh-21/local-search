@@ -722,13 +722,13 @@ ipcMain.handle('minimize-window', (event) => {
 ipcMain.handle('resize-window', (event, height: number, width?: number) => {
 	const w = BrowserWindow.fromWebContents(event.sender);
 	if (!w) return;
-	const [currentWidth] = w.getSize();
+	const [currentWidth] = w.getContentSize();
 	const nextWidth = width ?? currentWidth;
 	
 	// 如果宽度发生变化，且是从左侧拖拽（需要保持右侧不动），或者只是普通调整
 	// 这里我们简单处理：如果是从 React 传来的 width，我们直接 setSize
 	// 如果要实现左侧拖拽不位移，需要在 React 端计算好偏移并调用 setBounds
-	w.setSize(Math.round(nextWidth), Math.round(height));
+	w.setContentSize(Math.round(nextWidth), Math.round(height));
 });
 
 ipcMain.handle('get-window-bounds', (event) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { List } from "react-window";
 import "./App.css";
 
@@ -233,6 +233,10 @@ function SearchView() {
   const listRef = useRef<any>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const typeSelectRef = useRef<HTMLDivElement>(null);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastResizeHeightRef = useRef(0);
+  const resizeRafRef = useRef<number | null>(null);
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
@@ -346,49 +350,6 @@ function SearchView() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []); // Remove width dependency to avoid re-binding during resize
-
-  // 监听状态变化，自动调整窗口高度
-  useEffect(() => {
-    const containerPadding = 20; // 10px * 2
-    const searchBoxHeight = 50; // 46px + 2px border + 2px margin
-    const hasStatus = isSearching || isIndexing;
-    const statusHeight = hasStatus ? 24 : 0;
-
-    const showEmptyState =
-      query.trim().length >= 1 &&
-      !isSearching &&
-      !isIndexing &&
-      results.length === 0;
-
-    let listContentHeight = 0;
-    if (isSearching) {
-      listContentHeight = 0;
-    } else if (results.length > 0) {
-      listContentHeight =
-        Math.min(results.length * ITEM_HEIGHT, 377) + 10;
-    } else if (showEmptyState) {
-      listContentHeight = 70; // 空状态固定高度
-    } else {
-      // 没有任何内容时（包括历史记录也为空时）
-      listContentHeight = 0;
-    }
-
-    if (typeMenuOpen) {
-      listContentHeight = Math.max(listContentHeight, TYPE_MENU_MIN_LIST_SPACE);
-    }
-
-    // 只有当高度真正变化时才调用
-    const totalHeight = containerPadding + searchBoxHeight + statusHeight + listContentHeight;
-    window.ipcRenderer?.invoke("resize-window", Math.ceil(totalHeight));
-  }, [
-    results.length,
-    isSearching,
-    isIndexing,
-    query,
-    typeMenuOpen,
-    ITEM_HEIGHT,
-    MAX_LIST_HEIGHT,
-  ]);
 
   const searchTypeOptions = useMemo(
     () =>
@@ -775,6 +736,56 @@ function SearchView() {
     !isIndexing &&
     results.length === 0;
 
+  useLayoutEffect(() => {
+    const containerEl = containerRef.current;
+    if (!containerEl) return;
+
+    const run = () => {
+      const c = containerRef.current;
+      if (!c) return;
+
+      const containerRect = c.getBoundingClientRect();
+      let nextHeight = Math.ceil(containerRect.height);
+
+      const menuEl = typeMenuOpen ? typeMenuRef.current : null;
+      if (menuEl) {
+        const menuRect = menuEl.getBoundingClientRect();
+        const needed = Math.ceil(menuRect.bottom - containerRect.top + 10);
+        nextHeight = Math.max(nextHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
+      }
+
+      nextHeight = Math.max(nextHeight, 76);
+      if (nextHeight !== lastResizeHeightRef.current) {
+        lastResizeHeightRef.current = nextHeight;
+        window.ipcRenderer?.invoke("resize-window", nextHeight);
+      }
+    };
+
+    if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+    resizeRafRef.current = requestAnimationFrame(run);
+    return () => {
+      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = null;
+    };
+  }, [isSearching, isIndexing, results.length, visibleResults.length, query, typeMenuOpen, showEmptyState]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    const ro = new ResizeObserver(() => {
+      const c = containerRef.current;
+      if (!c) return;
+      const nextHeight = Math.max(76, Math.ceil(c.getBoundingClientRect().height));
+      if (nextHeight !== lastResizeHeightRef.current) {
+        lastResizeHeightRef.current = nextHeight;
+        window.ipcRenderer?.invoke("resize-window", nextHeight);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const scrollToTop = () => {
     if (scrollContainerRef.current&&listRef.current) {
       listRef.current.scrollToRow({ index: 0, align: "auto",behavior: "smooth" });
@@ -811,7 +822,7 @@ function SearchView() {
   };
 
   return (
-    <div className="container" onKeyDownCapture={handleKeyDown}>
+    <div className="container search-container" ref={containerRef} onKeyDownCapture={handleKeyDown}>
       <div
         className="resize-handle left"
         onMouseDown={(e) => startResizing(e, "left")}
@@ -859,6 +870,7 @@ function SearchView() {
               <div 
                 className="type-select-menu" 
                 role="menu"
+                ref={typeMenuRef}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="type-select-menu-inner">
