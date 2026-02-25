@@ -1,66 +1,205 @@
 ---
-name: ui-ux-pro-max
-description: Provides design intelligence for building professional UI/UX across multiple platforms and frameworks. Invoke when handling UI components, layouts, or visual interactions.
+name: "ui-ux-pro-max"
+description: "UI/UX design intelligence with searchable database. Invoke when building UI/UX or needing design system recommendations."
 ---
 
-# UI UX Pro Max
+# ui-ux-pro-max
 
-An AI skill that provides design intelligence for building professional UI/UX across multiple platforms and frameworks.
+Comprehensive design guide for web and mobile applications. Contains 67 styles, 96 color palettes, 57 font pairings, 99 UX guidelines, and 25 chart types across 13 technology stacks. Searchable database with priority-based recommendations.
 
-If you find this useful, consider supporting the project:
+## Prerequisites
 
-What's New in v2.0
-Intelligent Design System Generation
-The flagship feature of v2.0 is the Design System Generator - an AI-powered reasoning engine that analyzes your project requirements and generates a complete, tailored design system in seconds.
-+----------------------------------------------------------------------------------------+
-|  TARGET: Serenity Spa - RECOMMENDED DESIGN SYSTEM                                      |
-+----------------------------------------------------------------------------------------+
-|                                                                                        |
-|  PATTERN: Hero-Centric + Social Proof                                                  |
-|     Conversion: Emotion-driven with trust elements                                     |
-|     CTA: Above fold, repeated after testimonials                                       |
-|     Sections:                                                                          |
-|       1. Hero                                                                          
-|       2. Services                                                                          
-|       3. Testimonials                                                                  
-|       4. Booking                                                                       
-|       5. Contact                                                                       
-|                                                                                        |
-|  STYLE: Soft UI Evolution                                                              
-|     Keywords: Soft shadows, subtle depth, calming, premium feel, organic shapes        
-|     Best For: Wellness, beauty, lifestyle brands, premium services                     
-|     Performance: Excellent | Accessibility: WCAG AA                                    
-|                                                                                        |
-|  COLORS:                                                                               
-|     Primary:    #E8B4B8 (Soft Pink)                                                    
-|     Secondary:  #A8D5BA (Sage Green)                                                   
-|     CTA:        #D4AF37 (Gold)                                                         
-|     Background: #FFF5F5 (Warm White)                                                   
-|     Text:       #2D3436 (Charcoal)                                                     
-|     Notes: Calming palette with gold accents for luxury feel                           
-|                                                                                        |
-|  TYPOGRAPHY: Cormorant Garamond / Montserrat                                           
-|     Mood: Elegant, calming, sophisticated                                              
-|     Best For: Luxury brands, wellness, beauty, editorial                               
-|     Google Fonts: https://fonts.google.com/share?selection.family=...                  
-|                                                                                        |
-|  KEY EFFECTS:                                                                          
-|     Soft shadows + Smooth transitions (200-300ms) + Gentle hover states                
-|                                                                                        |
-|  AVOID (Anti-patterns):                                                                
-|     Bright neon colors + Harsh animations + Dark mode + AI purple/pink gradients       
-|                                                                                        |
-|  PRE-DELIVERY CHECKLIST:                                                               
-|     [ ] No emojis as icons (use SVG: Heroicons/Lucide)                                 
-|     [ ] cursor-pointer on all clickable elements                                       
-|     [ ] Hover states with smooth transitions (150-300ms)                               
-|     [ ] Light mode: text contrast 4.5:1 minimum                                        
-|     [ ] Focus states visible for keyboard nav                                          
-|     [ ] prefers-reduced-motion respected                                               
-|     [ ] Responsive: 375px, 768px, 1024px, 1440px                                       
-|                                                                                        |
-+----------------------------------------------------------------------------------------+
+Check if Python is installed:
 
-How Design System Generation Works
-┌─────────────────────────────────────────────────────────────────┐
-│  1. USER REQUEST
+```bash
+python3 --version || python --version
+```
+
+If Python is not installed, install it based on user's OS:
+
+**macOS:**
+```bash
+brew install python3
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install python3
+```
+
+**Windows:**
+```powershell
+winget install Python.Python.3.12
+```
+
+---
+
+## How to Use This Skill
+
+When user requests UI/UX work (design, build, create, implement, review, fix, improve), follow this workflow:
+
+### Step 1: Analyze User Requirements
+
+Extract key information from user request:
+- **Product type**: SaaS, e-commerce, portfolio, dashboard, landing page, etc.
+- **Style keywords**: minimal, playful, professional, elegant, dark mode, etc.
+- **Industry**: healthcare, fintech, gaming, education, etc.
+- **Stack**: React, Vue, Next.js, or default to `html-tailwind`
+
+### Step 2: Generate Design System (REQUIRED)
+
+**Always start with `--design-system`** to get comprehensive recommendations with reasoning:
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "<product_type> <industry> <keywords>" --design-system [-p "Project Name"]
+```
+
+This command:
+1. Searches 5 domains in parallel (product, style, color, landing, typography)
+2. Applies reasoning rules from `ui-reasoning.csv` to select best matches
+3. Returns complete design system: pattern, style, colors, typography, effects
+4. Includes anti-patterns to avoid
+
+**Example:**
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "beauty spa wellness service" --design-system -p "Serenity Spa"
+```
+
+### Step 2b: Persist Design System (Master + Overrides Pattern)
+
+To save the design system for hierarchical retrieval across sessions, add `--persist`:
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persist -p "Project Name"
+```
+
+This creates:
+- `design-system/MASTER.md` — Global Source of Truth with all design rules
+- `design-system/pages/` — Folder for page-specific overrides
+
+**With page-specific override:**
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system --persist -p "Project Name" --page "dashboard"
+```
+
+This also creates:
+- `design-system/pages/dashboard.md` — Page-specific deviations from Master
+
+**How hierarchical retrieval works:**
+1. When building a specific page (e.g., "Checkout"), first check `design-system/pages/checkout.md`
+2. If the page file exists, its rules **override** the Master file
+3. If not, use `design-system/MASTER.md` exclusively
+
+### Step 3: Supplement with Detailed Searches (as needed)
+
+After getting the design system, use domain searches to get additional details:
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --domain <domain> [-n <max_results>]
+```
+
+**When to use detailed searches:**
+
+| Need | Domain | Example |
+|------|--------|---------|
+| More style options | `style` | `--domain style "glassmorphism dark"` |
+| Chart recommendations | `chart` | `--domain chart "real-time dashboard"` |
+| UX best practices | `ux` | `--domain ux "animation accessibility"` |
+| Alternative fonts | `typography` | `--domain typography "elegant luxury"` |
+| Landing structure | `landing` | `--domain landing "hero social-proof"` |
+
+### Step 4: Stack Guidelines (Default: html-tailwind)
+
+Get implementation-specific best practices. If user doesn't specify a stack, **default to `html-tailwind`**.
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "<keyword>" --stack html-tailwind
+```
+
+Available stacks: `html-tailwind`, `react`, `nextjs`, `vue`, `svelte`, `swiftui`, `react-native`, `flutter`, `shadcn`, `jetpack-compose`
+
+---
+
+## Search Reference
+
+### Available Domains
+
+| Domain | Use For | Example Keywords |
+|--------|---------|------------------|
+| `product` | Product type recommendations | SaaS, e-commerce, portfolio, healthcare, beauty, service |
+| `style` | UI styles, colors, effects | glassmorphism, minimalism, dark mode, brutalism |
+| `typography` | Font pairings, Google Fonts | elegant, playful, professional, modern |
+| `color` | Color palettes by product type | saas, ecommerce, healthcare, beauty, fintech, service |
+| `landing` | Page structure, CTA strategies | hero, hero-centric, testimonial, pricing, social-proof |
+| `chart` | Chart types, library recommendations | trend, comparison, timeline, funnel, pie |
+| `ux` | Best practices, anti-patterns | animation, accessibility, z-index, loading |
+| `react` | React/Next.js performance | waterfall, bundle, suspense, memo, rerender, cache |
+| `web` | Web interface guidelines | aria, focus, keyboard, semantic, virtualize |
+| `prompt` | AI prompts, CSS keywords | (style name) |
+
+### Available Stacks
+
+| Stack | Focus |
+|-------|-------|
+| `html-tailwind` | Tailwind utilities, responsive, a11y (DEFAULT) |
+| `react` | State, hooks, performance, patterns |
+| `nextjs` | SSR, routing, images, API routes |
+| `vue` | Composition API, Pinia, Vue Router |
+| `svelte` | Runes, stores, SvelteKit |
+| `swiftui` | Views, State, Navigation, Animation |
+| `react-native` | Components, Navigation, Lists |
+| `flutter` | Widgets, State, Layout, Theming |
+| `shadcn` | shadcn/ui components, theming, forms, patterns |
+| `jetpack-compose` | Composables, Modifiers, State Hoisting, Recomposition |
+
+---
+
+## Example Workflow
+
+**User request:** "Làm landing page cho dịch vụ chăm sóc da chuyên nghiệp"
+
+### Step 1: Analyze Requirements
+- Product type: Beauty/Spa service
+- Style keywords: elegant, professional, soft
+- Industry: Beauty/Wellness
+- Stack: html-tailwind (default)
+
+### Step 2: Generate Design System (REQUIRED)
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "beauty spa wellness service elegant" --design-system -p "Serenity Spa"
+```
+
+**Output:** Complete design system with pattern, style, colors, typography, effects, and anti-patterns.
+
+### Step 3: Supplement with Detailed Searches (as needed)
+
+```bash
+# Get UX guidelines for animation and accessibility
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "animation accessibility" --domain ux
+
+# Get alternative typography options if needed
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "elegant luxury serif" --domain typography
+```
+
+### Step 4: Stack Guidelines
+
+```bash
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "layout responsive form" --stack html-tailwind
+```
+
+**Then:** Synthesize design system + detailed searches and implement the design.
+
+---
+
+## Output Formats
+
+The `--design-system` flag supports two output formats:
+
+```bash
+# ASCII box (default) - best for terminal display
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "fintech crypto" --design-system
+
+# Markdown - best for documentation
+python3 .trae/skills/ui-ux-pro-max/scripts/search.py "fintech crypto" --design-system -f markdown
+```

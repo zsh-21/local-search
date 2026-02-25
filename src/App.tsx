@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { List } from "react-window";
 import "./App.css";
+import { login, User } from "./api";
 
 interface AppItem {
   name: string;
@@ -379,28 +380,38 @@ function SearchView() {
   useEffect(() => {
     inputRef.current?.focus();
     const handleReset = async() => {
-      if (settings.keepStateOnClose) {
-        // 如果开启了保留状态，只重新聚焦，不重置
-        setTimeout(() => inputRef.current?.focus(), 50);
-        return;
-      }
-      const nextTypeId = settings.defaultSearchTypeId || "all";
-      setSearchTypeId(nextTypeId);
-      setQuery("");
-	  const resp = (await window.ipcRenderer?.invoke("get-history")) as
-          | { results: AppItem[] }
-          | undefined;
+      // 这里的 settings 必须是最新的，否则会导致 keepStateOnClose 判断错误
+      window.ipcRenderer?.invoke("get-settings").then(async (latestSettings: AppSettings) => {
+        const s = normalizeSettings(latestSettings);
+        if (s.keepStateOnClose) {
+          // 如果开启了保留状态，只重新聚焦，不重置
+          setTimeout(() => {
+            inputRef.current?.focus();
+            window.ipcRenderer?.invoke("search-view-ready");
+          }, 50);
+          return;
+        }
+        const nextTypeId = s.defaultSearchTypeId || "all";
+        setSearchTypeId(nextTypeId);
+        setQuery("");
+        const resp = (await window.ipcRenderer?.invoke("get-history")) as
+            | { results: AppItem[] }
+            | undefined;
         const historyItems = resp?.results ?? [];
-     setResults(filterItemsBySearchType(historyItems, nextTypeId));
-     setVisibleCount(50);
-      setIsSearching(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
+        setResults(filterItemsBySearchType(historyItems, nextTypeId));
+        setVisibleCount(50);
+        setIsSearching(false);
+        setTimeout(() => {
+          inputRef.current?.focus();
+          window.ipcRenderer?.invoke("search-view-ready");
+        }, 50);
+      });
     };
     window.ipcRenderer?.on("reset-search", handleReset);
     return () => {
       window.ipcRenderer?.removeAllListeners("reset-search");
     };
-  }, [settings.defaultSearchTypeId, settings.keepStateOnClose]);
+  }, []);
 
   useEffect(() => {
     const handler = (_event: any, { query: respQuery, results: moreResults }: { query: string, results: AppItem[] }) => {
@@ -528,9 +539,8 @@ function SearchView() {
       path: app.path,
       type: app.type || "file",
     });
-    setQuery("");
-    setResults([]);
-    setIsSearching(false);
+    // 不在这里清除 query 和 results，交给下一次呼出时的 reset-search 处理
+    window.ipcRenderer?.send("hide-window");
   };
 
   const openFolder = (app: AppItem) => {
@@ -605,6 +615,7 @@ function SearchView() {
         }}
       >
         <li className={index === selectedIndex ? "selected" : ""}>
+          <span className="result-index">{index + 1}</span>
           {item.icon ? (
             <img 
               className={`result-icon ${isImg ? "image-preview" : ""}`} 
@@ -987,7 +998,7 @@ function SettingsView() {
   const [error, setError] = useState("");
   const [maximized, setMaximized] = useState(false);
   const [activeKey, setActiveKey] = useState<
-    "general" | "search" | "shortcuts" | "appearance"
+    "general" | "search" | "shortcuts" | "appearance" | "account"
   >("general");
   const [newTypeExt, setNewTypeExt] = useState("");
 
@@ -1123,13 +1134,133 @@ function SettingsView() {
 
   const navItems = useMemo(
     () => [
-      { key: "general" as const, label: "通用" },
-      { key: "search" as const, label: "搜索" },
-      { key: "shortcuts" as const, label: "快捷键" },
-      { key: "appearance" as const, label: "外观" },
+      {
+        key: "general" as const,
+        label: "通用",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+            <path
+              d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+          </svg>
+        ),
+      },
+      {
+        key: "search" as const,
+        label: "搜索",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
+            <path d="m20 20-3.3-3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
+        key: "shortcuts" as const,
+        label: "快捷键",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M7 15a4 4 0 1 1 0-8h6a4 4 0 1 1 0 8H7Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+            <path d="M10 9v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M14 9v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
+        key: "appearance" as const,
+        label: "外观",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 3a9 9 0 1 0 9 9c0-.4-.03-.8-.08-1.19A7 7 0 0 1 12 3Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ),
+      },
+      {
+        key: "account" as const,
+        label: "账号",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M20 21a8 8 0 1 0-16 0"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+            <path
+              d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+          </svg>
+        ),
+      },
     ],
     [],
   );
+
+  const sectionMeta = useMemo(() => {
+    return {
+      general: { title: "通用", desc: "启动、状态与历史记录" },
+      search: { title: "搜索", desc: "默认类型、自定义类型与顺序" },
+      shortcuts: { title: "快捷键", desc: "呼出搜索与打开设置" },
+      appearance: { title: "外观", desc: "主题模式与主题色" },
+      account: { title: "账号", desc: "登录与账号状态" },
+    } as const;
+  }, []);
+
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem("fs_user");
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [loginForm, setLoginForm] = useState({ account: "", password: "" });
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginForm.account || !loginForm.password) {
+      setLoginError("请输入账号和密码");
+      return;
+    }
+    setIsLoggingIn(true);
+    setLoginError("");
+
+    try {
+      const data = await login(loginForm.account, loginForm.password);
+      setUser(data.user);
+      localStorage.setItem("fs_user", JSON.stringify(data.user));
+      localStorage.setItem("fs_token", data.token);
+      setLoginForm({ account: "", password: "" });
+    } catch (err: any) {
+      setLoginError(err.message || "登录失败");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem("fs_user");
+    localStorage.removeItem("fs_token");
+  };
+
 
   const getSearchTypeIcon = (opt: any) => {
     if (opt.id === "all") {
@@ -1172,6 +1303,13 @@ function SettingsView() {
     { name: "钛金灰", color: "#64748b" },
   ];
 
+  const formatDateTime = (value: unknown) => {
+    if (!value) return "";
+    const d = new Date(String(value));
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString();
+  };
+
   return (
     <div className="container" onKeyDown={handleKeyDown}>
       <div
@@ -1191,6 +1329,41 @@ function SettingsView() {
         </div>
         <div className="settings-header-spacer" />
         <div className="settings-window-controls">
+          <button
+            type="button"
+            className={`settings-avatar-btn ${user ? "logged-in" : "logged-out"}`}
+            onClick={() => setActiveKey("account")}
+            onDoubleClick={(e) => e.stopPropagation()}
+            aria-label={user ? "查看账号信息" : "未登录，前往登录"}
+            title={user ? "账号信息" : "未登录"}
+          >
+            {user ? (
+              <span className="settings-avatar-text">
+                {user.avatarText || user.nickname?.slice(0, 1).toUpperCase()}
+              </span>
+            ) : (
+              <svg
+                className="settings-avatar-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20 21a8 8 0 1 0-16 0"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+              </svg>
+            )}
+          </button>
           <button
             type="button"
             className="window-btn"
@@ -1238,13 +1411,18 @@ function SettingsView() {
                   className={`settings-nav-item ${activeKey === item.key ? "active" : ""}`}
                   onClick={() => setActiveKey(item.key)}
                 >
-                  {item.label}
+                  <span className="settings-nav-icon">{item.icon}</span>
+                  <span className="settings-nav-label">{item.label}</span>
                 </button>
               ))}
             </div>
 
             <div className="settings-main">
               <div className="settings-main-inner">
+                <div className="settings-section-header">
+                  <div className="settings-section-title">{sectionMeta[activeKey].title}</div>
+                  <div className="settings-section-desc">{sectionMeta[activeKey].desc}</div>
+                </div>
                 {activeKey === "general" ? (
                   <div className="settings-content">
                     <div className="settings-group">
@@ -1398,58 +1576,181 @@ function SettingsView() {
                             添加
                           </button>
                         </div>
-
-                        {error ? <div className="settings-error">{error}</div> : null}
                       </div>
+                      {error ? <div className="settings-error">{error}</div> : null}
+                    </div>
 
-                      <div className="settings-group">
-                        <div className="settings-group-title">类型顺序</div>
-                        <div className="type-order-list">
-                          <div className="type-order-list-inner">
-                            {typeOptions.map((opt) => (
-                              <TypeOrderItem
-                                key={opt.id}
-                                id={opt.id}
-                                label={opt.label}
-                                isCustom={opt.id.startsWith("ext:")}
-                                orderedIds={typeOptions.map((x) => x.id)}
-                                onMove={(fromId, toId, position) => {
-                                  const nextOrder = moveTypeId(
-                                    typeOptions.map((x) => x.id),
-                                    fromId,
-                                    toId,
-                                    position
-                                  );
-                                  setDraft({ ...draft, searchTypeOrder: nextOrder });
-                                  setError("");
-                                }}
-                                onDelete={(targetId) => {
-                                  if (!targetId.startsWith("ext:")) return;
-                                  const ext = targetId.slice(4);
-                                  const nextCustom = (draft.customSearchTypes || []).filter(
-                                    (x) => x !== ext,
-                                  );
-                                  const nextDefault =
-                                    draft.defaultSearchTypeId === targetId
-                                      ? "all"
-                                      : draft.defaultSearchTypeId;
-                                  const nextOrder = getSearchTypeOptions(
-                                    nextCustom,
-                                    (draft.searchTypeOrder || []).filter((x) => x !== targetId),
-                                  ).map((x) => x.id);
-                                  setDraft({
-                                    ...draft,
-                                    customSearchTypes: nextCustom,
-                                    defaultSearchTypeId: nextDefault,
-                                    searchTypeOrder: nextOrder,
-                                  });
-                                  setError("");
-                                }}
-                              />
-                            ))}
-                          </div>
+                    <div className="settings-group">
+                      <div className="settings-group-title">类型顺序</div>
+                      <div className="type-order-list">
+                        <div className="type-order-list-inner">
+                          {typeOptions.map((opt) => (
+                            <TypeOrderItem
+                              key={opt.id}
+                              id={opt.id}
+                              label={opt.label}
+                              isCustom={opt.id.startsWith("ext:")}
+                              orderedIds={typeOptions.map((x) => x.id)}
+                              onMove={(fromId, toId, position) => {
+                                const nextOrder = moveTypeId(
+                                  typeOptions.map((x) => x.id),
+                                  fromId,
+                                  toId,
+                                  position
+                                );
+                                setDraft({ ...draft, searchTypeOrder: nextOrder });
+                                setError("");
+                              }}
+                              onDelete={(targetId) => {
+                                if (!targetId.startsWith("ext:")) return;
+                                const ext = targetId.slice(4);
+                                const nextCustom = (draft.customSearchTypes || []).filter(
+                                  (x) => x !== ext,
+                                );
+                                const nextDefault =
+                                  draft.defaultSearchTypeId === targetId
+                                    ? "all"
+                                    : draft.defaultSearchTypeId;
+                                const nextOrder = getSearchTypeOptions(
+                                  nextCustom,
+                                  (draft.searchTypeOrder || []).filter((x) => x !== targetId),
+                                ).map((x) => x.id);
+                                setDraft({
+                                  ...draft,
+                                  customSearchTypes: nextCustom,
+                                  defaultSearchTypeId: nextDefault,
+                                  searchTypeOrder: nextOrder,
+                                });
+                                setError("");
+                              }}
+                            />
+                          ))}
                         </div>
                       </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {activeKey === "account" ? (
+                  <div className="settings-content">
+                    <div className="settings-group">
+                      <div className="settings-group-title">账号信息</div>
+                      {user ? (
+                        <div className="account-profile">
+                          <div className="profile-header">
+                            <div className="avatar-placeholder">
+                              {user.avatarText || user.nickname?.slice(0, 1).toUpperCase()}
+                            </div>
+                            <div className="profile-info">
+                              <div className="profile-name">{user.nickname || user.phone || user.email}</div>
+                              <div className="profile-status">已登录</div>
+                            </div>
+                          </div>
+                          <div className="account-details">
+                            <div className="account-detail-row">
+                              <div className="account-detail-key">用户ID</div>
+                              <div className="account-detail-val">{user.id}</div>
+                            </div>
+                            {user.phone ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">手机号</div>
+                                <div className="account-detail-val">{user.phone}</div>
+                              </div>
+                            ) : null}
+                            {user.email ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">邮箱</div>
+                                <div className="account-detail-val">{user.email}</div>
+                              </div>
+                            ) : null}
+                            {user.role ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">角色</div>
+                                <div className="account-detail-val">{user.role}</div>
+                              </div>
+                            ) : null}
+                            {formatDateTime(user.createdAt) ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">创建时间</div>
+                                <div className="account-detail-val">
+                                  {formatDateTime(user.createdAt)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {formatDateTime(user.updatedAt) ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">更新时间</div>
+                                <div className="account-detail-val">
+                                  {formatDateTime(user.updatedAt)}
+                                </div>
+                              </div>
+                            ) : null}
+                            {draft.theme ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">主题模式</div>
+                                <div className="account-detail-val">{draft.theme}</div>
+                              </div>
+                            ) : null}
+                            {draft.accentColor ? (
+                              <div className="account-detail-row">
+                                <div className="account-detail-key">主题色</div>
+                                <div className="account-detail-val">
+                                  <span
+                                    className="account-color-swatch"
+                                    style={{ background: draft.accentColor }}
+                                    aria-hidden="true"
+                                  />
+                                  <span className="account-color-text">{draft.accentColor}</span>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="settings-cancel logout-btn"
+                            onClick={handleLogout}
+                          >
+                            退出登录
+                          </button>
+                        </div>
+                      ) : (
+                        <form className="login-form" onSubmit={handleLogin}>
+                          <div className="form-row">
+                            <div className="form-label">账号</div>
+                            <input
+                              type="text"
+                              className="text-input"
+                              value={loginForm.account}
+                              onChange={(e) =>
+                                setLoginForm({ ...loginForm, account: e.target.value })
+                              }
+                              placeholder="请输入手机号/邮箱/昵称"
+                            />
+                          </div>
+                          <div className="form-row">
+                            <div className="form-label">密码</div>
+                            <input
+                              type="password"
+                              className="text-input"
+                              value={loginForm.password}
+                              onChange={(e) =>
+                                setLoginForm({ ...loginForm, password: e.target.value })
+                              }
+                              placeholder="请输入密码"
+                            />
+                          </div>
+                          {loginError && <div className="settings-error">{loginError}</div>}
+                          <div className="form-actions">
+                            <button
+                              type="submit"
+                              className="settings-confirm login-btn"
+                              disabled={isLoggingIn}
+                            >
+                              {isLoggingIn ? "登录中..." : "登录"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
                     </div>
                   </div>
                 ) : null}

@@ -415,6 +415,12 @@ function resolveAppId(appId: string): string {
 process.env.DIST = path.join(__dirname, '../dist');
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public');
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
+let ignoreSearchBlurUntil = 0;
+let searchHideTimer: NodeJS.Timeout | null = null;
+let searchWasFocusedSinceShow = false;
+let settingsReadyToShow = false;
+let searchAllowBlurHide = false;
+let searchVisibleAt = 0;
 
 function isRectVisibleOnAnyDisplay(rect: Electron.Rectangle) {
 	const displays = screen.getAllDisplays();
@@ -463,13 +469,31 @@ function createWindow() {
 		win = null;
 	});
 
-	// FLAG 点击空白处（窗口失去焦点）时隐藏
-	win.on('blur', () => {
-		if (win && !win.webContents.isDevToolsOpened()) {
-			win.hide();
+	win.on('focus', () => {
+		searchWasFocusedSinceShow = true;
+		if (searchHideTimer) {
+			clearTimeout(searchHideTimer);
+			searchHideTimer = null;
 		}
 	});
 
+	// FLAG 点击空白处（窗口失去焦点）时隐藏
+	win.on('blur', () => {
+		if (!searchAllowBlurHide) return;
+		if (Date.now() < ignoreSearchBlurUntil) return;
+		if (Date.now() - searchVisibleAt < 500) return;
+		if (!searchWasFocusedSinceShow) return;
+		if (searchHideTimer) clearTimeout(searchHideTimer);
+		searchHideTimer = setTimeout(() => {
+			searchHideTimer = null;
+			if (!win || win.isDestroyed()) return;
+			if (win.webContents.isDevToolsOpened()) return;
+			if (win.isFocused()) return;
+			if (win.isVisible()) win.hide();
+		}, 140);
+	});
+
+	win.removeMenu();
 	if (VITE_DEV_SERVER_URL) win.loadURL(VITE_DEV_SERVER_URL);
 	else win.loadFile(path.join(process.env.DIST || '', 'index.html'));
 
@@ -482,11 +506,13 @@ function createSettingsWindow() {
 	const width = 680;
 	const height = 520;
 
+	settingsReadyToShow = false;
 	settingsWin = new BrowserWindow({
 		width,
 		height,
 		x: typeof bounds?.x === 'number' ? bounds.x : undefined,
 		y: typeof bounds?.y === 'number' ? bounds.y : undefined,
+		show: false,
 		frame: false,
 		transparent: true,
 		hasShadow: true,
@@ -512,6 +538,15 @@ function createSettingsWindow() {
 		settingsWin = null;
 	});
 
+	settingsWin.once('ready-to-show', () => {
+		if (!settingsWin || settingsWin.isDestroyed()) return;
+		settingsReadyToShow = true;
+		settingsWin.show();
+		settingsWin.focus();
+		settingsWin.webContents.send('settings-window-opened');
+	});
+
+	settingsWin.removeMenu();
 	if (VITE_DEV_SERVER_URL) {
 		const u = new URL(VITE_DEV_SERVER_URL);
 		u.searchParams.set('view', 'settings');
@@ -519,10 +554,6 @@ function createSettingsWindow() {
 	} else {
 		settingsWin.loadFile(path.join(process.env.DIST || '', 'index.html'), { query: { view: 'settings' } });
 	}
-
-	settingsWin.show();
-	settingsWin.focus();
-	settingsWin.webContents.send('settings-window-opened');
 }
 
 function startUserDirectoryWatchers() {
@@ -558,31 +589,45 @@ function openSearchWindow() {
 			return;
 		}
 
+		searchWasFocusedSinceShow = false;
+		searchAllowBlurHide = false;
+		if (searchHideTimer) {
+			clearTimeout(searchHideTimer);
+			searchHideTimer = null;
+		}
+		ignoreSearchBlurUntil = Date.now() + 900;
 		win.show();
-	win.focus();
-	// reset-search 事件在渲染进程中根据 keepStateOnClose 设置决定是否真的重置
-	win.webContents.send('reset-search');
-	return;
-}
-win = null;
-createWindow();
-setTimeout(() => {
-	win?.webContents.send('reset-search');
-}, 60);
+		win.focus();
+		searchVisibleAt = Date.now();
+		setTimeout(() => {
+			if (win && !win.isDestroyed() && win.isVisible()) win.focus();
+		}, 80);
+		// reset-search 事件在渲染进程中根据 keepStateOnClose 设置决定是否真的重置
+		win.webContents.send('reset-search');
+		return;
+	}
+	win = null;
+	createWindow();
+	setTimeout(() => {
+		win?.webContents.send('reset-search');
+	}, 60);
 }
 
 function toggleSearchWindow() {
-if (win && !win.isDestroyed()) {
-	if (win.isVisible()) win.hide();
-	else openSearchWindow();
-	return;
-}
-openSearchWindow();
+	if (win && !win.isDestroyed()) {
+		if (win.isVisible()) win.hide();
+		else openSearchWindow();
+		return;
+	}
+	openSearchWindow();
 }
 
 function showSettingsWindow() {
 	if (settingsWin && !settingsWin.isDestroyed()) {
-		if (!settingsWin.isVisible()) settingsWin.show();
+		if (!settingsWin.isVisible()) {
+			if (settingsReadyToShow) settingsWin.show();
+			else return;
+		}
 		settingsWin.focus();
 		settingsWin.webContents.send('settings-window-opened');
 		return;
@@ -590,6 +635,32 @@ function showSettingsWindow() {
 	settingsWin = null;
 	createSettingsWindow();
 }
+
+ipcMain.handle('search-view-ready', () => {
+	searchAllowBlurHide = true;
+	// Do not reduce the protection time set by openSearchWindow
+	// ignoreSearchBlurUntil = Date.now() + 120; 
+});
+
+ipcMain.handle('login-request', async (_event, { url, options }) => {
+	try {
+		const response = await fetch(url, options);
+		const data = await response.json();
+		return {
+			ok: response.ok,
+			status: response.status,
+			statusText: response.statusText,
+			data
+		};
+	} catch (error: any) {
+		return {
+			ok: false,
+			status: 500,
+			statusText: error.message,
+			data: null
+		};
+	}
+});
 
 async function addQuickItemFromDialog() {
 	try {
