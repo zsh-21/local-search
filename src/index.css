@@ -8,4 +8,5 @@ body,
 	height: 100%;
 	margin: 0;
 	overflow: hidden;
+	background: var(--fs-bg, #0f172a);
 }

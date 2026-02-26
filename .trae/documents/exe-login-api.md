@@ -2,7 +2,7 @@
 
 ### 简介
 - 目标：为桌面 EXE 提供独立登录接口，但与网站登录保持一致（同一套数据库与账号体系，互通）。
-- 结果：新增 `POST /api/exe/login`，复用现有登录校验逻辑（账号解析、密码校验、JWT 颁发、返回 user 信息）。
+- 结果：新增 `POST /api/exe/login`，复用现有登录校验逻辑（账号解析、密码校验、JWT 颁发、返回 user 信息）。同时在“支付成功”后自动更新用户会员状态，并在登录成功时返回会员到期信息，便于 EXE 端开放会员功能。
 
 ### 接口说明
 **请求地址**
@@ -21,10 +21,34 @@
 ```
 
 **响应体**
-- 成功时：`{ code: 0, data: { token, user }, message: "" }`
+- 成功时：`{ code: 0, data: { token, user, membership? }, message: "" }`
 - 失败时：`{ code: 401, data: null, message: "账号或密码错误" }`
 
-示例：
+成功示例（有效会员）：
+```json
+{
+  "code": 0,
+  "data": {
+    "token": "BearerTokenHere",
+    "user": {
+      "id": "xxx",
+      "nickname": "xxx",
+      "phone": "13800138000",
+      "email": "xx@xx.com",
+      "avatarText": "nickname-initials",
+      "theme": "light/dark",
+      "primaryColor": "#hex",
+      "memberExpiresAt": "2026-03-31T12:00:00.000Z"
+    },
+    "membership": {
+      "expiresAt": "2026-03-31T12:00:00.000Z"
+    }
+  },
+  "message": ""
+}
+```
+
+成功示例（非会员或已过期，不返回 `membership`）：
 ```json
 {
   "code": 0,
@@ -75,6 +99,18 @@
 - `avatarText`: 头像文字标识（通常是昵称首字母）
 - `theme`: 用户偏好的主题色模式
 - `primaryColor`: 用户自定义的主题色
+- `memberExpiresAt`: 会员到期时间（仅在数据库记录存在时包含）
+
+#### 5. 会员状态与支付联动 (Membership & Payment)
+- 登录时的会员判定：当 `memberExpiresAt > 当前时间` 时视为“有效会员”，响应中将包含 `membership.expiresAt` 字段。
+- 支付成功自动续期：
+  - 接口：`GET /api/payment/status?out_trade_no=ORD...`（需要携带 `Authorization: Bearer <token>`）
+  - 当检测到支付成功（`status: 'paid'`），会为对应用户自动续期：
+    - 月度订阅：按 `quantity` 月续期
+    - 年度订阅：按 `12 × quantity` 月续期
+  - 续期基准：
+    - 若用户当前仍为有效会员，则在现有到期日基础上顺延；
+    - 若已过期或未开通，则从当前时间起算。
 
 ### 如何使用（EXE 端）
 1. **登录请求**：
@@ -84,15 +120,42 @@
 3. **接口调用**：
    - 在后续需要身份验证的接口中，在 HTTP Header 中添加：
      `Authorization: Bearer <token>`
+4. **会员功能开放**：
+    - 登录成功后检查是否存在 `data.membership` 字段：
+      - 存在：视为有效会员，开放对应功能；
+      - 不存在：保持普通用户权限。
+    - 桌面端会员管控功能清单（加入配置即代表需要会员）：
+      - 配置文件：`src/membershipFeatureConfig.ts`
+      - 当前管控项：
+        - 主题颜色设置
+        - 默认类型的指定
+        - 列表文件地址的显示
+        - 自定义新增后缀
+5. **支付后生效**：
+    - 完成支付后轮询 `GET /api/payment/status`；
+    - 当返回 `status: 'paid'` 时，会员已自动续期；
+    - 可再次调用登录接口或拉取用户信息，以刷新到期时间展示。
 
 ### 验证方式
 - 使用 Postman/Apifox/curl 调用测试：
   - 测试手机号登录：`{"account": "138...", "password": "..."}`
   - 测试邮箱登录：`{"account": "test@abc.com", "password": "..."}`
   - 测试错误密码：预期返回 `code: 401`
+- 支付联动验证：
+  - 创建并支付一笔订单；
+  - 轮询支付状态至 `paid`；
+  - 再次登录或拉取用户信息，确认 `memberExpiresAt` 已更新。
 
 ### 参考代码
-- 路由实现：[exe.ts](file:///e:/react/file-search-admin/packages/server/src/routes/exe.ts)
+- 路由实现（EXE 登录）：[exe.ts](file:///e:/react/file-search-admin/packages/server/src/routes/exe.ts)
 - 密码解密：[crypto.ts](file:///e:/react/file-search-admin/packages/server/src/utils/crypto.ts)
 - JWT 签发：[jwt.ts](file:///e:/react/file-search-admin/packages/server/src/auth/jwt.ts)
 - 路由挂载：[app.ts](file:///e:/react/file-search-admin/packages/server/src/app.ts)
+- 会员字段（用户模型）：[User.ts](file:///e:/react/file-search-admin/packages/server/src/models/User.ts)
+- 支付状态与会员续期：[payment.ts](file:///e:/react/file-search-admin/packages/server/src/routes/payment.ts)
+
+### 版本与变更记录
+- 生效日期：2026-02-26
+- 新增能力：
+  - 支付成功自动续期会员（根据订单计划与数量）
+  - 登录接口在有效会员时返回 `membership.expiresAt`

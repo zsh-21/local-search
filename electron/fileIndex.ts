@@ -50,12 +50,10 @@ function fuzzySubsequenceScore(target: string, query: string) {
 
 function scoreEntry(entry: FileIndexEntry, queryLower: string, queryParts: string[]) {
 	const base = normalizeForMatch(entry.name);
-	const fullPathLower = entry.path.toLowerCase();
 
 	let score = 0;
 
-	// Check if all query parts are present in the name or path
-	const allPartsMatch = queryParts.every(part => base.includes(part) || fullPathLower.includes(part));
+	const allPartsMatch = queryParts.every((part) => base.includes(part));
 	if (!allPartsMatch) return 0;
 
 	// Higher score for matches in the name
@@ -84,7 +82,6 @@ function shouldSkipDirName(name: string) {
 	if (lower === '.idea') return true;
 	if (lower === '$recycle.bin') return true;
 	if (lower === 'system volume information') return true;
-	if (lower === 'windows') return true;
 	// Allow Program Files and ProgramData as users might want to search for apps/files there
 	return false;
 }

@@ -44,6 +44,12 @@ description: 强制执行严格的代码修改规则：仅做最小改动，以�
 8.  **中文优先原则 (Chinese Language First)**：
     *   所有的**注释**、**文档**、**描述**以及**与用户的对话**，必须使用**中文**。
 
+9.  **手动修改保护原则 (User-Edited Protection)**：
+    *   **必须**将用户已手动修改的内容视为“不可回退的基线”，禁止覆盖、回滚或用“更优雅写法”替换其实现。
+    *   **严禁**对非相关文件或非相关代码做顺手式调整（包括但不限于：格式化、重命名、抽公共方法、替换写法、移动文件）。
+    *   **默认**优先在既有文件与既有结构内完成目标；仅当“无法在现有结构实现”时，才允许新建文件或拆分组件。
+    *   **禁止**无明确需求地新增文档类文件（如 README、说明文档等）或为了“补全规范”而引入与任务无关的改动。
+
 ## 使用说明
 
 *   **修改代码时必须始终激活此技能。**
@@ -51,3 +57,22 @@ description: 强制执行严格的代码修改规则：仅做最小改动，以�
 *   在应用变更后，必须使用 `GetDiagnostics` 等工具验证代码是否存在 Linter 错误。
 *   在规划变更时，显式检查并确认没有触碰无关的函数或行。
 *   如果发现“最佳实践”与“用户的手动修改”存在冲突，**必须**遵循用户的手动修改。
+
+### 代码示例（必须包含中文注释）
+
+```ts
+// 将字符串安全地裁剪到指定长度：空值返回空字符串，超长时追加省略号
+export function truncateText(input: string | null | undefined, maxLength: number): string {
+  // 兜底：将 null/undefined 统一处理为可用字符串
+  const value = input ?? ""
+
+  // 边界：maxLength 非法时直接返回原值，避免抛异常影响原有功能
+  if (!Number.isFinite(maxLength) || maxLength <= 0) return value
+
+  // 未超长：直接返回
+  if (value.length <= maxLength) return value
+
+  // 超长：截断并追加省略号
+  return `${value.slice(0, maxLength)}…`
+}
+```

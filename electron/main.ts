@@ -19,6 +19,7 @@ interface AppSettings {
 	customSearchTypes: string[];
 	searchTypeOrder: string[];
 	keepStateOnClose: boolean;
+	showResultPath: boolean;
 	enableHistory: boolean;
 	accentColor: string;
 }
@@ -32,6 +33,7 @@ const CONFIG_PATH = path.join(app.getPath('userData'), 'window-config.json');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const SETTINGS_WINDOW_CONFIG_PATH = path.join(app.getPath('userData'), 'settings-window-config.json');
 const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
+const FILE_INDEX_META_PATH = path.join(app.getPath('userData'), 'file-index-meta.json');
 const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
 
 const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
@@ -47,7 +49,7 @@ let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
-const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 750_000 });
+const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
 const userDirWatchers: Array<ReturnType<typeof watch>> = [];
 const startMenuShortcutIndex = new Map<string, string>();
 const iconDataCache = new Map<string, string>();
@@ -105,6 +107,14 @@ function findStartMenuShortcutByName(name: string) {
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 
+function normalizeIconFileSpec(spec: string) {
+	const raw = (spec || '').trim();
+	if (!raw) return '';
+	const noQuotes = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+	const beforeComma = noQuotes.split(',')[0]?.trim() || '';
+	return beforeComma;
+}
+
 async function getFileIconData(filePath: string) {
 	const key = `file:${filePath}`;
 	const cached = iconDataCache.get(key);
@@ -112,6 +122,32 @@ async function getFileIconData(filePath: string) {
 	let iconData = '';
 	try {
 		const ext = path.extname(filePath).toLowerCase();
+		if ((ext === '.lnk' || ext === '.url') && existsSync(filePath)) {
+			if (ext === '.lnk') {
+				const info = await resolveLnkByPowerShell(filePath);
+				const iconSpec = normalizeIconFileSpec(info?.iconLocation || '');
+				const iconResolved = resolveAppId(iconSpec);
+				if (iconResolved && existsSync(iconResolved)) {
+					const icon = await app.getFileIcon(iconResolved, { size: 'large' });
+					if (!icon.isEmpty()) iconData = icon.toDataURL();
+				}
+				if (!iconData) {
+					const targetResolved = resolveAppId(info?.targetPath || '');
+					const sameTarget =
+						targetResolved && targetResolved.toLowerCase() === resolveAppId(filePath).toLowerCase();
+					if (targetResolved && !sameTarget && existsSync(targetResolved)) {
+						iconData = await getFileIconData(targetResolved);
+					}
+				}
+			} else if (ext === '.url') {
+				const iconFile = normalizeIconFileSpec(readUrlIconFile(filePath));
+				const iconResolved = resolveAppId(iconFile);
+				if (iconResolved && existsSync(iconResolved)) {
+					iconData = await getFileIconData(iconResolved);
+				}
+			}
+		}
+
 		if (IMAGE_EXTENSIONS.has(ext) && existsSync(filePath)) {
 			try {
 				// 对于图片，尝试生成缩略图
@@ -127,8 +163,8 @@ async function getFileIconData(filePath: string) {
 
 		// 如果不是图片或者生成缩略图失败，使用系统图标
 		if (!iconData) {
-			const icon = await app.getFileIcon(filePath);
-			iconData = icon.toDataURL();
+			const icon = await app.getFileIcon(filePath, { size: 'large' });
+			if (!icon.isEmpty()) iconData = icon.toDataURL();
 		}
 	} catch {}
 	setIconCache(key, iconData);
@@ -151,6 +187,25 @@ async function getAppIconData(appName: string, appId: string) {
 	} catch {}
 	setIconCache(key, iconData);
 	return iconData;
+}
+
+const FILE_INDEX_VERSION = 2;
+
+function loadFileIndexMeta(): { version: number } | null {
+	try {
+		if (!existsSync(FILE_INDEX_META_PATH)) return null;
+		const raw = JSON.parse(readFileSync(FILE_INDEX_META_PATH, 'utf-8'));
+		if (typeof raw?.version !== 'number') return null;
+		return { version: raw.version };
+	} catch {
+		return null;
+	}
+}
+
+function saveFileIndexMeta(meta: { version: number }) {
+	try {
+		writeFileSync(FILE_INDEX_META_PATH, JSON.stringify(meta));
+	} catch {}
 }
 
 function loadConfig() {
@@ -232,6 +287,7 @@ function loadSettings(): AppSettings {
 				customSearchTypes,
 				searchTypeOrder,
 				keepStateOnClose: Boolean(raw?.keepStateOnClose),
+				showResultPath: Boolean(raw?.showResultPath),
 				enableHistory: raw?.enableHistory !== false,
 				accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : '#38bdf8',
 			};
@@ -247,6 +303,7 @@ function loadSettings(): AppSettings {
 		customSearchTypes: [],
 		searchTypeOrder: ['all', 'file'],
 		keepStateOnClose: false,
+		showResultPath: false,
 		enableHistory: true,
 		accentColor: '#38bdf8',
 	};
@@ -412,6 +469,96 @@ function resolveAppId(appId: string): string {
 	return resolved;
 }
 
+async function openResolvedTarget(resolved: string) {
+	if (!resolved) return false;
+	if (resolved.includes('\\') || resolved.includes('/')) {
+		const msg = await shell.openPath(resolved);
+		return !msg;
+	}
+	await shell.openExternal(`shell:AppsFolder\\${resolved}`);
+	return true;
+}
+
+function readUrlShortcut(filePath: string) {
+	try {
+		const raw = readFileSync(filePath, 'utf-8');
+		const m = raw.match(/^\s*URL\s*=\s*(.+)\s*$/im);
+		const url = m?.[1]?.trim();
+		return url || '';
+	} catch {
+		return '';
+	}
+}
+
+function readUrlIconFile(filePath: string) {
+	try {
+		const raw = readFileSync(filePath, 'utf-8');
+		const m = raw.match(/^\s*IconFile\s*=\s*(.+)\s*$/im);
+		const iconFile = m?.[1]?.trim();
+		return iconFile || '';
+	} catch {
+		return '';
+	}
+}
+
+function resolveLnkByPowerShell(lnkPath: string) {
+	return new Promise<{ targetPath: string; arguments: string; workingDirectory: string; iconLocation: string } | null>((resolve) => {
+		try {
+			const escaped = lnkPath.replace(/'/g, "''");
+			const cmd =
+				`$w=New-Object -ComObject WScript.Shell;` +
+				`$s=$w.CreateShortcut('${escaped}');` +
+				`$o=@{targetPath=$s.TargetPath;arguments=$s.Arguments;workingDirectory=$s.WorkingDirectory;iconLocation=$s.IconLocation};` +
+				`$o|ConvertTo-Json -Compress`;
+			const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
+			let out = '';
+			ps.stdout.on('data', (c) => (out += c.toString()));
+			ps.on('close', () => {
+				try {
+					const obj = JSON.parse(out || 'null');
+					if (!obj || typeof obj !== 'object') return resolve(null);
+					resolve({
+						targetPath: typeof obj.targetPath === 'string' ? obj.targetPath : '',
+						arguments: typeof obj.arguments === 'string' ? obj.arguments : '',
+						workingDirectory: typeof obj.workingDirectory === 'string' ? obj.workingDirectory : '',
+						iconLocation: typeof obj.iconLocation === 'string' ? obj.iconLocation : '',
+					});
+				} catch {
+					resolve(null);
+				}
+			});
+			ps.on('error', () => resolve(null));
+		} catch {
+			resolve(null);
+		}
+	});
+}
+
+async function openLnkShortcut(lnkPath: string) {
+	const info = await resolveLnkByPowerShell(lnkPath);
+	if (!info?.targetPath) return false;
+	return await new Promise<boolean>((resolve) => {
+		try {
+			const fp = info.targetPath.replace(/'/g, "''");
+			const al = (info.arguments || '').replace(/'/g, "''");
+			const wd = (info.workingDirectory || '').replace(/'/g, "''");
+			const cmd =
+				`$fp='${fp}';` +
+				`$al='${al}';` +
+				`$wd='${wd}';` +
+				`try { ` +
+				`if ($wd) { Start-Process -FilePath $fp -ArgumentList $al -WorkingDirectory $wd -ErrorAction Stop } ` +
+				`else { Start-Process -FilePath $fp -ArgumentList $al -ErrorAction Stop } ` +
+				`} catch { exit 1 }`;
+			const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
+			ps.on('close', (code) => resolve(code === 0));
+			ps.on('error', () => resolve(false));
+		} catch {
+			resolve(false);
+		}
+	});
+}
+
 process.env.DIST = path.join(__dirname, '../dist');
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public');
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
@@ -451,10 +598,15 @@ function createWindow() {
 		y: useBounds ? bounds.y : undefined,
 		show: false,
 		frame: false,
-		transparent: true,
+		transparent: false,
+		backgroundColor: '#0f172a',
+		roundedCorners: true,
 		hasShadow: true,
 		skipTaskbar: true,
 		resizable: false,
+		maximizable: false,
+		minimizable: false,
+		fullscreenable: false,
 		alwaysOnTop: true,
 		icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),
 		webPreferences: {
@@ -489,7 +641,12 @@ function createWindow() {
 			if (!win || win.isDestroyed()) return;
 			if (win.webContents.isDevToolsOpened()) return;
 			if (win.isFocused()) return;
-			if (win.isVisible()) win.hide();
+			if (win.isVisible()) {
+				try {
+					win.webContents.send('search-window-hidden');
+				} catch {}
+				win.hide();
+			}
 		}, 140);
 	});
 
@@ -514,7 +671,9 @@ function createSettingsWindow() {
 		y: typeof bounds?.y === 'number' ? bounds.y : undefined,
 		show: false,
 		frame: false,
-		transparent: true,
+		transparent: false,
+		backgroundColor: '#0f172a',
+		roundedCorners: true,
 		hasShadow: true,
 		skipTaskbar: false,
 		resizable: true,
@@ -556,19 +715,57 @@ function createSettingsWindow() {
 	}
 }
 
-function startUserDirectoryWatchers() {
-	const roots = [
-		app.getPath('desktop'),
-		app.getPath('documents'),
-		app.getPath('downloads'),
-	].filter((p) => typeof p === 'string' && p.trim());
+async function getWindowsFileSystemRoots(): Promise<string[]> {
+	return new Promise((resolve) => {
+		try {
+			const ps = spawn('powershell', [
+				'-NoProfile',
+				'-Command',
+				'Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root',
+			]);
+			let out = '';
+			ps.stdout.on('data', (d) => (out += d.toString()));
+			ps.on('close', () => {
+				const roots = out
+					.split(/\r?\n/g)
+					.map((s) => s.trim())
+					.filter(Boolean)
+					.map((s) => (s.endsWith('\\') ? s : `${s}\\`));
+				resolve(Array.from(new Set(roots)));
+			});
+			ps.on('error', () => resolve(['C:\\']));
+		} catch {
+			resolve(['C:\\']);
+		}
+	});
+}
+
+function shouldSkipWatchPath(fullPath: string) {
+	const lower = fullPath.toLowerCase();
+	return (
+		lower.includes('\\node_modules\\') ||
+		lower.includes('\\.git\\') ||
+		lower.includes('\\.svn\\') ||
+		lower.includes('\\.idea\\') ||
+		lower.includes('\\$recycle.bin\\') ||
+		lower.includes('\\system volume information\\')
+	);
+}
+
+async function startUserDirectoryWatchers() {
+	const roots =
+		process.platform === 'win32'
+			? await getWindowsFileSystemRoots()
+			: [app.getPath('home')].filter((p) => typeof p === 'string' && p.trim());
 
 	for (const root of roots) {
+		if (!root || typeof root !== 'string') continue;
 		if (!existsSync(root)) continue;
 		try {
 			const w = watch(root, { recursive: true }, (_eventType, filename) => {
 				if (!filename) return;
 				const fullPath = path.join(root, filename.toString());
+				if (shouldSkipWatchPath(fullPath)) return;
 				setTimeout(() => {
 					try {
 						if (!existsSync(fullPath)) return;
@@ -583,6 +780,7 @@ function startUserDirectoryWatchers() {
 }
 
 function openSearchWindow() {
+	const settings = loadSettings();
 	if (win && !win.isDestroyed()) {
 		if (win.isVisible()) {
 			win.focus();
@@ -602,20 +800,27 @@ function openSearchWindow() {
 		setTimeout(() => {
 			if (win && !win.isDestroyed() && win.isVisible()) win.focus();
 		}, 80);
-		// reset-search 事件在渲染进程中根据 keepStateOnClose 设置决定是否真的重置
-		win.webContents.send('reset-search');
+		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
+		else win.webContents.send('reset-search');
 		return;
 	}
 	win = null;
 	createWindow();
 	setTimeout(() => {
-		win?.webContents.send('reset-search');
+		if (!win || win.isDestroyed()) return;
+		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
+		else win.webContents.send('reset-search');
 	}, 60);
 }
 
 function toggleSearchWindow() {
 	if (win && !win.isDestroyed()) {
-		if (win.isVisible()) win.hide();
+		if (win.isVisible()) {
+			try {
+				win.webContents.send('search-window-hidden');
+			} catch {}
+			win.hide();
+		}
 		else openSearchWindow();
 		return;
 	}
@@ -757,6 +962,15 @@ if (!gotTheLock) {
 	app.whenReady().then(async () => {
 		loadInstalledApps();
 		await fileIndex.loadCache();
+		const meta = loadFileIndexMeta();
+		if (!meta || meta.version !== FILE_INDEX_VERSION) {
+			void (async () => {
+				try {
+					await fileIndex.rebuild();
+					saveFileIndexMeta({ version: FILE_INDEX_VERSION });
+				} catch {}
+			})();
+		}
 		buildStartMenuShortcutIndex();
 
 		createWindow();
@@ -764,7 +978,7 @@ if (!gotTheLock) {
 		try {
 			handleAddToQuickListArgv(process.argv);
 		} catch {}
-		startUserDirectoryWatchers();
+		void startUserDirectoryWatchers();
 		ensureTray();
 		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, openAsHidden: true, path: app.getPath('exe') });
 		registerShortcuts();
@@ -783,7 +997,12 @@ app.on('will-quit', () => {
 });
 
 ipcMain.handle('hide-window', (event) => {
-	BrowserWindow.fromWebContents(event.sender)?.hide();
+	const w = BrowserWindow.fromWebContents(event.sender);
+	if (!w) return;
+	try {
+		w.webContents.send('search-window-hidden');
+	} catch {}
+	w.hide();
 });
 
 ipcMain.handle('minimize-window', (event) => {
@@ -896,6 +1115,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		customSearchTypes,
 		searchTypeOrder,
 		keepStateOnClose: Boolean(settings?.keepStateOnClose),
+		showResultPath: Boolean(settings?.showResultPath),
 		enableHistory: settings?.enableHistory !== false,
 		accentColor: typeof settings?.accentColor === 'string' ? settings.accentColor : '#38bdf8',
 	};
@@ -943,6 +1163,23 @@ ipcMain.handle('get-history', async () => {
 					return { name: h.name, path: h.path, type: h.type, icon: iconData };
 				}
 				const resolved = resolveAppId(h.path);
+				const lower = resolved.toLowerCase();
+				if (lower.endsWith('.lnk')) {
+					const info = await resolveLnkByPowerShell(resolved);
+					const targetResolved = resolveAppId(info?.targetPath || '');
+					if (targetResolved && existsSync(targetResolved)) {
+						const iconData = await getFileIconData(targetResolved);
+						return { name: h.name, path: h.path, type: h.type, icon: iconData };
+					}
+				}
+				if (lower.endsWith('.url')) {
+					const iconFile = readUrlIconFile(resolved);
+					const iconResolved = resolveAppId(iconFile);
+					if (iconResolved && existsSync(iconResolved)) {
+						const iconData = await getFileIconData(iconResolved);
+						return { name: h.name, path: h.path, type: h.type, icon: iconData };
+					}
+				}
 				if (existsSync(resolved)) {
 					const iconData = await getFileIconData(resolved);
 					return { name: h.name, path: h.path, type: h.type, icon: iconData };
@@ -975,13 +1212,25 @@ ipcMain.handle('delete-history-item', (_event, targetPath: string) => {
 
 ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
 	try {
-		if (item?.name && item?.path) recordHistoryItem(item);
-
 		const resolved = resolveAppId(item?.path);
-		if (resolved.includes('\\') || resolved.includes('/')) await shell.openPath(resolved);
-		else await shell.openExternal(`shell:AppsFolder\\${resolved}`);
-		BrowserWindow.fromWebContents(event.sender)?.hide();
-		return true;
+		let ok = await openResolvedTarget(resolved);
+		if (!ok) {
+			const lower = resolved.toLowerCase();
+			if (lower.endsWith('.url')) {
+				const url = readUrlShortcut(resolved);
+				if (url) {
+					await shell.openExternal(url);
+					ok = true;
+				}
+			} else if (lower.endsWith('.lnk')) {
+				ok = await openLnkShortcut(resolved);
+			}
+		}
+		if (ok) {
+			if (item?.name && item?.path) recordHistoryItem(item);
+			BrowserWindow.fromWebContents(event.sender)?.hide();
+		}
+		return ok;
 	} catch {
 		return false;
 	}
@@ -990,10 +1239,9 @@ ipcMain.handle('open-item', async (event, item: { name: string; path: string; ty
 ipcMain.handle('open-app', async (event, target: string) => {
 	try {
 		const resolved = resolveAppId(target);
-		if (resolved.includes('\\') || resolved.includes('/')) await shell.openPath(resolved);
-		else await shell.openExternal(`shell:AppsFolder\\${resolved}`);
-		BrowserWindow.fromWebContents(event.sender)?.hide();
-		return true;
+		const ok = await openResolvedTarget(resolved);
+		if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+		return ok;
 	} catch {
 		return false;
 	}
@@ -1012,6 +1260,12 @@ ipcMain.handle('open-folder', async (event, filePath: string) => {
 		return true;
 	} catch {
 		return false;
+	}
+});
+
+ipcMain.handle('open-external', async (_event, url: string) => {
+	if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+		await shell.openExternal(url);
 	}
 });
 

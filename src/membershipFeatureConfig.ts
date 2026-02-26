@@ -1,0 +1,36 @@
+export type MembershipControlledFeatureKey =
+  | "themeColor"
+  | "defaultSearchType"
+  | "resultPathDisplay"
+  | "customSuffix";
+
+export type MembershipControlledFeature = {
+  key: MembershipControlledFeatureKey;
+  label: string;
+  description: string;
+};
+
+// 会员管控功能配置：加入这里的功能在非会员时需要关闭/置灰
+export const MEMBERSHIP_CONTROLLED_FEATURES: MembershipControlledFeature[] = [
+  {
+    key: "themeColor",
+    label: "主题颜色设置",
+    description: "设置主题色（Accent Color）",
+  },
+  {
+    key: "defaultSearchType",
+    label: "默认类型的指定",
+    description: "设置默认搜索类型（例如：所有文件/文件/自定义类型）",
+  },
+  {
+    key: "resultPathDisplay",
+    label: "列表文件地址的显示",
+    description: "控制列表中是否显示文件路径",
+  },
+  {
+    key: "customSuffix",
+    label: "自定义新增后缀",
+    description: "新增自定义后缀类型（例如：.docx）",
+  },
+];
+
