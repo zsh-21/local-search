@@ -22,6 +22,10 @@ interface AppSettings {
 	showResultPath: boolean;
 	enableHistory: boolean;
 	accentColor: string;
+	enableEffect: boolean;
+	effectType: 'particles' | 'warp' | 'waves';
+	backgroundImagePath: string;
+	backgroundImageOpacity: number;
 }
 
 if (!app.isPackaged) {
@@ -226,6 +230,12 @@ function loadSettings(): AppSettings {
 		if (existsSync(SETTINGS_PATH)) {
 			const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
 			const theme = raw?.theme === 'light' ? 'light' : 'dark';
+			const effectType = raw?.effectType === 'warp' ? 'warp' : raw?.effectType === 'waves' ? 'waves' : 'particles';
+			const backgroundImagePath = typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : '';
+			const backgroundImageOpacityRaw = typeof raw?.backgroundImageOpacity === 'number' ? raw.backgroundImageOpacity : 0.25;
+			const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
+				? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
+				: 0.25;
 			const legacyShortcut =
 				typeof raw?.shortcut === 'string' && raw.shortcut.trim() ? raw.shortcut.trim() : undefined;
 			const customSearchTypes: string[] = Array.isArray(raw?.customSearchTypes)
@@ -250,7 +260,7 @@ function loadSettings(): AppSettings {
 					? defaultSearchTypeIdRaw
 					: DEFAULT_SEARCH_TYPE_ID;
 
-			const baseTypeIds = ['all', 'file'];
+			const baseTypeIds = ['all', 'file', 'folder'];
 			const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 			const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
 			const rawOrder: string[] = Array.isArray(raw?.searchTypeOrder)
@@ -290,6 +300,10 @@ function loadSettings(): AppSettings {
 				showResultPath: Boolean(raw?.showResultPath),
 				enableHistory: raw?.enableHistory !== false,
 				accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : '#38bdf8',
+				enableEffect: Boolean(raw?.enableEffect),
+				effectType,
+				backgroundImagePath,
+				backgroundImageOpacity,
 			};
 		}
 	} catch {}
@@ -301,11 +315,15 @@ function loadSettings(): AppSettings {
 		historyLimit: DEFAULT_HISTORY_LIMIT,
 		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
 		customSearchTypes: [],
-		searchTypeOrder: ['all', 'file'],
+		searchTypeOrder: ['all', 'file', 'folder'],
 		keepStateOnClose: false,
 		showResultPath: false,
 		enableHistory: true,
 		accentColor: '#38bdf8',
+		enableEffect: false,
+		effectType: 'particles',
+		backgroundImagePath: '',
+		backgroundImageOpacity: 0.25,
 	};
 }
 
@@ -566,6 +584,7 @@ let ignoreSearchBlurUntil = 0;
 let searchHideTimer: NodeJS.Timeout | null = null;
 let searchWasFocusedSinceShow = false;
 let settingsReadyToShow = false;
+let settingsShowFallbackTimer: NodeJS.Timeout | null = null;
 let searchAllowBlurHide = false;
 let searchVisibleAt = 0;
 
@@ -694,15 +713,24 @@ function createSettingsWindow() {
 		if (settingsWin) saveSettingsWindowConfig(settingsWin.getBounds());
 	});
 	settingsWin.on('closed', () => {
+		if (settingsShowFallbackTimer) {
+			clearTimeout(settingsShowFallbackTimer);
+			settingsShowFallbackTimer = null;
+		}
 		settingsWin = null;
 	});
 
 	settingsWin.once('ready-to-show', () => {
 		if (!settingsWin || settingsWin.isDestroyed()) return;
-		settingsReadyToShow = true;
-		settingsWin.show();
-		settingsWin.focus();
-		settingsWin.webContents.send('settings-window-opened');
+		if (settingsShowFallbackTimer) clearTimeout(settingsShowFallbackTimer);
+		settingsShowFallbackTimer = setTimeout(() => {
+			if (!settingsWin || settingsWin.isDestroyed()) return;
+			if (settingsReadyToShow) return;
+			settingsReadyToShow = true;
+			settingsWin.show();
+			settingsWin.focus();
+			settingsWin.webContents.send('settings-window-opened');
+		}, 1200);
 	});
 
 	settingsWin.removeMenu();
@@ -827,7 +855,19 @@ function toggleSearchWindow() {
 	openSearchWindow();
 }
 
+function hideSearchWindow() {
+	try {
+		if (!win || win.isDestroyed()) return;
+		if (!win.isVisible()) return;
+		try {
+			win.webContents.send('search-window-hidden');
+		} catch {}
+		win.hide();
+	} catch {}
+}
+
 function showSettingsWindow() {
+	hideSearchWindow();
 	if (settingsWin && !settingsWin.isDestroyed()) {
 		if (!settingsWin.isVisible()) {
 			if (settingsReadyToShow) settingsWin.show();
@@ -845,6 +885,25 @@ ipcMain.handle('search-view-ready', () => {
 	searchAllowBlurHide = true;
 	// Do not reduce the protection time set by openSearchWindow
 	// ignoreSearchBlurUntil = Date.now() + 120; 
+});
+
+ipcMain.handle('settings-view-ready', (event) => {
+	try {
+		const w = BrowserWindow.fromWebContents(event.sender);
+		if (!w) return { ok: false };
+		if (settingsWin && w.id !== settingsWin.id) return { ok: false };
+		if (settingsShowFallbackTimer) {
+			clearTimeout(settingsShowFallbackTimer);
+			settingsShowFallbackTimer = null;
+		}
+		settingsReadyToShow = true;
+		if (!w.isVisible()) w.show();
+		w.focus();
+		w.webContents.send('settings-window-opened');
+		return { ok: true };
+	} catch {
+		return { ok: false };
+	}
 });
 
 ipcMain.handle('login-request', async (_event, { url, options }) => {
@@ -1054,6 +1113,55 @@ ipcMain.handle('get-settings', () => {
 	return loadSettings();
 });
 
+ipcMain.handle('select-background-image', async () => {
+	try {
+		const result = await dialog.showOpenDialog({
+			title: '选择背景图片',
+			buttonLabel: '选择',
+			properties: ['openFile'],
+			filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+		});
+		if (result.canceled) return { ok: true, path: '' };
+		const targetPath = result.filePaths?.[0] || '';
+		return { ok: true, path: targetPath };
+	} catch (e: any) {
+		return { ok: false, message: e?.message || '选择图片失败', path: '' };
+	}
+});
+
+ipcMain.handle('get-image-data-url', (_event, targetPath: string) => {
+	try {
+		if (typeof targetPath !== 'string' || !targetPath.trim()) return { ok: false, dataUrl: '' };
+		const resolved = resolveAppId(targetPath.trim());
+		if (!existsSync(resolved)) return { ok: false, dataUrl: '' };
+
+		const st = statSync(resolved);
+		const maxBytes = 20 * 1024 * 1024;
+		if (!st.isFile() || st.size <= 0 || st.size > maxBytes) return { ok: false, dataUrl: '' };
+
+		const ext = path.extname(resolved).toLowerCase();
+		const mime =
+			ext === '.png'
+				? 'image/png'
+				: ext === '.jpg' || ext === '.jpeg'
+					? 'image/jpeg'
+					: ext === '.webp'
+						? 'image/webp'
+						: ext === '.gif'
+							? 'image/gif'
+							: ext === '.bmp'
+								? 'image/bmp'
+								: '';
+		if (!mime) return { ok: false, dataUrl: '' };
+
+		const buf = readFileSync(resolved);
+		const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+		return { ok: true, dataUrl };
+	} catch {
+		return { ok: false, dataUrl: '' };
+	}
+});
+
 ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	const customSearchTypes: string[] = Array.isArray(settings?.customSearchTypes)
 		? Array.from(
@@ -1078,7 +1186,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 			? defaultSearchTypeIdRaw
 			: DEFAULT_SEARCH_TYPE_ID;
 
-	const baseTypeIds = ['all', 'file'];
+	const baseTypeIds = ['all', 'file', 'folder'];
 	const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 	const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
 	const rawOrder: string[] = Array.isArray(settings?.searchTypeOrder)
@@ -1095,6 +1203,13 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	for (const id of [...baseTypeIds, ...customTypeIds]) {
 		if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
 	}
+
+	const effectType = settings?.effectType === 'warp' ? 'warp' : settings?.effectType === 'waves' ? 'waves' : 'particles';
+	const backgroundImagePath = typeof settings?.backgroundImagePath === 'string' ? settings.backgroundImagePath.trim() : '';
+	const backgroundImageOpacityRaw = typeof settings?.backgroundImageOpacity === 'number' ? settings.backgroundImageOpacity : 0.25;
+	const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
+		? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
+		: 0.25;
 
 	const next: AppSettings = {
 		autoStart: Boolean(settings?.autoStart),
@@ -1118,6 +1233,10 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		showResultPath: Boolean(settings?.showResultPath),
 		enableHistory: settings?.enableHistory !== false,
 		accentColor: typeof settings?.accentColor === 'string' ? settings.accentColor : '#38bdf8',
+		enableEffect: Boolean(settings?.enableEffect),
+		effectType,
+		backgroundImagePath,
+		backgroundImageOpacity,
 	};
 
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };

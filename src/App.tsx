@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { List } from "react-window";
 import "./App.css";
+import { BackgroundImage } from "./components/BackgroundImage";
+import { ParticleBackground } from "./components/ParticleBackground";
 import { login, refreshUserByToken, User } from "./api";
 import { MEMBERSHIP_CONTROLLED_FEATURES } from "./membershipFeatureConfig";
 
@@ -30,6 +32,10 @@ interface AppSettings {
   showResultPath: boolean;
   enableHistory: boolean;
   accentColor: string;
+  enableEffect: boolean;
+  effectType: "particles" | "warp" | "waves";
+  backgroundImagePath: string;
+  backgroundImageOpacity: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -40,11 +46,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   historyLimit: 5,
   defaultSearchTypeId: "all",
   customSearchTypes: [],
-  searchTypeOrder: ["all", "file"],
+  searchTypeOrder: ["all", "file", "folder"],
   keepStateOnClose: false,
   showResultPath: false,
   enableHistory: true,
   accentColor: "#38bdf8",
+  enableEffect: false,
+  effectType: "particles",
+  backgroundImagePath: "",
+  backgroundImageOpacity: 0.25,
 };
 
 const MEMBERSHIP_CHANGED_EVENT = "fs-membership-changed";
@@ -166,6 +176,15 @@ function normalizeSettings(s: any): AppSettings {
     return out;
   };
 
+  const effectType = s?.effectType === "warp" ? "warp" : s?.effectType === "waves" ? "waves" : "particles";
+  const backgroundImagePath =
+    typeof s?.backgroundImagePath === "string" ? s.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
+  const backgroundImageOpacityRaw =
+    typeof s?.backgroundImageOpacity === "number" ? s.backgroundImageOpacity : DEFAULT_SETTINGS.backgroundImageOpacity;
+  const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
+    ? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
+    : DEFAULT_SETTINGS.backgroundImageOpacity;
+
   return {
     autoStart: Boolean(s?.autoStart),
     searchShortcut,
@@ -182,6 +201,10 @@ function normalizeSettings(s: any): AppSettings {
     showResultPath: Boolean(s?.showResultPath),
     enableHistory: s?.enableHistory !== false,
     accentColor: typeof s?.accentColor === "string" ? s.accentColor : DEFAULT_SETTINGS.accentColor,
+    enableEffect: Boolean(s?.enableEffect),
+    effectType,
+    backgroundImagePath,
+    backgroundImageOpacity,
   };
 }
 
@@ -227,6 +250,8 @@ function applyMembershipRestrictionsToSettings(settings: AppSettings, isMember: 
     customSearchTypes: [],
     searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
     showResultPath: false,
+    enableEffect: false, // 非会员强制关闭特效
+    effectType: "particles", // 重置为默认类型
   });
 }
 
@@ -236,7 +261,7 @@ function getSearchTypeOptions(customTypes: string[], order: string[] | undefined
   const base: SearchTypeOption[] = [
     { id: "all", label: "所有文件" },
     { id: "file", label: "文件" },
-    // { id: "folder", label: "文件夹" },
+    { id: "folder", label: "文件夹" },
   ];
   const custom: SearchTypeOption[] = (customTypes || []).map((ext) => ({
     id: `ext:${ext}`,
@@ -293,6 +318,7 @@ function toAccelerator(e: React.KeyboardEvent) {
 
 function useSettings() {
   const [baseSettings, setBaseSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [loaded, setLoaded] = useState(false);
   const isMember = useStoredMembership();
 
   // 会员状态变化时的配置备份与恢复逻辑
@@ -311,6 +337,8 @@ function useSettings() {
             customSearchTypes: backup.customSearchTypes ?? prev.customSearchTypes,
             searchTypeOrder: backup.searchTypeOrder ?? prev.searchTypeOrder,
             showResultPath: backup.showResultPath ?? prev.showResultPath,
+            enableEffect: backup.enableEffect ?? prev.enableEffect,
+            effectType: backup.effectType ?? prev.effectType,
           };
           window.ipcRenderer?.invoke("save-settings", next);
           return next;
@@ -325,7 +353,9 @@ function useSettings() {
           prev.accentColor !== DEFAULT_SETTINGS.accentColor ||
           prev.defaultSearchTypeId !== DEFAULT_SETTINGS.defaultSearchTypeId ||
           (prev.customSearchTypes && prev.customSearchTypes.length > 0) ||
-          prev.showResultPath !== false;
+          prev.showResultPath !== false ||
+          prev.enableEffect !== false ||
+          prev.effectType !== "particles";
 
         if (hasCustomSettings) {
           saveBackupSettings({
@@ -334,6 +364,8 @@ function useSettings() {
             customSearchTypes: prev.customSearchTypes,
             searchTypeOrder: prev.searchTypeOrder,
             showResultPath: prev.showResultPath,
+            enableEffect: prev.enableEffect,
+            effectType: prev.effectType,
           });
           
           // 强制重置为默认值并保存
@@ -344,6 +376,8 @@ function useSettings() {
             customSearchTypes: [],
             searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
             showResultPath: false,
+            enableEffect: false,
+            effectType: "particles" as const,
           };
           window.ipcRenderer?.invoke("save-settings", reset);
           return reset;
@@ -360,13 +394,21 @@ function useSettings() {
 
   useEffect(() => {
     let mounted = true;
-    window.ipcRenderer?.invoke("get-settings").then((s: AppSettings) => {
-      if (!mounted) return;
-      setBaseSettings(normalizeSettings(s));
-    });
+    window.ipcRenderer
+      ?.invoke("get-settings")
+      .then((s: AppSettings) => {
+        if (!mounted) return;
+        setBaseSettings(normalizeSettings(s));
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setLoaded(true);
+      });
 
     const handler = (_event: any, next: AppSettings) => {
       setBaseSettings(normalizeSettings(next));
+      setLoaded(true);
     };
     window.ipcRenderer?.on("settings-updated", handler as any);
 
@@ -388,11 +430,11 @@ function useSettings() {
     document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
   }, [settings]);
 
-  return settings;
+  return { settings, loaded };
 }
 
 function SearchView() {
-  const settings = useSettings();
+  const { settings } = useSettings();
   const [query, setQuery] = useState("");
   const [searchTypeId, setSearchTypeId] = useState<string>(
     settings.defaultSearchTypeId || "all",
@@ -419,6 +461,7 @@ function SearchView() {
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
+  const searchRequestIdRef = useRef(0);
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
@@ -647,13 +690,15 @@ function SearchView() {
     };
     window.ipcRenderer?.on("more-results", handler);
     return () => {
-      window.ipcRenderer?.removeAllListeners("more-results");
+      window.ipcRenderer?.off("more-results", handler);
     };
   }, [query, searchTypeId]);
 
   useEffect(() => {
-    if (!query || query.trim().length < 2) {
-      if (query.trim().length === 0) {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) {
+      searchRequestIdRef.current += 1;
+      if (trimmed.length === 0) {
         refreshHistory();
       } else {
         setResults([]);
@@ -664,15 +709,20 @@ function SearchView() {
       return;
     }
 
+    searchRequestIdRef.current += 1;
+    const requestId = searchRequestIdRef.current;
     setIsSearching(true);
     setHasMore(false);
     const timer = setTimeout(async () => {
       try {
         const resp = (await window.ipcRenderer?.invoke(
           "search-files",
-          query,
+          trimmed,
           { searchTypeId },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
+        if (searchRequestIdRef.current !== requestId) return;
+        if (queryRef.current.trim() !== trimmed) return;
+        if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = resp?.results ?? [];
         setResults(nextResults);
         setVisibleCount(50);
@@ -680,31 +730,19 @@ function SearchView() {
         setIsIndexing(Boolean(resp?.isIndexing));
         setHasMore(Boolean(resp?.hasMore));
       } finally {
-        setIsSearching(false);
+        if (searchRequestIdRef.current === requestId) setIsSearching(false);
       }
-    }, 250);
+    }, 120);
 
     return () => clearTimeout(timer);
   }, [query, searchTypeId]);
-
-  useEffect(() => {
-    const handleMoreResults = (_: any, data: { query: string; results: AppItem[] }) => {
-      if (data.query === query) {
-        setResults(prev => [...prev, ...data.results]);
-      }
-    };
-    window.ipcRenderer?.on("more-results", handleMoreResults);
-    return () => {
-      window.ipcRenderer?.off("more-results", handleMoreResults);
-    };
-  }, [query]);
 
   useEffect(() => {
     // 只有在通过键盘导航（上下键）改变选中索引时，才执行自动滚动
     if (listRef.current && lastSelectedBy === "keyboard") {
       // 检查当前 react-window List 版本支持的方法
       if (typeof listRef.current.scrollToItem === 'function') {
-        listRef.current.scrollToItem(selectedIndex, 'auto');
+        listRef.current.scrollToItem(selectedIndex, 'smart');
       } else if (typeof listRef.current.scrollToRow === 'function') {
         listRef.current.scrollToRow({ index: selectedIndex, align: "auto" });
       }
@@ -722,6 +760,13 @@ function SearchView() {
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === "l" || e.key === "k")) {
+      e.preventDefault();
+      e.stopPropagation();
+      inputRef.current?.focus();
+      return;
+    }
+
     if (e.key === "Escape") {
       setTypeMenuOpen(false)
       window.ipcRenderer?.invoke("hide-window");
@@ -750,8 +795,25 @@ function SearchView() {
       setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
       e.preventDefault();
+    } else if (e.key === "Home") {
+      setLastSelectedBy("keyboard");
+      setSelectedIndex(0);
+      e.preventDefault();
+    } else if (e.key === "End") {
+      setLastSelectedBy("keyboard");
+      setSelectedIndex(results.length - 1);
+      e.preventDefault();
+    } else if (e.key === "PageDown") {
+      setLastSelectedBy("keyboard");
+      setSelectedIndex((prev) => Math.min(results.length - 1, prev + 10));
+      e.preventDefault();
+    } else if (e.key === "PageUp") {
+      setLastSelectedBy("keyboard");
+      setSelectedIndex((prev) => Math.max(0, prev - 10));
+      e.preventDefault();
     } else if (e.key === "Enter") {
-      launchApp(results[selectedIndex]);
+      if (e.ctrlKey || e.metaKey) openFolder(results[selectedIndex]);
+      else launchApp(results[selectedIndex]);
     }
   };
 
@@ -805,6 +867,29 @@ function SearchView() {
       ? "正在建立本地文件索引…"
       : "";
 
+  const highlightQuery = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 2 || q.length > 32) return "";
+    return q.toLowerCase();
+  }, [query]);
+
+  const renderHighlightedText = (text: string) => {
+    if (!highlightQuery) return text;
+    const lower = (text || "").toLowerCase();
+    const idx = lower.indexOf(highlightQuery);
+    if (idx < 0) return text;
+    const before = text.slice(0, idx);
+    const mid = text.slice(idx, idx + highlightQuery.length);
+    const after = text.slice(idx + highlightQuery.length);
+    return (
+      <>
+        {before}
+        <span className="match">{mid}</span>
+        {after}
+      </>
+    );
+  };
+
   const getExtension = (path: string) => {
     const parts = path.split(".");
     return parts.length > 1 ? parts.pop()?.toUpperCase() : "";
@@ -813,6 +898,51 @@ function SearchView() {
   const isImageFile = (path: string) => {
     const ext = (path.split(".").pop() || "").toLowerCase();
     return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
+  };
+
+  const renderResultIcon = (item: AppItem, isImg: boolean) => {
+    if (item.type === "folder") {
+      return (
+        <svg className="result-icon folder-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M10.2 5.2h-5A2.2 2.2 0 0 0 3 7.4v9.3A2.3 2.3 0 0 0 5.3 19h13.4A2.3 2.3 0 0 0 21 16.7V9.3A2.3 2.3 0 0 0 18.7 7H12l-1.3-1.4a2 2 0 0 0-1.5-.4Z"
+            fill="currentColor"
+            opacity="0.16"
+          />
+          <path
+            d="M4.5 8.2h15.2a1.6 1.6 0 0 1 1.6 1.6v6.8a1.8 1.8 0 0 1-1.8 1.8H5.1A2.1 2.1 0 0 1 3 16.3V9.7a1.5 1.5 0 0 1 1.5-1.5Z"
+            fill="currentColor"
+            opacity="0.34"
+          />
+          <path
+            d="M4.5 8.2h15.2a1.6 1.6 0 0 1 1.6 1.6v6.8a1.8 1.8 0 0 1-1.8 1.8H5.1A2.1 2.1 0 0 1 3 16.3V9.7a1.5 1.5 0 0 1 1.5-1.5Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            opacity="0.8"
+          />
+        </svg>
+      );
+    }
+
+    if (item.type === "app") {
+      if (!item.icon) return <span className="result-icon placeholder" />;
+      return <img className="result-icon" src={item.icon} alt="" />;
+    }
+
+    if (item.type === "file") {
+      if (item.icon && isImg) return <img className="result-icon image-preview" src={item.icon} alt="" />;
+      if (item.icon) return <img className="result-icon" src={item.icon} alt="" />;
+      const ext = (item.path.split(".").pop() || "").trim().toUpperCase();
+      const label = ext && ext.length <= 6 ? ext : "FILE";
+      return (
+        <span className="result-icon ext-icon" aria-hidden="true">
+          <span className="ext-icon-text">{label}</span>
+        </span>
+      );
+    }
+
+    return <span className="result-icon placeholder" />;
   };
 
   const Row = ({
@@ -855,18 +985,10 @@ function SearchView() {
       >
         <li className={index === selectedIndex ? "selected" : ""}>
           <span className="result-index">{index + 1}</span>
-          {item.icon ? (
-            <img 
-              className={`result-icon ${isImg ? "image-preview" : ""}`} 
-              src={item.icon} 
-              alt="" 
-            />
-          ) : (
-            <span className="result-icon placeholder" />
-          )}
+          {renderResultIcon(item, isImg)}
           <div className="result-meta">
             <div className="result-name-row">
-              <span className="app-name">{item.name}</span>
+              <span className="app-name">{renderHighlightedText(item.name)}</span>
               {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
               {index === selectedIndex && (
                 <span className="shortcut-hint">ENTER</span>
@@ -874,7 +996,7 @@ function SearchView() {
             </div>
             {settings.showResultPath ? (
               <span className="app-path" title={item.path}>
-                {item.path}
+                {renderHighlightedText(item.path)}
               </span>
             ) : null}
           </div>
@@ -980,8 +1102,16 @@ function SearchView() {
 
   const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
   
+  const trimmedQuery = query.trim();
   const showEmptyState =
-    query.trim().length >= 1 &&
+    trimmedQuery.length >= 2 &&
+    !isSearching &&
+    !isIndexing &&
+    results.length === 0;
+
+  const showInputHint =
+    trimmedQuery.length > 0 &&
+    trimmedQuery.length < 2 &&
     !isSearching &&
     !isIndexing &&
     results.length === 0;
@@ -1079,6 +1209,8 @@ function SearchView() {
 
   return (
     <div className={`container search-container ${typeMenuOpen ? "menu-open" : ""}`} ref={containerRef} onKeyDownCapture={handleKeyDown}>
+      <BackgroundImage path={settings.backgroundImagePath} opacity={settings.backgroundImageOpacity} />
+      <ParticleBackground enabled={settings.enableEffect} type={settings.effectType} />
       <div
         className="resize-handle left"
         onMouseDown={(e) => startResizing(e, "left")}
@@ -1102,6 +1234,26 @@ function SearchView() {
           autoFocus
         />
         <div className="search-box-right">
+          {query.trim().length > 0 ? (
+            <button
+              type="button"
+              className="clear-btn"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setQuery("");
+                setSelectedIndex(0);
+                setTypeMenuOpen(false);
+                inputRef.current?.focus();
+              }}
+              aria-label="清空输入"
+              title="清空 (Ctrl+L)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            </button>
+          ) : null}
           <div className="result-count">
             {results.length > 0 ? `${results.length} 条结果` : ""}
           </div>
@@ -1194,10 +1346,12 @@ function SearchView() {
         </div>
       )}
 
-      {(visibleResults.length > 0 || showEmptyState) && (
+      {(visibleResults.length > 0 || showEmptyState || showInputHint) && (
         <div className="results">
-          {showEmptyState ? (
-            <div className="empty-state">暂无搜索结果...😭</div>
+          {showInputHint ? (
+            <div className="empty-state">继续输入以开始搜索（至少 2 个字符）</div>
+          ) : showEmptyState ? (
+            <div className="empty-state">未找到匹配结果</div>
           ) : (
             <>
               <div 
@@ -1238,7 +1392,7 @@ function SearchView() {
 }
 
 function SettingsView() {
-  const settings = useSettings();
+  const { settings, loaded } = useSettings();
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [error, setError] = useState("");
   const [maximized, setMaximized] = useState(false);
@@ -1246,6 +1400,7 @@ function SettingsView() {
     "general" | "search" | "shortcuts" | "appearance" | "account"
   >("account");
   const [newTypeExt, setNewTypeExt] = useState("");
+  const readySentRef = useRef(false);
 
   useEffect(() => {
     setDraft(settings);
@@ -1260,7 +1415,42 @@ function SettingsView() {
     settings.searchTypeOrder,
     settings.showResultPath,
     settings.accentColor,
+    settings.enableEffect,
+    settings.effectType,
+    settings.backgroundImagePath,
+    settings.backgroundImageOpacity,
   ]);
+
+  const isDraftSynced = useMemo(() => {
+    const arrEq = (a: string[], b: string[]) =>
+      a.length === b.length && a.every((x, i) => x === b[i]);
+    return (
+      draft.autoStart === settings.autoStart &&
+      draft.searchShortcut === settings.searchShortcut &&
+      draft.settingsShortcut === settings.settingsShortcut &&
+      draft.theme === settings.theme &&
+      draft.historyLimit === settings.historyLimit &&
+      draft.defaultSearchTypeId === settings.defaultSearchTypeId &&
+      arrEq(draft.customSearchTypes || [], settings.customSearchTypes || []) &&
+      arrEq(draft.searchTypeOrder || [], settings.searchTypeOrder || []) &&
+      draft.keepStateOnClose === settings.keepStateOnClose &&
+      draft.showResultPath === settings.showResultPath &&
+      draft.enableHistory === settings.enableHistory &&
+      draft.accentColor === settings.accentColor &&
+      draft.enableEffect === settings.enableEffect &&
+      draft.effectType === settings.effectType &&
+      draft.backgroundImagePath === settings.backgroundImagePath &&
+      draft.backgroundImageOpacity === settings.backgroundImageOpacity
+    );
+  }, [draft, settings]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (!isDraftSynced) return;
+    if (readySentRef.current) return;
+    readySentRef.current = true;
+    window.ipcRenderer?.invoke("settings-view-ready");
+  }, [loaded, isDraftSynced]);
 
   useEffect(() => {
     const handler = () => {
@@ -1305,6 +1495,8 @@ function SettingsView() {
   const onClose = () => {
     setError("");
     setDraft(settings);
+    setActiveKey("account");
+    setNewTypeExt("");
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
     // 重置带透明度的颜色
@@ -1334,8 +1526,9 @@ function SettingsView() {
       setError(resp.message || "设置保存失败");
       return;
     }
-    // 保存成功后，立即确保本地主题色是最新的
     applyThemePreview(nextDraft.theme, nextDraft.accentColor);
+    setActiveKey("account");
+    setNewTypeExt("");
     window.ipcRenderer?.invoke("hide-window");
   };
 
@@ -1386,7 +1579,7 @@ function SettingsView() {
         key: "general" as const,
         label: "通用",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 25 25" fill="none" aria-hidden="true">
             <path
               d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
               stroke="currentColor"
@@ -1404,7 +1597,7 @@ function SettingsView() {
         key: "search" as const,
         label: "搜索",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 22 22" fill="none" aria-hidden="true">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
             <path d="m20 20-3.3-3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           </svg>
@@ -1414,7 +1607,7 @@ function SettingsView() {
         key: "shortcuts" as const,
         label: "快捷键",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path
               d="M7 15a4 4 0 1 1 0-8h6a4 4 0 1 1 0 8H7Z"
               stroke="currentColor"
@@ -1592,6 +1785,8 @@ function SettingsView() {
 
   return (
     <div className={`container settings-container ${maximized ? "maximized" : ""}`} onKeyDown={handleKeyDown}>
+      <BackgroundImage path={draft.backgroundImagePath} opacity={draft.backgroundImageOpacity} />
+      <ParticleBackground enabled={draft.enableEffect} type={draft.effectType} />
       <div
         className="settings-header"
         title="按住拖拽可移动窗口"
@@ -2203,6 +2398,134 @@ function SettingsView() {
                           <span>浅色模式</span>
                         </button>
                       </div>
+                    </div>
+
+                    <div className="settings-group">
+                      <div className="settings-group-title">特效</div>
+                      <label className="setting-row">
+                        <input
+                          type="checkbox"
+                          checked={draft.enableEffect}
+                          disabled={!isMember}
+                          onChange={(e) => {
+                            setDraft({ ...draft, enableEffect: e.target.checked });
+                            setError("");
+                          }}
+                        />
+                        <span>启用背景特效 { !isMember && `（${membershipLockTip}）` }</span>
+                      </label>
+                      {draft.enableEffect && (
+                        <div className="form-row">
+                          <div className="form-label">特效类型</div>
+                          <div className="effect-type-options">
+                            <label className={`effect-option ${draft.effectType === "particles" ? "active" : ""}`}>
+                              <input
+                                type="radio"
+                                name="effectType"
+                                value="particles"
+                                checked={draft.effectType === "particles"}
+                                onChange={() => {
+                                  setDraft({ ...draft, effectType: "particles" });
+                                  setError("");
+                                }}
+                              />
+                              代码瀑布
+                            </label>
+                            <label className={`effect-option ${draft.effectType === "warp" ? "active" : ""}`}>
+                              <input
+                                type="radio"
+                                name="effectType"
+                                value="warp"
+                                checked={draft.effectType === "warp"}
+                                onChange={() => {
+                                  setDraft({ ...draft, effectType: "warp" });
+                                  setError("");
+                                }}
+                              />
+                              极速穿梭
+                            </label>
+                            {/* 预留扩展位置，后续可添加 waves 等其他特效 */}
+                            {/* <label className={`effect-option ${draft.effectType === "waves" ? "active" : ""}`}>
+                              <input
+                                type="radio"
+                                name="effectType"
+                                value="waves"
+                                checked={draft.effectType === "waves"}
+                                onChange={() => {
+                                  setDraft({ ...draft, effectType: "waves" });
+                                  setError("");
+                                }}
+                              />
+                              波浪流光
+                            </label> */}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="settings-group">
+                      <div className="settings-group-title">背景图片</div>
+                      <div className="form-row">
+                        <div className="form-label">图片</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="small-btn"
+                            onClick={async () => {
+                              setError("");
+                              const resp = (await window.ipcRenderer?.invoke("select-background-image")) as
+                                | { ok: boolean; path?: string; message?: string }
+                                | undefined;
+                              if (!resp?.ok) {
+                                setError(resp?.message || "选择图片失败");
+                                return;
+                              }
+                              const p = typeof resp.path === "string" ? resp.path : "";
+                              setDraft({ ...draft, backgroundImagePath: p });
+                            }}
+                          >
+                            选择图片
+                          </button>
+                          <button
+                            type="button"
+                            className="small-btn"
+                            disabled={!draft.backgroundImagePath}
+                            onClick={() => {
+                              setDraft({ ...draft, backgroundImagePath: "" });
+                              setError("");
+                            }}
+                          >
+                            清除
+                          </button>
+                          <span style={{ color: "var(--fs-muted)", fontSize: 12, fontWeight: 650 }}>
+                            {draft.backgroundImagePath
+                              ? draft.backgroundImagePath.split(/[/\\]/).pop() || draft.backgroundImagePath
+                              : "未选择"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <div className="form-label">透明度</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={Math.round((draft.backgroundImageOpacity || 0) * 100)}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              const next = Number.isFinite(v) ? Math.min(1, Math.max(0, v / 100)) : 0;
+                              setDraft({ ...draft, backgroundImageOpacity: next });
+                              setError("");
+                            }}
+                            style={{ flex: 1, minWidth: 180 }}
+                          />
+                          <span style={{ color: "var(--fs-muted)", fontSize: 12, fontWeight: 750, width: 44, textAlign: "right" }}>
+                            {Math.round((draft.backgroundImageOpacity || 0) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                      {error ? <div className="settings-error">{error}</div> : null}
                     </div>
 
                     <div className="settings-group">

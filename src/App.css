@@ -718,6 +718,31 @@ input::placeholder {
   position: relative; /* 为下拉菜单提供定位基准 */
 }
 
+.clear-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.clear-btn:hover {
+  color: var(--fs-text);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.clear-btn:active {
+  transform: translateY(0);
+}
+
 .result-count {
   font-size: 11px;
   color: var(--fs-muted);
@@ -872,7 +897,7 @@ html[data-theme="light"] .results li.selected {
 .results li.selected .file-ext-badge {
   background: var(--fs-accent-soft);
   color: var(--fs-accent);
-  border-color: var(--fs-accent);
+  border-color: var(--fs-border);
 }
 
 .result-icon {
@@ -882,6 +907,30 @@ html[data-theme="light"] .results li.selected {
   flex: 0 0 auto;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
   transition: all 0.2s ease;
+}
+
+.result-icon.folder-icon {
+  color: var(--fs-muted);
+}
+
+.result-icon.ext-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  filter: none;
+}
+
+.result-icon.ext-icon .ext-icon-text {
+  font-family: var(--fs-font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--fs-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+  transform: translateY(0.5px);
 }
 
 .result-icon.image-preview {
@@ -896,8 +945,8 @@ html[data-theme="light"] .results li.selected {
 }
 
 .results li.selected .result-icon.image-preview {
-  border-color: var(--fs-accent);
-  box-shadow: 0 0 8px var(--fs-accent-soft);
+  border-color: var(--fs-border);
+  box-shadow: 0 0 10px rgba(0,0,0,0.18);
 }
 
 .result-icon.placeholder {
@@ -929,6 +978,13 @@ html[data-theme="light"] .results li.selected {
   text-overflow: ellipsis;
   font-size: 14.5px;
   letter-spacing: -0.1px;
+}
+
+.match {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--fs-text);
+  border-radius: 4px;
+  padding: 0 2px;
 }
 
 .app-path {
@@ -1032,7 +1088,7 @@ html[data-theme="light"] .results li.selected .action-btn {
 }
 
 .settings-panel {
-  background: var(--fs-bg);
+  background: transparent;
   border-radius: 14px;
   display: flex;
   flex-direction: column;
@@ -1056,9 +1112,9 @@ html[data-theme="light"] .results li.selected .action-btn {
   align-items: center;
   font-weight: 600;
   color: var(--fs-text);
-  padding: 8px 12px;
+  padding: 0;
   border-bottom: 1px solid var(--fs-border); /* 添加分隔线 */
-  background: var(--fs-bg);
+  background: transparent;
 }
 
 .settings-title-wrap {
@@ -1124,9 +1180,9 @@ html[data-theme="light"] .results li.selected .action-btn {
 }
 
 .window-btn.close:hover {
-  background: #ef4444;
-  border-color: #ef4444;
-  color: white;
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+  color: rgb(249, 0, 0);
   opacity: 1;
 }
 
@@ -1406,7 +1462,7 @@ html[data-theme="light"] .results li.selected .action-btn {
   flex-direction: column;
   gap: 8px;
   -webkit-app-region: no-drag;
-  background: var(--fs-bg);
+  background: transparent;
 }
 
 .settings-nav-account-row {
@@ -1628,7 +1684,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   flex-direction: column;
   -webkit-app-region: no-drag;
   overflow: hidden; /* 改为 hidden */
-  background: var(--fs-bg);
+  background: transparent;
 }
 
 .settings-main-inner {
@@ -1655,7 +1711,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: var(--fs-bg);
+  background: transparent;
 }
 
 .settings-section-title {
@@ -1921,7 +1977,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 20px;
-  background: var(--fs-surface-2);
+  background: transparent;
   border-top: 1px solid var(--fs-border);
   -webkit-app-region: no-drag;
 }
@@ -2058,6 +2114,43 @@ html[data-theme="light"] .settings-confirm {
 .settings-toast.info .settings-toast-icon {
   color: #0f172a;
   background: var(--fs-accent);
+}
+
+/* 特效选择器样式 */
+.effect-type-options {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.effect-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  font-size: 13px;
+  color: var(--fs-text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.effect-option:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border-soft);
+}
+
+.effect-option.active {
+  background: var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+  color: var(--fs-accent);
+  font-weight: 500;
+}
+
+.effect-option input {
+  margin: 0;
 }
 
 /* 账号登录相关样式 */
