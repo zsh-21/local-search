@@ -115,8 +115,8 @@ function useStoredMembership(): boolean {
 }
 
 function getMembershipLockTip(): string {
-  const labels = MEMBERSHIP_CONTROLLED_FEATURES.map((x) => x.label);
-  return `会员功能：${labels.join("、")}（开通会员后可使用）`;
+  // 统一文案：避免在界面中出现长串 hover 提示，提示改由标题右侧小字展示
+  return "订阅功能（开通后可使用）";
 }
 
 function normalizeSettings(s: any): AppSettings {
@@ -779,7 +779,9 @@ function SearchView() {
         0,
         searchTypeOptions.findIndex((t) => t.id === searchTypeId),
       );
-      const next = searchTypeOptions[(idx + 1)>searchTypeOptions.length-1?0:idx+1];
+      const delta = e.shiftKey ? -1 : 1;
+      const nextIdx = (idx + delta + searchTypeOptions.length) % searchTypeOptions.length;
+      const next = searchTypeOptions[nextIdx];
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
       return;
@@ -1537,6 +1539,44 @@ function SettingsView() {
     [draft.customSearchTypes, draft.searchTypeOrder],
   );
 
+  const [defaultTypeMenuOpen, setDefaultTypeMenuOpen] = useState(false);
+  const [defaultTypeActiveIndex, setDefaultTypeActiveIndex] = useState<number>(() => {
+    const idx = typeOptions.findIndex((x) => x.id === (draft.defaultSearchTypeId || "all"));
+    return idx >= 0 ? idx : 0;
+  });
+  const defaultTypeSelectRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!defaultTypeMenuOpen) return;
+    const idx = typeOptions.findIndex((x) => x.id === (draft.defaultSearchTypeId || "all"));
+    setDefaultTypeActiveIndex(idx >= 0 ? idx : 0);
+  }, [defaultTypeMenuOpen, draft.defaultSearchTypeId, typeOptions]);
+
+  useEffect(() => {
+    if (!defaultTypeMenuOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const el = defaultTypeSelectRef.current;
+      if (!el) return;
+      if (el.contains(e.target as Node)) return;
+      setDefaultTypeMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onMouseDown);
+    return () => window.removeEventListener("mousedown", onMouseDown);
+  }, [defaultTypeMenuOpen]);
+
+  const currentDefaultTypeLabel = useMemo(() => {
+    const id = draft.defaultSearchTypeId || "all";
+    return typeOptions.find((x) => x.id === id)?.label || "所有文件";
+  }, [draft.defaultSearchTypeId, typeOptions]);
+
+  const pickDefaultTypeByIndex = (index: number) => {
+    const next = typeOptions[index];
+    if (!next) return;
+    setDraft({ ...draft, defaultSearchTypeId: next.id });
+    setError("");
+    setDefaultTypeMenuOpen(false);
+  };
+
   const moveTypeId = (list: string[], fromId: string, toId: string, position: "before" | "after") => {
     const fromIndex = list.indexOf(fromId);
     let toIndex = list.indexOf(toId);
@@ -1653,7 +1693,6 @@ function SettingsView() {
   });
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const isMember = useMemo(() => isUserMember(user), [user]);
-  const membershipLockTip = useMemo(() => getMembershipLockTip(), []);
   const [loginForm, setLoginForm] = useState({ account: "", password: "" });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -1676,17 +1715,40 @@ function SettingsView() {
     };
   }, []);
 
+  // 非会员：用标题右侧小字提示替代 hover 提示，避免交互打扰
+  const membershipBadge = !isMember ? <span className="membership-badge">订阅可用</span> : null;
+
+  const clearLoginState = () => {
+    setUser(null);
+    localStorage.removeItem("fs_user");
+    localStorage.removeItem("fs_token");
+    window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
+  };
+
   const doRefreshStatus = async () => {
     if (isRefreshingStatus) return;
     if (!getStoredTokenFromLocalStorage()) return;
     setIsRefreshingStatus(true);
     try {
       // 强制至少展示 1 秒 loading
-      await Promise.all([
-        refreshUserStatusSilently({ onUser: (nextUser) => setUser(nextUser) }),
+      const token = getStoredTokenFromLocalStorage();
+      const [next] = await Promise.all([
+        refreshUserByToken(token),
         new Promise((resolve) => setTimeout(resolve, 1000)),
       ]);
+      if (!next) {
+        showToast("状态更新失败，请重新登录", "error");
+        clearLoginState();
+        return;
+      }
+      setUser(next.user);
+      localStorage.setItem("fs_user", JSON.stringify(next.user));
+      localStorage.setItem("fs_token", next.token);
+      window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
       showToast("已更新", "success");
+    } catch {
+      showToast("状态更新失败，请重新登录", "error");
+      clearLoginState();
     } finally {
       setIsRefreshingStatus(false);
     }
@@ -1724,10 +1786,7 @@ function SettingsView() {
     setIsLoggingOut(true);
     try {
       await new Promise((r) => window.setTimeout(r, 350));
-      setUser(null);
-      localStorage.removeItem("fs_user");
-      localStorage.removeItem("fs_token");
-      window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
+      clearLoginState();
       showToast("已退出登录", "success");
     } finally {
       setIsLoggingOut(false);
@@ -2010,31 +2069,105 @@ function SettingsView() {
                 {activeKey === "search" ? (
                   <div className="settings-content">
                     <div className="settings-group">
-                      <div className="settings-group-title">默认类型</div>
+                      <div className="settings-group-title">
+                        <span>默认类型</span>
+                        {membershipBadge}
+                      </div>
                       <div className="form-row">
                         <div className="form-label">默认选择</div>
-                        <select
-                          className="select-input"
-                          value={draft.defaultSearchTypeId}
-                          disabled={!isMember}
-                          title={!isMember ? membershipLockTip : undefined}
-                          onChange={(e) => {
-                            setDraft({ ...draft, defaultSearchTypeId: e.target.value });
-                            setError("");
-                          }}
+                        <div
+                          className="settings-type-select type-select"
+                          ref={defaultTypeSelectRef}
                         >
-                          {typeOptions.map((opt) => (
-                            <option key={opt.id} value={opt.id}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
+                          <button
+                            className="type-select-btn"
+                            type="button"
+                            disabled={!isMember}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!isMember) return;
+                              setDefaultTypeMenuOpen((v) => !v);
+                            }}
+                            onKeyDown={(e) => {
+                              if (!isMember) return;
+                              if (e.key === "Escape") {
+                                setDefaultTypeMenuOpen(false);
+                                return;
+                              }
+                              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setDefaultTypeMenuOpen(true);
+                                setDefaultTypeActiveIndex((prev) => {
+                                  const delta = e.key === "ArrowDown" ? 1 : -1;
+                                  const next = (prev + delta + typeOptions.length) % typeOptions.length;
+                                  return next;
+                                });
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                if (!defaultTypeMenuOpen) {
+                                  setDefaultTypeMenuOpen(true);
+                                } else {
+                                  pickDefaultTypeByIndex(defaultTypeActiveIndex);
+                                }
+                                return;
+                              }
+                              if (e.key === "Tab") {
+                                setDefaultTypeMenuOpen(false);
+                              }
+                            }}
+                            aria-haspopup="listbox"
+                            aria-expanded={defaultTypeMenuOpen}
+                            aria-label="默认类型选择"
+                            title={currentDefaultTypeLabel}
+                          >
+                            <span className="type-select-label">{currentDefaultTypeLabel}</span>
+                            <span className="type-select-caret">▾</span>
+                          </button>
+
+                          {defaultTypeMenuOpen ? (
+                            <div
+                              className="type-select-menu"
+                              role="listbox"
+                              aria-label="默认类型列表"
+                              onMouseDown={(e) => e.stopPropagation()}
+                            >
+                              <div className="type-select-menu-inner">
+                                {typeOptions.map((opt, idx) => (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={opt.id === draft.defaultSearchTypeId}
+                                    className={`type-select-item ${opt.id === draft.defaultSearchTypeId ? "active" : ""} ${idx === defaultTypeActiveIndex ? "kbd-active" : ""}`}
+                                    onMouseMove={() => setDefaultTypeActiveIndex(idx)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      pickDefaultTypeByIndex(idx);
+                                    }}
+                                  >
+                                    <div className="type-select-item-left">
+                                      <span>{opt.label}</span>
+                                    </div>
+                                    {opt.id === draft.defaultSearchTypeId && <span className="check-mark">✓</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
                     <div className="settings-group">
-                      <div className="settings-group-title">列表显示</div>
-                      <label className="setting-row" title={!isMember ? membershipLockTip : undefined}>
+                      <div className="settings-group-title">
+                        <span>列表显示</span>
+                        {membershipBadge}
+                      </div>
+                      <label className="setting-row">
                         <input
                           type="checkbox"
                           checked={draft.showResultPath}
@@ -2049,7 +2182,10 @@ function SettingsView() {
                     </div>
 
                     <div className="settings-group">
-                      <div className="settings-group-title">自定义类型</div>
+                      <div className="settings-group-title">
+                        <span>自定义类型</span>
+                        {membershipBadge}
+                      </div>
                       <div className="form-row">
                         <div className="form-label">新增后缀</div>
                         <div className="input-with-btn">
@@ -2059,7 +2195,6 @@ function SettingsView() {
                             value={newTypeExt}
                             placeholder=".docx"
                             disabled={!isMember}
-                            title={!isMember ? membershipLockTip : undefined}
                             onChange={(e) => {
                               setNewTypeExt(e.target.value);
                               setError("");
@@ -2069,7 +2204,6 @@ function SettingsView() {
                             type="button"
                             className="small-btn"
                             disabled={!isMember}
-                            title={!isMember ? membershipLockTip : undefined}
                             onClick={() => {
                               const ext = newTypeExt.trim().toLowerCase();
                               if (!/^\.[a-z0-9]{1,10}$/i.test(ext)) {
@@ -2102,7 +2236,10 @@ function SettingsView() {
                     </div>
 
                     <div className="settings-group">
-                      <div className="settings-group-title">类型顺序</div>
+                      <div className="settings-group-title">
+                        <span>类型顺序</span>
+                        {membershipBadge}
+                      </div>
                       <div className="type-order-list">
                         <div className="type-order-list-inner">
                           {typeOptions.map((opt) => (
@@ -2112,7 +2249,9 @@ function SettingsView() {
                               label={opt.label}
                               isCustom={opt.id.startsWith("ext:")}
                               orderedIds={typeOptions.map((x) => x.id)}
+                              disabled={!isMember}
                               onMove={(fromId, toId, position) => {
+                                if (!isMember) return;
                                 const nextOrder = moveTypeId(
                                   typeOptions.map((x) => x.id),
                                   fromId,
@@ -2123,6 +2262,7 @@ function SettingsView() {
                                 setError("");
                               }}
                               onDelete={(targetId) => {
+                                if (!isMember) return;
                                 if (!targetId.startsWith("ext:")) return;
                                 const ext = targetId.slice(4);
                                 const nextCustom = (draft.customSearchTypes || []).filter(
@@ -2401,7 +2541,10 @@ function SettingsView() {
                     </div>
 
                     <div className="settings-group">
-                      <div className="settings-group-title">特效</div>
+                      <div className="settings-group-title">
+                        <span>特效</span>
+                        {membershipBadge}
+                      </div>
                       <label className="setting-row">
                         <input
                           type="checkbox"
@@ -2412,7 +2555,7 @@ function SettingsView() {
                             setError("");
                           }}
                         />
-                        <span>启用背景特效 { !isMember && `（${membershipLockTip}）` }</span>
+                        <span>启用背景特效</span>
                       </label>
                       {draft.enableEffect && (
                         <div className="form-row">
@@ -2529,7 +2672,10 @@ function SettingsView() {
                     </div>
 
                     <div className="settings-group">
-                      <div className="settings-group-title">主题色</div>
+                      <div className="settings-group-title">
+                        <span>主题色</span>
+                        {membershipBadge}
+                      </div>
                       <div className="accent-color-grid">
                         {themeColors.map((item) => (
                           <button
@@ -2542,7 +2688,7 @@ function SettingsView() {
                               setDraft({ ...draft, accentColor: item.color });
                               applyThemePreview(draft.theme, item.color);
                             }}
-                            title={isMember ? item.name : membershipLockTip}
+                            title={isMember ? item.name : undefined}
                           >
                             <div className="accent-color-dot" />
                           </button>
@@ -2582,6 +2728,7 @@ function TypeOrderItem({
   label,
   isCustom,
   orderedIds,
+  disabled,
   onMove,
   onDelete,
 }: {
@@ -2589,16 +2736,19 @@ function TypeOrderItem({
   label: string;
   isCustom: boolean;
   orderedIds: string[];
+  disabled?: boolean;
   onMove: (fromId: string, toId: string, position: "before" | "after") => void;
   onDelete: (id: string) => void;
 }) {
   const [dragOverPos, setDragOverPos] = useState<"top" | "bottom" | null>(null);
 
+  // 非会员禁用拖拽/删除：这里不再使用 title 提示，提示统一挪到分组标题右侧“订阅可用”
   return (
     <div
-      className={`type-order-item ${dragOverPos ? `drag-over-${dragOverPos}` : ""}`}
-      draggable
+      className={`type-order-item ${disabled ? "disabled" : ""} ${dragOverPos ? `drag-over-${dragOverPos}` : ""}`}
+      draggable={!disabled}
       onDragStart={(e) => {
+        if (disabled) return;
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", id);
         // 设置拖拽预览图透明度
@@ -2607,6 +2757,7 @@ function TypeOrderItem({
         setTimeout(() => target.classList.remove("dragging-source"), 0);
       }}
       onDragOver={(e) => {
+        if (disabled) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
         
@@ -2615,9 +2766,11 @@ function TypeOrderItem({
         setDragOverPos(e.clientY < midY ? "top" : "bottom");
       }}
       onDragLeave={() => {
+        if (disabled) return;
         setDragOverPos(null);
       }}
       onDrop={(e) => {
+        if (disabled) return;
         e.preventDefault();
         setDragOverPos(null);
         const fromId = e.dataTransfer.getData("text/plain");
@@ -2642,9 +2795,11 @@ function TypeOrderItem({
           className="type-order-del"
           aria-label="删除"
           title="删除"
+          disabled={disabled}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (disabled) return;
             onDelete(id);
           }}
         >

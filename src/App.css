@@ -312,7 +312,6 @@ html[data-theme="light"] .settings-logo {
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
   -webkit-app-region: drag; /* 默认容器可拖拽 */
-  border-radius: 14px;
 }
 
 /* 官网链接按钮 */
@@ -358,7 +357,6 @@ html[data-theme="light"] .settings-logo {
   height: 100vh;
   overflow: hidden;
   background: var(--fs-bg);
-  border-radius: 12px;
   border: 1px solid var(--fs-border);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
@@ -504,6 +502,59 @@ html[data-theme="light"] .container.settings-container {
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.type-select-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.type-select-btn:disabled:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+  color: var(--fs-text);
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-type-select {
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
+}
+
+.settings-type-select .type-select-btn {
+  height: 38px;
+  width: 100%;
+  max-width: none;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 13px;
+  background: var(--fs-bg);
+}
+
+.settings-type-select .type-select-btn:hover:not(:disabled) {
+  background: var(--fs-surface);
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-type-select .type-select-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+}
+
+.settings-type-select .type-select-label {
+  max-width: none;
+}
+
+.settings-type-select .type-select-menu {
+  left: 0;
+  right: auto;
+  min-width: 100%;
+}
+
 .type-select-btn:hover {
   background: var(--fs-accent-soft);
   border-color: var(--fs-accent);
@@ -612,6 +663,11 @@ html[data-theme="light"] .container.settings-container {
 }
 
 .type-select-item:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border-soft);
+}
+
+.type-select-item.kbd-active:not(.active) {
   background: var(--fs-surface-2);
   border-color: var(--fs-border-soft);
 }
@@ -1262,6 +1318,27 @@ html[data-theme="light"] .results li.selected .action-btn {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.select-input {
+  cursor: pointer;
+  padding-right: 34px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fs-muted) 50%),
+    linear-gradient(135deg, var(--fs-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 13px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.select-input:hover:not(:disabled) {
+  border-color: var(--fs-accent);
+  background: var(--fs-surface);
+}
+
 .number-input:focus, .text-input:focus, .select-input:focus {
   border-color: var(--fs-accent);
   background: var(--fs-surface);
@@ -1304,11 +1381,23 @@ html[data-theme="light"] .results li.selected .action-btn {
   position: relative;
 }
 
+.type-order-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .type-order-item:hover {
   background: var(--fs-surface);
   border-color: var(--fs-accent);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.type-order-item.disabled:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+  transform: none;
+  box-shadow: none;
 }
 
 .type-order-item.dragging-source {
@@ -1388,6 +1477,16 @@ html[data-theme="light"] .results li.selected .action-btn {
 .type-order-del:hover {
   background: rgba(255, 77, 79, 0.1);
   color: #ef4444;
+}
+
+.type-order-del:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.type-order-del:disabled:hover {
+  background: transparent;
+  color: var(--fs-muted);
 }
 
 .type-order-list {
@@ -1780,6 +1879,16 @@ html[data-theme="light"] .settings-nav-item:hover {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.membership-badge {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--fs-muted);
+  padding: 2px 8px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  border-radius: 999px;
 }
 
 .settings-group-title::after {

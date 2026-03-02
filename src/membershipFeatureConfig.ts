@@ -2,7 +2,8 @@ export type MembershipControlledFeatureKey =
   | "themeColor"
   | "defaultSearchType"
   | "resultPathDisplay"
-  | "customSuffix";
+  | "customSuffix"
+  | "searchTypeOrder";
 
 export type MembershipControlledFeature = {
   key: MembershipControlledFeatureKey;
@@ -32,5 +33,9 @@ export const MEMBERSHIP_CONTROLLED_FEATURES: MembershipControlledFeature[] = [
     label: "自定义新增后缀",
     description: "新增自定义后缀类型（例如：.docx）",
   },
+  {
+    key: "searchTypeOrder",
+    label: "类型顺序调整",
+    description: "调整搜索类型在主界面的展示顺序",
+  },
 ];
-
