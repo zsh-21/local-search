@@ -101,15 +101,23 @@ export function useSearchController() {
     [settings.customSearchTypes, settings.searchTypeOrder],
   );
 
+  const enabledSearchTypeOptions = useMemo(() => {
+    const disabled = Array.isArray(settings.disabledSearchTypeIds) ? settings.disabledSearchTypeIds : [];
+    return searchTypeOptions.filter((t) => t.id === "all" || !disabled.includes(t.id));
+  }, [searchTypeOptions, settings.disabledSearchTypeIds]);
+
   useEffect(() => {
-    const valid = searchTypeOptions.some((t) => t.id === searchTypeId);
+    const valid = enabledSearchTypeOptions.some((t) => t.id === searchTypeId);
     if (!valid) setSearchTypeId(settings.defaultSearchTypeId || "all");
-  }, [searchTypeId, searchTypeOptions, settings.defaultSearchTypeId]);
+  }, [searchTypeId, enabledSearchTypeOptions, settings.defaultSearchTypeId]);
 
   const placeholder = useMemo(() => {
     if (searchTypeId === "all") return "搜索所有文件与文件夹...";
     if (searchTypeId === "file") return "搜索文件（不含文件夹）...";
     if (searchTypeId === "folder") return "搜索文件夹（不含文件）...";
+    if (searchTypeId === "image") return "搜索图片...";
+    if (searchTypeId === "video") return "搜索视频...";
+    if (searchTypeId === "settings") return "搜索系统设置项...";
     if (searchTypeId.startsWith("ext:")) {
       const ext = searchTypeId.slice(4);
       return `搜索${ext} 文件...`;
@@ -269,6 +277,59 @@ export function useSearchController() {
   }, [query, searchTypeId]);
 
   useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    if (!isIndexing) return;
+    if (isSearching) return;
+
+    let cancelled = false;
+    const refreshOnce = async () => {
+      if (cancelled) return;
+      if (!window.ipcRenderer) return;
+      if (!isIndexing) return;
+      if (isSearching) return;
+
+      const currentQuery = queryRef.current.trim();
+      if (currentQuery !== trimmed) return;
+
+      const currentTypeId = searchTypeIdRef.current;
+      try {
+        const resp = (await window.ipcRenderer.invoke(
+          "search-files",
+          trimmed,
+          { searchTypeId: currentTypeId },
+        )) as (SearchResponse & { hasMore?: boolean }) | undefined;
+
+        if (cancelled) return;
+        if (queryRef.current.trim() !== trimmed) return;
+        if (searchTypeIdRef.current !== currentTypeId) return;
+
+        const nextResults = resp?.results ?? [];
+        setResults(nextResults);
+        setVisibleCount(50);
+        const preservePath = selectedPathRef.current;
+        if (preservePath) {
+          const idx = nextResults.findIndex((x) => x.path === preservePath);
+          setSelectedIndex(idx >= 0 ? idx : 0);
+        } else {
+          setSelectedIndex(0);
+        }
+        setIsIndexing(Boolean(resp?.isIndexing));
+        setHasMore(Boolean(resp?.hasMore));
+      } catch {}
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshOnce();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [query, isIndexing, isSearching]);
+
+  useEffect(() => {
     if (listRef.current && lastSelectedBy === "keyboard") {
       if (typeof listRef.current.scrollToItem === "function") {
         listRef.current.scrollToItem(selectedIndex, "smart");
@@ -293,6 +354,14 @@ export function useSearchController() {
   };
 
   const openFolder = (app: AppItem) => {
+    if (app.type === "settings") {
+      window.ipcRenderer?.invoke("open-item", {
+        name: app.name,
+        path: app.path,
+        type: app.type || "file",
+      });
+      return;
+    }
     window.ipcRenderer?.invoke("open-folder", app.path);
   };
 
@@ -366,7 +435,7 @@ export function useSearchController() {
 
   const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
   const currentTypeLabel = useMemo(() => {
-    return searchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有文件";
+    return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
   }, [searchTypeId, searchTypeOptions]);
 
   const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
@@ -471,7 +540,7 @@ export function useSearchController() {
     isIndexing,
     hasMore,
     placeholder,
-    searchTypeOptions,
+    searchTypeOptions: enabledSearchTypeOptions,
     currentTypeLabel,
     visibleResults,
     listHeight,

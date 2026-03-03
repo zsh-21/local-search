@@ -30,6 +30,8 @@ export function useSettingsController() {
     settings.defaultSearchTypeId,
     settings.customSearchTypes,
     settings.searchTypeOrder,
+    settings.disabledSearchTypeIds,
+    settings.ignoredPaths,
     settings.showResultPath,
     settings.accentColor,
     settings.enableEffect,
@@ -50,6 +52,8 @@ export function useSettingsController() {
       draft.defaultSearchTypeId === settings.defaultSearchTypeId &&
       arrEq(draft.customSearchTypes || [], settings.customSearchTypes || []) &&
       arrEq(draft.searchTypeOrder || [], settings.searchTypeOrder || []) &&
+      arrEq(draft.disabledSearchTypeIds || [], settings.disabledSearchTypeIds || []) &&
+      arrEq(draft.ignoredPaths || [], settings.ignoredPaths || []) &&
       draft.keepStateOnClose === settings.keepStateOnClose &&
       draft.showResultPath === settings.showResultPath &&
       draft.enableHistory === settings.enableHistory &&

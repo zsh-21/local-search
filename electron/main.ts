@@ -18,6 +18,8 @@ interface AppSettings {
 	defaultSearchTypeId: string;
 	customSearchTypes: string[];
 	searchTypeOrder: string[];
+	disabledSearchTypeIds: string[];
+	ignoredPaths: string[];
 	keepStateOnClose: boolean;
 	showResultPath: boolean;
 	enableHistory: boolean;
@@ -258,13 +260,16 @@ function loadSettings(): AppSettings {
 				defaultSearchTypeIdRaw === 'all' ||
 				defaultSearchTypeIdRaw === 'file' ||
 				defaultSearchTypeIdRaw === 'folder' ||
+				defaultSearchTypeIdRaw === 'image' ||
+				defaultSearchTypeIdRaw === 'video' ||
+				defaultSearchTypeIdRaw === 'settings' ||
 				(defaultSearchTypeIdRaw.startsWith('ext:') &&
 					/^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
 					customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
 					? defaultSearchTypeIdRaw
 					: DEFAULT_SEARCH_TYPE_ID;
 
-			const baseTypeIds = ['all', 'file', 'folder'];
+			const baseTypeIds = ['all', 'file', 'folder', 'image', 'video', 'settings'];
 			const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 			const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
 			const rawOrder: string[] = Array.isArray(raw?.searchTypeOrder)
@@ -282,6 +287,20 @@ function loadSettings(): AppSettings {
 				if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
 			}
 
+			const rawDisabledTypeIds: string[] = Array.isArray(raw?.disabledSearchTypeIds)
+				? raw.disabledSearchTypeIds.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+				: [];
+			const disabledSearchTypeIds: string[] = [];
+			const disabledSeen = new Set<string>();
+			for (const id of rawDisabledTypeIds) {
+				if (!allowedTypeIds.has(id)) continue;
+				if (id === 'all') continue;
+				if (disabledSeen.has(id)) continue;
+				disabledSeen.add(id);
+				disabledSearchTypeIds.push(id);
+			}
+			const safeDefaultSearchTypeId = disabledSearchTypeIds.includes(defaultSearchTypeId) ? 'all' : defaultSearchTypeId;
+
 			// 结果右侧按钮配置：过滤非法值、去重并限制最多三项
 			const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
 			const rawActionButtons: string[] = Array.isArray(raw?.resultActionButtons)
@@ -295,6 +314,19 @@ function loadSettings(): AppSettings {
 				if (resultActionButtons.length >= 3) break;
 			}
 			if (resultActionButtons.length === 0) resultActionButtons.push(...DEFAULT_RESULT_ACTION_BUTTONS);
+
+			const ignoredPathsRaw: string[] = Array.isArray(raw?.ignoredPaths)
+				? raw.ignoredPaths.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+				: [];
+			const ignoredPaths: string[] = [];
+			const ignoredSeen = new Set<string>();
+			for (const p of ignoredPathsRaw) {
+				const norm = p.replace(/\//g, '\\').replace(/\\+/g, '\\').trim().replace(/[\\]+$/g, '').toLowerCase();
+				if (!norm) continue;
+				if (ignoredSeen.has(norm)) continue;
+				ignoredSeen.add(norm);
+				ignoredPaths.push(p);
+			}
 
 			return {
 				autoStart: Boolean(raw?.autoStart),
@@ -311,9 +343,11 @@ function loadSettings(): AppSettings {
 					typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)
 						? Math.min(50, Math.max(0, Math.floor(raw.historyLimit)))
 						: DEFAULT_HISTORY_LIMIT,
-				defaultSearchTypeId,
+				defaultSearchTypeId: safeDefaultSearchTypeId,
 				customSearchTypes,
 				searchTypeOrder,
+				disabledSearchTypeIds,
+				ignoredPaths,
 				keepStateOnClose: Boolean(raw?.keepStateOnClose),
 				showResultPath: Boolean(raw?.showResultPath),
 				enableHistory: raw?.enableHistory !== false,
@@ -334,7 +368,9 @@ function loadSettings(): AppSettings {
 		historyLimit: DEFAULT_HISTORY_LIMIT,
 		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
 		customSearchTypes: [],
-		searchTypeOrder: ['all', 'file', 'folder'],
+		searchTypeOrder: ['all', 'file', 'folder', 'image', 'video', 'settings'],
+		disabledSearchTypeIds: [],
+		ignoredPaths: [],
 		keepStateOnClose: false,
 		showResultPath: false,
 		enableHistory: true,
@@ -815,6 +851,7 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 }
 
 function shouldSkipWatchPath(fullPath: string) {
+	if (fileIndex.isIgnoredPath(fullPath)) return true;
 	const lower = fullPath.toLowerCase();
 	return (
 		lower.includes('\\node_modules\\') ||
@@ -861,6 +898,7 @@ function openSearchWindow() {
 			return;
 		}
 
+		fileIndex.setSearchWindowVisible(true);
 		searchWasFocusedSinceShow = false;
 		searchAllowBlurHide = false;
 		if (searchHideTimer) {
@@ -880,6 +918,7 @@ function openSearchWindow() {
 	}
 	win = null;
 	createWindow();
+	fileIndex.setSearchWindowVisible(true);
 	setTimeout(() => {
 		if (!win || win.isDestroyed()) return;
 		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
@@ -893,6 +932,7 @@ function toggleSearchWindow() {
 			try {
 				win.webContents.send('search-window-hidden');
 			} catch {}
+			fileIndex.setSearchWindowVisible(false);
 			win.hide();
 		}
 		else openSearchWindow();
@@ -908,6 +948,7 @@ function hideSearchWindow() {
 		try {
 			win.webContents.send('search-window-hidden');
 		} catch {}
+		fileIndex.setSearchWindowVisible(false);
 		win.hide();
 	} catch {}
 }
@@ -1065,6 +1106,8 @@ if (!gotTheLock) {
 	});
 
 	app.whenReady().then(async () => {
+		const initialSettings = loadSettings();
+		fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
 		loadInstalledApps();
 		await fileIndex.loadCache();
 		const meta = loadFileIndexMeta();
@@ -1085,7 +1128,7 @@ if (!gotTheLock) {
 		} catch {}
 		void startUserDirectoryWatchers();
 		ensureTray();
-		app.setLoginItemSettings({ openAtLogin: loadSettings().autoStart, openAsHidden: true, path: app.getPath('exe') });
+		app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 		registerShortcuts();
 
 		void fileIndex.buildIfEmpty();
@@ -1107,6 +1150,7 @@ ipcMain.handle('hide-window', (event) => {
 	try {
 		w.webContents.send('search-window-hidden');
 	} catch {}
+	fileIndex.setSearchWindowVisible(false);
 	w.hide();
 });
 
@@ -1209,6 +1253,7 @@ ipcMain.handle('get-image-data-url', (_event, targetPath: string) => {
 });
 
 ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
+	const prevIgnoredPaths = loadSettings().ignoredPaths;
 	const customSearchTypes: string[] = Array.isArray(settings?.customSearchTypes)
 		? Array.from(
 				new Set<string>(
@@ -1226,15 +1271,31 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		defaultSearchTypeIdRaw === 'all' ||
 		defaultSearchTypeIdRaw === 'file' ||
 		defaultSearchTypeIdRaw === 'folder' ||
+		defaultSearchTypeIdRaw === 'image' ||
+		defaultSearchTypeIdRaw === 'video' ||
+		defaultSearchTypeIdRaw === 'settings' ||
 		(defaultSearchTypeIdRaw.startsWith('ext:') &&
 			/^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
 			customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
 			? defaultSearchTypeIdRaw
 			: DEFAULT_SEARCH_TYPE_ID;
 
-	const baseTypeIds = ['all', 'file', 'folder'];
+	const baseTypeIds = ['all', 'file', 'folder', 'image', 'video', 'settings'];
 	const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 	const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
+	const rawDisabledTypeIds: string[] = Array.isArray(settings?.disabledSearchTypeIds)
+		? settings.disabledSearchTypeIds.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+		: [];
+	const disabledSearchTypeIds: string[] = [];
+	const disabledSeen = new Set<string>();
+	for (const id of rawDisabledTypeIds) {
+		if (!allowedTypeIds.has(id)) continue;
+		if (id === 'all') continue;
+		if (disabledSeen.has(id)) continue;
+		disabledSeen.add(id);
+		disabledSearchTypeIds.push(id);
+	}
+	const safeDefaultSearchTypeId = disabledSearchTypeIds.includes(defaultSearchTypeId) ? 'all' : defaultSearchTypeId;
 	const rawOrder: string[] = Array.isArray(settings?.searchTypeOrder)
 		? settings.searchTypeOrder
 				.map((x: any) => (typeof x === 'string' ? x.trim() : ''))
@@ -1256,6 +1317,19 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
 		? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
 		: 0.25;
+
+	const ignoredPathsRaw: string[] = Array.isArray(settings?.ignoredPaths)
+		? settings.ignoredPaths.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+		: [];
+	const ignoredPaths: string[] = [];
+	const ignoredSeen = new Set<string>();
+	for (const p of ignoredPathsRaw) {
+		const norm = p.replace(/\//g, '\\').replace(/\\+/g, '\\').trim().replace(/[\\]+$/g, '').toLowerCase();
+		if (!norm) continue;
+		if (ignoredSeen.has(norm)) continue;
+		ignoredSeen.add(norm);
+		ignoredPaths.push(p);
+	}
 
 	const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
 	const rawActionButtons: string[] = Array.isArray(settings?.resultActionButtons)
@@ -1285,9 +1359,11 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 			typeof settings?.historyLimit === 'number' && Number.isFinite(settings.historyLimit)
 				? Math.min(50, Math.max(0, Math.floor(settings.historyLimit)))
 				: DEFAULT_HISTORY_LIMIT,
-		defaultSearchTypeId,
+		defaultSearchTypeId: safeDefaultSearchTypeId,
 		customSearchTypes,
 		searchTypeOrder,
+		disabledSearchTypeIds,
+		ignoredPaths,
 		keepStateOnClose: Boolean(settings?.keepStateOnClose),
 		showResultPath: Boolean(settings?.showResultPath),
 		enableHistory: settings?.enableHistory !== false,
@@ -1320,6 +1396,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		openAsHidden: true,
 		path: app.getPath('exe'),
 	});
+	fileIndex.setIgnoredPaths(next.ignoredPaths);
 	saveSettings(next);
 	// historyLimit 变化时裁剪历史
 	const history = loadHistory();
@@ -1327,6 +1404,17 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 	registerShortcuts();
 	win?.webContents.send('settings-updated', next);
 	settingsWin?.webContents.send('settings-updated', next);
+
+	const normalizeIgnoreForCompare = (arr: string[]) =>
+		(Array.isArray(arr) ? arr : [])
+			.map((p) => (typeof p === 'string' ? p.replace(/\//g, '\\').replace(/\\+/g, '\\').trim().replace(/[\\]+$/g, '').toLowerCase() : ''))
+			.filter(Boolean)
+			.sort();
+	const prevNorm = normalizeIgnoreForCompare(prevIgnoredPaths);
+	const nextNorm = normalizeIgnoreForCompare(next.ignoredPaths);
+	if (prevNorm.join('|') !== nextNorm.join('|')) {
+		void fileIndex.rebuild();
+	}
 	return { ok: true };
 });
 
@@ -1391,6 +1479,12 @@ ipcMain.handle('delete-history-item', (_event, targetPath: string) => {
 
 ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
 	try {
+		if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
+			await shell.openExternal(item.path);
+			if (item?.name && item?.path) recordHistoryItem(item);
+			BrowserWindow.fromWebContents(event.sender)?.hide();
+			return true;
+		}
 		const resolved = resolveAppId(item?.path);
 		let ok = await openResolvedTarget(resolved);
 		if (!ok) {
@@ -1455,6 +1549,7 @@ ipcMain.handle('rebuild-file-index', async () => {
 
 ipcMain.handle('search-files', async (event, query: string, options?: { searchTypeId?: string }) => {
 	if (!query || query.trim().length < 2) return { results: [], isIndexing: fileIndex.getStatus().isIndexing };
+	fileIndex.pauseIndexingFor(900);
 
 	const lowerQuery = query.trim().toLowerCase();
 	const aliases: Record<string, string[]> = {
@@ -1468,6 +1563,57 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 
 	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
 	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
+	const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
+	const videoExts = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
+	const settingsItems =
+		process.platform === 'win32'
+			? [
+					{ name: '系统设置', uri: 'ms-settings:' },
+					{ name: '网络和 Internet', uri: 'ms-settings:network' },
+					{ name: 'Wi‑Fi', uri: 'ms-settings:network-wifi' },
+					{ name: '以太网', uri: 'ms-settings:network-ethernet' },
+					{ name: 'VPN', uri: 'ms-settings:network-vpn' },
+					{ name: '代理', uri: 'ms-settings:network-proxy' },
+					{ name: '蓝牙和设备', uri: 'ms-settings:bluetooth' },
+					{ name: '显示', uri: 'ms-settings:display' },
+					{ name: '夜间模式', uri: 'ms-settings:nightlight' },
+					{ name: '声音', uri: 'ms-settings:sound' },
+					{ name: '通知', uri: 'ms-settings:notifications' },
+					{ name: '电源和电池', uri: 'ms-settings:batterysaver' },
+					{ name: '存储', uri: 'ms-settings:storagesense' },
+					{ name: '应用', uri: 'ms-settings:appsfeatures' },
+					{ name: '默认应用', uri: 'ms-settings:defaultapps' },
+					{ name: '启动', uri: 'ms-settings:startupapps' },
+					{ name: '时间和语言', uri: 'ms-settings:dateandtime' },
+					{ name: '语言', uri: 'ms-settings:regionlanguage' },
+					{ name: '键盘', uri: 'ms-settings:keyboard' },
+					{ name: '鼠标', uri: 'ms-settings:mousetouchpad' },
+					{ name: '个性化', uri: 'ms-settings:personalization' },
+					{ name: '任务栏', uri: 'ms-settings:taskbar' },
+					{ name: '主题', uri: 'ms-settings:themes' },
+					{ name: '账户', uri: 'ms-settings:yourinfo' },
+					{ name: '登录选项', uri: 'ms-settings:signinoptions' },
+					{ name: 'Windows 更新', uri: 'ms-settings:windowsupdate' },
+					{ name: '隐私和安全', uri: 'ms-settings:privacy' },
+					{ name: '开发者选项', uri: 'ms-settings:developers' },
+					{ name: '关于', uri: 'ms-settings:about' },
+			  ]
+			: [];
+
+	if (searchTypeId === 'settings') {
+		const out: Array<{ name: string; path: string; type: string; score: number }> = [];
+		for (const it of settingsItems) {
+			const nameLower = it.name.toLowerCase();
+			if (!keywords.some((k) => nameLower.includes(k))) continue;
+			const score = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+			out.push({ name: it.name, path: it.uri, type: 'settings', score });
+		}
+		const merged = out
+			.sort((a, b) => (b.score || 0) - (a.score || 0))
+			.slice(0, 100)
+			.map(({ score, ...rest }) => rest);
+		return { results: merged, isIndexing: false, hasMore: false };
+	}
 
 	const appResults = await (async () => {
 		// 如果指定了搜索类型且不是 'all' 或 'file'，则不显示应用结果
@@ -1495,8 +1641,17 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 
 	// 预过滤文件，避免为不需要的文件提取图标
 	const filteredFiles = fileSearch.results.filter((r) => {
+		if (fileIndex.isIgnoredPath(r.path)) return false;
 		if (searchTypeId === 'file' && r.isDirectory) return false;
 		if (searchTypeId === 'folder' && !r.isDirectory) return false;
+		if (searchTypeId === 'image') {
+			if (r.isDirectory) return false;
+			return imageExts.has(path.extname(r.path).toLowerCase());
+		}
+		if (searchTypeId === 'video') {
+			if (r.isDirectory) return false;
+			return videoExts.has(path.extname(r.path).toLowerCase());
+		}
 		if (extFilter && (r.isDirectory || path.extname(r.path).toLowerCase() !== extFilter)) return false;
 		return existsSync(r.path);
 	});

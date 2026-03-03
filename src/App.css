@@ -575,7 +575,6 @@ html[data-theme="light"] .container.settings-container {
   background: var(--fs-accent-soft);
   border-color: var(--fs-accent);
   color: var(--fs-accent);
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -1326,6 +1325,7 @@ html[data-theme="light"] .results li.selected .action-btn {
   & .input-with-btn {
     display: flex;
     gap: 10px;
+    flex: 1;
 
     .text-input {
       width: calc(100% - 50px);
@@ -1437,7 +1437,6 @@ html[data-theme="light"] .results li.selected .action-btn {
 .type-order-item:hover {
   background: var(--fs-surface);
   border-color: var(--fs-accent);
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -1492,10 +1491,45 @@ html[data-theme="light"] .results li.selected .action-btn {
   font-size: 14px;
   font-weight: 500;
   color: var(--fs-text);
+  min-width: 0;
 }
 
 .type-order-spacer {
   flex: 1;
+}
+
+.type-order-extra {
+  display: inline-flex;
+  align-items: center;
+}
+
+.type-toggle-btn {
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  color: var(--fs-muted);
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.type-toggle-btn:hover {
+  border-color: rgba(56, 189, 248, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.type-toggle-btn.on {
+  background: var(--fs-accent-soft);
+  border-color: rgba(56, 189, 248, 0.22);
+  color: var(--fs-accent);
+}
+
+.type-toggle-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .type-order-fixed {
@@ -1974,7 +2008,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 3px 8px;
   background: var(--fs-surface-2);
   border: 1px solid var(--fs-border);
   border-radius: 10px;
@@ -1990,6 +2024,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   gap: 10px;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
+  flex: 1;
 }
 
 .action-config-label {
@@ -1999,6 +2035,55 @@ html[data-theme="light"] .settings-nav-item:hover {
   color: var(--fs-text);
   font-size: 13px;
   font-weight: 700;
+  min-width: 0;
+}
+
+.fs-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.fs-tooltip-pop {
+  position: fixed;
+  max-width: 520px;
+  padding: 10px 12px;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  box-shadow: var(--fs-shadow);
+  color: var(--fs-text);
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.fs-tooltip-text {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.fs-tooltip-arrow {
+  position: absolute;
+  left: var(--fs-tooltip-arrow-left, 14px);
+  width: 10px;
+  height: 10px;
+  background: var(--fs-surface);
+  border-left: 1px solid var(--fs-border);
+  border-top: 1px solid var(--fs-border);
+  transform: rotate(45deg);
+}
+
+.fs-tooltip-pop[data-placement="bottom"] .fs-tooltip-arrow {
+  top: -5px;
+}
+
+.fs-tooltip-pop[data-placement="top"] .fs-tooltip-arrow {
+  top: calc(100% - 5px);
 }
 
 .action-config-note {
@@ -2031,7 +2116,7 @@ html[data-theme="light"] .settings-nav-item:hover {
 }
 
 .small-btn.ghost {
-  height: 28px;
+  height: 23px;
   padding: 0 8px;
   font-weight: 800;
   background: transparent;

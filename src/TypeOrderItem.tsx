@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 
 // 类型顺序拖拽条目：负责单行拖拽排序与删除交互（可按会员状态禁用）
 export function TypeOrderItem({
@@ -7,6 +7,7 @@ export function TypeOrderItem({
   isCustom,
   orderedIds,
   disabled,
+  rightExtra,
   onMove,
   onDelete,
 }: {
@@ -15,6 +16,7 @@ export function TypeOrderItem({
   isCustom: boolean;
   orderedIds: string[];
   disabled?: boolean;
+  rightExtra?: ReactNode;
   onMove: (fromId: string, toId: string, position: "before" | "after") => void;
   onDelete: (id: string) => void;
 }) {
@@ -62,6 +64,7 @@ export function TypeOrderItem({
       <span className="type-order-handle" aria-hidden="true" />
       <span className="type-order-label">{label}</span>
       <span className="type-order-spacer" />
+      {rightExtra ? <span className="type-order-extra">{rightExtra}</span> : null}
       {isCustom ? (
         <button
           type="button"

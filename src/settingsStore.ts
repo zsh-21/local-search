@@ -33,6 +33,9 @@ export function normalizeSettings(s: any): AppSettings {
     defaultSearchTypeIdRaw === "all" ||
     defaultSearchTypeIdRaw === "file" ||
     defaultSearchTypeIdRaw === "folder" ||
+    defaultSearchTypeIdRaw === "image" ||
+    defaultSearchTypeIdRaw === "video" ||
+    defaultSearchTypeIdRaw === "settings" ||
     (defaultSearchTypeIdRaw.startsWith("ext:") &&
       /^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
       customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
@@ -41,7 +44,7 @@ export function normalizeSettings(s: any): AppSettings {
 
   // 规范化搜索类型顺序：过滤非法值并补齐内置/自定义类型
   const normalizeSearchTypeOrder = (order: any) => {
-    const baseIds = ["all", "file"];
+    const baseIds = ["all", "file", "folder", "image", "video", "settings"];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
     const allowed = new Set<string>([...baseIds, ...customIds]);
     const raw: string[] = Array.isArray(order)
@@ -61,6 +64,26 @@ export function normalizeSettings(s: any): AppSettings {
     return out;
   };
 
+  const allowedTypeIdsForDisable = (() => {
+    const baseIds = ["all", "file", "folder", "image", "video", "settings"];
+    const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
+    return new Set<string>([...baseIds, ...customIds]);
+  })();
+  const disabledSearchTypeIdsRaw: string[] = Array.isArray(s?.disabledSearchTypeIds)
+    ? s.disabledSearchTypeIds
+        .map((x: any) => (typeof x === "string" ? x.trim() : ""))
+        .filter(Boolean)
+    : [];
+  const disabledSearchTypeIds: string[] = [];
+  const disabledSeen = new Set<string>();
+  for (const id of disabledSearchTypeIdsRaw) {
+    if (!allowedTypeIdsForDisable.has(id)) continue;
+    if (id === "all") continue;
+    if (disabledSeen.has(id)) continue;
+    disabledSeen.add(id);
+    disabledSearchTypeIds.push(id);
+  }
+
   const effectType = s?.effectType === "warp" ? "warp" : s?.effectType === "waves" ? "waves" : "particles";
   const backgroundImagePath =
     typeof s?.backgroundImagePath === "string" ? s.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
@@ -69,6 +92,23 @@ export function normalizeSettings(s: any): AppSettings {
   const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
     ? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
     : DEFAULT_SETTINGS.backgroundImageOpacity;
+
+  const normalizeIgnoredPath = (v: string) =>
+    v.replace(/\//g, "\\").trim().replace(/[\\]+$/g, "");
+  const ignoredPathsRaw: string[] = Array.isArray(s?.ignoredPaths)
+    ? s.ignoredPaths.map((x: any) => (typeof x === "string" ? x : "")).map((x: string) => x.trim()).filter(Boolean)
+    : [];
+  const ignoredPaths: string[] = [];
+  const ignoredSeen = new Set<string>();
+  for (const p of ignoredPathsRaw) {
+    const norm = normalizeIgnoredPath(p).toLowerCase();
+    if (!norm) continue;
+    if (ignoredSeen.has(norm)) continue;
+    ignoredSeen.add(norm);
+    ignoredPaths.push(p.trim());
+  }
+
+  const safeDefaultSearchTypeId = disabledSearchTypeIds.includes(defaultSearchTypeId) ? "all" : defaultSearchTypeId;
 
   // 规范化结果操作按钮：只接受允许的 id、去重、最多三项，并保持原有顺序
   const allowedActionIds = new Set<ResultActionButtonId>(["openFolder", "copyPath", "deleteHistory"]);
@@ -97,9 +137,11 @@ export function normalizeSettings(s: any): AppSettings {
       typeof s?.historyLimit === "number" && Number.isFinite(s.historyLimit)
         ? Math.min(50, Math.max(0, Math.floor(s.historyLimit)))
         : 5,
-    defaultSearchTypeId,
+    defaultSearchTypeId: safeDefaultSearchTypeId,
     customSearchTypes,
     searchTypeOrder: normalizeSearchTypeOrder(s?.searchTypeOrder),
+    disabledSearchTypeIds,
+    ignoredPaths,
     keepStateOnClose: Boolean(s?.keepStateOnClose),
     showResultPath: Boolean(s?.showResultPath),
     enableHistory: s?.enableHistory !== false,
@@ -155,9 +197,12 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
 
 export function getSearchTypeOptions(customTypes: string[], order: string[] | undefined): SearchTypeOption[] {
   const base: SearchTypeOption[] = [
-    { id: "all", label: "所有文件" },
+    { id: "all", label: "所有类型" },
     { id: "file", label: "文件" },
     { id: "folder", label: "文件夹" },
+    { id: "image", label: "图片" },
+    { id: "video", label: "视频" },
+    { id: "settings", label: "设置" },
   ];
   const custom: SearchTypeOption[] = (customTypes || []).map((ext) => ({
     id: `ext:${ext}`,

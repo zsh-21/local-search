@@ -21,6 +21,8 @@ export interface AppSettings {
   defaultSearchTypeId: string;
   customSearchTypes: string[];
   searchTypeOrder: string[];
+  disabledSearchTypeIds: string[];
+  ignoredPaths: string[];
   keepStateOnClose: boolean;
   showResultPath: boolean;
   enableHistory: boolean;
@@ -44,7 +46,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyLimit: 5,
   defaultSearchTypeId: "all",
   customSearchTypes: [],
-  searchTypeOrder: ["all", "file", "folder"],
+  searchTypeOrder: ["all", "file", "folder", "image", "video", "settings"],
+  disabledSearchTypeIds: [],
+  ignoredPaths: [],
   keepStateOnClose: false,
   showResultPath: false,
   enableHistory: true,

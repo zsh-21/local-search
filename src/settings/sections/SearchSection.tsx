@@ -1,4 +1,5 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppSettings } from "../../appTypes";
 import { getSearchTypeOptions } from "../../settingsStore";
 import { TypeOrderItem } from "../../TypeOrderItem";
@@ -41,6 +42,73 @@ export function SearchSection({
   pickDefaultTypeByIndex: (idx: number) => void;
   moveTypeId: (list: string[], fromId: string, toId: string, position: "before" | "after") => string[];
 }) {
+  const [newIgnoredPath, setNewIgnoredPath] = useState("");
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const [tooltip, setTooltip] = useState<null | {
+    text: string;
+    left: number;
+    top: number;
+    placement: "top" | "bottom";
+    anchor: { left: number; right: number; top: number; bottom: number };
+    arrowLeft: number;
+  }>(null);
+
+  useEffect(() => {
+    if (!tooltip) return;
+    const hide = () => setTooltip(null);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    window.addEventListener("mousedown", hide, true);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+      window.removeEventListener("mousedown", hide, true);
+    };
+  }, [tooltip]);
+
+  useLayoutEffect(() => {
+    if (!tooltip) return;
+    const el = tooltipRef.current;
+    if (!el) return;
+    const gap = 10;
+    const padding = 12;
+    const viewportW = window.innerWidth || 0;
+    const viewportH = window.innerHeight || 0;
+
+    const rect = tooltip.anchor;
+    const tipRect = el.getBoundingClientRect();
+    const tipW = tipRect.width || 0;
+    const tipH = tipRect.height || 0;
+
+    let placement: "top" | "bottom" = tooltip.placement;
+    if (placement === "top" && rect.top - gap - tipH < padding) placement = "bottom";
+    if (placement === "bottom" && rect.bottom + gap + tipH > viewportH - padding) placement = "top";
+
+    const left = Math.min(Math.max(padding, rect.left), Math.max(padding, viewportW - padding - tipW));
+    const top = placement === "top" ? rect.top - gap - tipH : rect.bottom + gap;
+
+    const anchorCenter = (rect.left + rect.right) / 2;
+    const arrowLeft = Math.min(Math.max(14, anchorCenter - left), Math.max(14, tipW - 14));
+
+    setTooltip((prev) => {
+      if (!prev) return prev;
+      if (prev.left === left && prev.top === top && prev.placement === placement && prev.arrowLeft === arrowLeft) return prev;
+      return { ...prev, left, top, placement, arrowLeft };
+    });
+  }, [tooltip?.text, tooltip?.anchor.left, tooltip?.anchor.right, tooltip?.anchor.top, tooltip?.anchor.bottom, tooltip?.placement]);
+
+  const showTooltipByRect = (text: string, rect: DOMRect) => {
+    const placement: "top" | "bottom" = rect.top > (window.innerHeight || 0) * 0.55 ? "top" : "bottom";
+    setTooltip({
+      text,
+      left: 12,
+      top: 12,
+      placement,
+      anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      arrowLeft: 14,
+    });
+  };
+
   // 搜索结果右侧按钮配置：保持未来可扩展（新增按钮只需追加选项与渲染逻辑）
   const resultActionOptions: { id: AppSettings["resultActionButtons"][number]; label: string; note?: string }[] = [
     { id: "openFolder", label: "打开所在目录" },
@@ -82,6 +150,36 @@ export function SearchSection({
     next[target] = next[idx];
     next[idx] = tmp;
     setDraft({ ...draft, resultActionButtons: next });
+    setError("");
+  };
+
+  const normalizeIgnoredPath = (v: string) => v.replace(/\//g, "\\").trim().replace(/[\\]+$/g, "");
+  const ignoredPaths = Array.isArray(draft.ignoredPaths) ? draft.ignoredPaths : [];
+  const addIgnoredPath = () => {
+    const raw = newIgnoredPath.trim();
+    const normalized = normalizeIgnoredPath(raw);
+    if (!normalized) {
+      setError("请输入要忽略的路径");
+      return;
+    }
+    const exists = ignoredPaths.some((p) => normalizeIgnoredPath(p).toLowerCase() === normalized.toLowerCase());
+    if (exists) {
+      setError("该路径已存在");
+      return;
+    }
+    setDraft({ ...draft, ignoredPaths: [...ignoredPaths, raw] });
+    setNewIgnoredPath("");
+    setError("");
+  };
+
+  const disabledTypeIds = Array.isArray(draft.disabledSearchTypeIds) ? draft.disabledSearchTypeIds : [];
+  const isTypeDisabled = (id: string) => id !== "all" && disabledTypeIds.includes(id);
+  const toggleTypeEnabled = (id: string) => {
+    if (!id || id === "all") return;
+    const disabled = isTypeDisabled(id);
+    const nextDisabled = disabled ? disabledTypeIds.filter((x) => x !== id) : [...disabledTypeIds, id];
+    const nextDefault = !disabled && draft.defaultSearchTypeId === id ? "all" : draft.defaultSearchTypeId;
+    setDraft({ ...draft, disabledSearchTypeIds: nextDisabled, defaultSearchTypeId: nextDefault });
     setError("");
   };
 
@@ -196,6 +294,90 @@ export function SearchSection({
 
       <div className="settings-group">
         <div className="settings-group-title">
+          <span>路径黑名单</span>
+        </div>
+        <div className="settings-hint">
+          命中前缀的路径及其子目录将被忽略（可配置多个，上不封顶）
+        </div>
+        <div className="form-row">
+          <div className="form-label">新增路径</div>
+          <div className="input-with-btn">
+            <input
+              type="text"
+              className="text-input"
+              value={newIgnoredPath}
+              placeholder="例如 D:\\Downloads 或 C:\\Users\\xxx\\AppData\\Local"
+              onChange={(e) => {
+                setNewIgnoredPath(e.target.value);
+                setError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addIgnoredPath();
+                }
+              }}
+            />
+            <button type="button" className="small-btn" onClick={addIgnoredPath}>
+              添加
+            </button>
+          </div>
+        </div>
+        {ignoredPaths.length > 0 ? (
+          <div className="action-config-list">
+            {ignoredPaths.map((p) => (
+              <div key={p} className="action-config-row checked">
+                <div className="action-config-left">
+                  <span className="action-config-label">
+                    <span
+                      className="fs-ellipsis"
+                      onMouseEnter={(e) => showTooltipByRect(p, (e.currentTarget as HTMLElement).getBoundingClientRect())}
+                      onMouseLeave={() => setTooltip(null)}
+                    >
+                      {p}
+                    </span>
+                  </span>
+                </div>
+                <div className="action-config-right">
+                  <button
+                    type="button"
+                    className="small-btn ghost"
+                    onClick={() => {
+                      setDraft({ ...draft, ignoredPaths: ignoredPaths.filter((x) => x !== p) });
+                      setError("");
+                    }}
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {tooltip
+        ? createPortal(
+            <div
+              ref={tooltipRef}
+              className="fs-tooltip-pop"
+              data-placement={tooltip.placement}
+              style={
+                {
+                  left: tooltip.left,
+                  top: tooltip.top,
+                  ["--fs-tooltip-arrow-left" as any]: `${tooltip.arrowLeft}px`,
+                } as any
+              }
+            >
+              <div className="fs-tooltip-text">{tooltip.text}</div>
+              <div className="fs-tooltip-arrow" />
+            </div>,
+            document.body,
+          )
+        : null}
+
+      <div className="settings-group">
+        <div className="settings-group-title">
           <span>自定义类型</span>
           {membershipBadge}
         </div>
@@ -245,7 +427,6 @@ export function SearchSection({
             </button>
           </div>
         </div>
-        {error ? <div className="settings-error">{error}</div> : null}
       </div>
 
       <div className="settings-group">
@@ -263,6 +444,23 @@ export function SearchSection({
                 isCustom={opt.id.startsWith("ext:")}
                 orderedIds={typeOptions.map((x) => x.id)}
                 disabled={!isMember}
+                rightExtra={
+                  opt.id === "all" ? null : (
+                    <button
+                      type="button"
+                      className={`type-toggle-btn ${isTypeDisabled(opt.id) ? "" : "on"}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleTypeEnabled(opt.id);
+                      }}
+                      aria-pressed={!isTypeDisabled(opt.id)}
+                      aria-label={isTypeDisabled(opt.id) ? "启用该类型" : "禁用该类型"}
+                    >
+                      {isTypeDisabled(opt.id) ? "关闭" : "开启"}
+                    </button>
+                  )
+                }
                 onMove={(fromId, toId, position) => {
                   if (!isMember) return;
                   const nextOrder = moveTypeId(
@@ -355,6 +553,7 @@ export function SearchSection({
           })}
         </div>
       </div>
+      {error ? <div className="settings-error">{error}</div> : null}
     </div>
   );
 }
