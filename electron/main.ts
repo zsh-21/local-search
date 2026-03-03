@@ -26,7 +26,10 @@ interface AppSettings {
 	effectType: 'particles' | 'warp' | 'waves';
 	backgroundImagePath: string;
 	backgroundImageOpacity: number;
+	resultActionButtons: ResultActionButtonId[];
 }
+
+type ResultActionButtonId = 'openFolder' | 'copyPath' | 'deleteHistory';
 
 if (!app.isPackaged) {
 	const baseUserData = app.getPath('userData');
@@ -46,6 +49,7 @@ const DEFAULT_THEME: AppSettings['theme'] = 'dark';
 const DEFAULT_HISTORY_LIMIT = 5;
 const HOTKEY_COOLDOWN_MS = 300;
 const DEFAULT_SEARCH_TYPE_ID = 'all';
+const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'copyPath', 'deleteHistory'];
 const WIN_CONTEXT_MENU_VERB_KEY = 'FileSearchAddToQuickList';
 const WIN_CONTEXT_MENU_LABEL = '添加到FileSearch的快捷列表';
 
@@ -278,6 +282,19 @@ function loadSettings(): AppSettings {
 				if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
 			}
 
+			const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
+			const rawActionButtons: string[] = Array.isArray(raw?.resultActionButtons)
+				? raw.resultActionButtons.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+				: [];
+			const resultActionButtons: ResultActionButtonId[] = [];
+			for (const id of rawActionButtons) {
+				if (!allowedActionIds.has(id as ResultActionButtonId)) continue;
+				if (resultActionButtons.includes(id as ResultActionButtonId)) continue;
+				resultActionButtons.push(id as ResultActionButtonId);
+				if (resultActionButtons.length >= 3) break;
+			}
+			if (resultActionButtons.length === 0) resultActionButtons.push(...DEFAULT_RESULT_ACTION_BUTTONS);
+
 			return {
 				autoStart: Boolean(raw?.autoStart),
 				searchShortcut:
@@ -304,6 +321,7 @@ function loadSettings(): AppSettings {
 				effectType,
 				backgroundImagePath,
 				backgroundImageOpacity,
+				resultActionButtons,
 			};
 		}
 	} catch {}
@@ -324,6 +342,7 @@ function loadSettings(): AppSettings {
 		effectType: 'particles',
 		backgroundImagePath: '',
 		backgroundImageOpacity: 0.25,
+		resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
 	};
 }
 
@@ -633,6 +652,18 @@ function createWindow() {
 		},
 	});
 
+	if (!app.isPackaged) {
+		win.webContents.on('before-input-event', (event, input) => {
+			if (input.type !== 'keyDown') return;
+			if (input.key !== 'F12') return;
+			const w = win;
+			if (!w || w.isDestroyed()) return;
+			if (w.webContents.isDevToolsOpened()) w.webContents.closeDevTools();
+			else w.webContents.openDevTools({ mode: 'detach' });
+			event.preventDefault();
+		});
+	}
+
 	win.on('moved', () => {
 		if (win) saveConfig(win.getBounds());
 	});
@@ -705,6 +736,18 @@ function createSettingsWindow() {
 			preload: path.join(__dirname, 'preload.js'),
 		},
 	});
+
+	if (!app.isPackaged) {
+		settingsWin.webContents.on('before-input-event', (event, input) => {
+			if (input.type !== 'keyDown') return;
+			if (input.key !== 'F12') return;
+			const w = settingsWin;
+			if (!w || w.isDestroyed()) return;
+			if (w.webContents.isDevToolsOpened()) w.webContents.closeDevTools();
+			else w.webContents.openDevTools({ mode: 'detach' });
+			event.preventDefault();
+		});
+	}
 
 	settingsWin.on('moved', () => {
 		if (settingsWin) saveSettingsWindowConfig(settingsWin.getBounds());
@@ -1211,6 +1254,19 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
 		: 0.25;
 
+	const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
+	const rawActionButtons: string[] = Array.isArray(settings?.resultActionButtons)
+		? settings.resultActionButtons.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+		: [];
+	const resultActionButtons: ResultActionButtonId[] = [];
+	for (const id of rawActionButtons) {
+		if (!allowedActionIds.has(id as ResultActionButtonId)) continue;
+		if (resultActionButtons.includes(id as ResultActionButtonId)) continue;
+		resultActionButtons.push(id as ResultActionButtonId);
+		if (resultActionButtons.length >= 3) break;
+	}
+	if (resultActionButtons.length === 0) resultActionButtons.push(...DEFAULT_RESULT_ACTION_BUTTONS);
+
 	const next: AppSettings = {
 		autoStart: Boolean(settings?.autoStart),
 		searchShortcut:
@@ -1237,6 +1293,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		effectType,
 		backgroundImagePath,
 		backgroundImageOpacity,
+		resultActionButtons,
 	};
 
 	if (next.searchShortcut === next.settingsShortcut) return { ok: false, message: '两个快捷键不能相同' };

@@ -2,6 +2,7 @@
   box-sizing: border-box;
   user-select: none;
 }
+
 .container,
 .settings-panel,
 .search-box,
@@ -31,11 +32,9 @@
   z-index: 50;
 }
 
-.resize-handle.edge {
-}
+.resize-handle.edge {}
 
-.resize-handle.corner {
-}
+.resize-handle.corner {}
 
 .resize-handle.top {
   top: -6px;
@@ -102,8 +101,10 @@
 }
 
 html[data-theme="dark"] {
-  --fs-bg: #0f172a; /* 更深邃的蓝黑背景 */
-  --fs-surface: #1e293b; /* 磁性表面色 */
+  --fs-bg: #0f172a;
+  /* 更深邃的蓝黑背景 */
+  --fs-surface: #1e293b;
+  /* 磁性表面色 */
   --fs-surface-2: rgba(255, 255, 255, 0.05);
   --fs-border: rgba(255, 255, 255, 0.08);
   --fs-text: #f1f5f9;
@@ -118,7 +119,8 @@ html[data-theme="dark"] {
 }
 
 html[data-theme="light"] {
-  --fs-bg: #f1f5f9; /* 更加温润的浅蓝灰 */
+  --fs-bg: #f1f5f9;
+  /* 更加温润的浅蓝灰 */
   --fs-surface: #ffffff;
   --fs-surface-2: #e2e8f0;
   --fs-border: rgba(15, 23, 42, 0.08);
@@ -278,7 +280,8 @@ html[data-theme="light"] .settings-logo {
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 3000; /* 提升层级，确保在 list-bottom-info 之上 */
+  z-index: 3000;
+  /* 提升层级，确保在 list-bottom-info 之上 */
   opacity: 0.9;
 }
 
@@ -304,14 +307,16 @@ html[data-theme="light"] .settings-logo {
   flex-direction: column;
   height: 100%;
   min-width: 400px;
-  overflow: visible; /* 改为 hidden 以防止滚动条超出圆角 */
+  overflow: visible;
+  /* 改为 hidden 以防止滚动条超出圆角 */
   min-height: 60px;
   box-sizing: border-box;
   border: 1px solid var(--fs-border);
   position: relative;
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
-  -webkit-app-region: drag; /* 默认容器可拖拽 */
+  -webkit-app-region: drag;
+  /* 默认容器可拖拽 */
 }
 
 /* 官网链接按钮 */
@@ -343,7 +348,8 @@ html[data-theme="light"] .settings-logo {
   width: 20px;
   height: 20px;
   margin-right: 8px;
-  /* transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); */ /* 移除 hover 效果 */
+  /* transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); */
+  /* 移除 hover 效果 */
 }
 
 /* .settings-logo:hover {
@@ -383,7 +389,8 @@ html[data-theme="light"] .container.settings-container {
   display: flex;
   align-items: center;
   background-color: var(--fs-surface);
-  border-radius: 10px; /* 减小圆角 */
+  border-radius: 10px;
+  /* 减小圆角 */
   margin-top: 2px;
   -webkit-app-region: no-drag;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -457,7 +464,8 @@ html[data-theme="light"] .container.settings-container {
 }
 
 .settings-btn {
-  width: 28px; /* 稍微减小尺寸 */
+  width: 28px;
+  /* 稍微减小尺寸 */
   height: 28px;
   display: inline-flex;
   align-items: center;
@@ -486,8 +494,10 @@ html[data-theme="light"] .container.settings-container {
 }
 
 .type-select-btn {
-  height: 28px; /* 减小高度 */
-  max-width: 140px; /* 减小最大宽度 */
+  height: 28px;
+  /* 减小高度 */
+  max-width: 140px;
+  /* 减小最大宽度 */
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -595,13 +605,16 @@ html[data-theme="light"] .container.settings-container {
   border-radius: 8px;
   padding: 2px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--fs-border);
-  z-index: 99999; /* 极大值确保最顶层 */
+  z-index: 99999;
+  /* 极大值确保最顶层 */
   max-height: 320px;
   display: flex;
   flex-direction: column;
   animation: menuAppear 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  -webkit-app-region: no-drag; /* 显式禁用拖拽 */
-  pointer-events: auto; /* 显式启用点击 */
+  -webkit-app-region: no-drag;
+  /* 显式禁用拖拽 */
+  pointer-events: auto;
+  /* 显式启用点击 */
 }
 
 .type-select-menu-inner {
@@ -729,7 +742,8 @@ html[data-theme="light"] .container.settings-container {
   font-size: 15px;
   outline: none;
   width: 100%;
-  min-width: 0; /* 防止 input 撑开容器 */
+  min-width: 0;
+  /* 防止 input 撑开容器 */
 }
 
 input::placeholder {
@@ -745,7 +759,8 @@ input::placeholder {
   color: var(--fs-muted);
   font-size: 11px;
   font-weight: 500;
-  -webkit-app-region: drag; /* 状态栏也可作为拖拽区域 */
+  -webkit-app-region: drag;
+  /* 状态栏也可作为拖拽区域 */
   user-select: none;
   padding: 0 4px;
 }
@@ -768,10 +783,13 @@ input::placeholder {
 .search-box-right {
   display: flex;
   align-items: center;
-  gap: 4px; /* 减小间距，使其更紧凑 */
+  gap: 4px;
+  /* 减小间距，使其更紧凑 */
   padding-right: 8px;
-  flex-shrink: 0; /* 防止右侧区域被压缩 */
-  position: relative; /* 为下拉菜单提供定位基准 */
+  flex-shrink: 0;
+  /* 防止右侧区域被压缩 */
+  position: relative;
+  /* 为下拉菜单提供定位基准 */
 }
 
 .clear-btn {
@@ -816,7 +834,8 @@ input::placeholder {
   margin-top: 4px;
 }
 
-.loading-more, .no-more-results {
+.loading-more,
+.no-more-results {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -832,9 +851,11 @@ input::placeholder {
 .results {
   margin: 10px 0 0 0;
   padding: 0;
-  -webkit-app-region: no-drag; /* 结果列表不可拖拽，保证滚动 */
+  -webkit-app-region: no-drag;
+  /* 结果列表不可拖拽，保证滚动 */
   position: relative;
-  z-index: 1; /* 保证在搜索框之下 */
+  z-index: 1;
+  /* 保证在搜索框之下 */
   display: flex;
   flex-direction: column;
 }
@@ -857,7 +878,8 @@ input::placeholder {
   user-select: none;
   background: var(--fs-surface-2);
   border: 1px dashed var(--fs-border);
-  border-radius: 8px; /* 减小圆角 */
+  border-radius: 8px;
+  /* 减小圆角 */
   margin-top: 10px;
   gap: 4px;
 }
@@ -870,7 +892,8 @@ input::placeholder {
 
 .virtual-list {
   overflow-y: auto !important;
-  padding-right: 4px; /* 增加一点右边距，防止滚动条贴边 */
+  padding-right: 4px;
+  /* 增加一点右边距，防止滚动条贴边 */
 }
 
 /* 优雅的滚动条样式 */
@@ -905,7 +928,8 @@ input::placeholder {
   padding: 0 12px;
   color: var(--fs-text);
   cursor: pointer;
-  border-radius: 8px; /* 减小圆角 */
+  border-radius: 8px;
+  /* 减小圆角 */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -961,7 +985,7 @@ html[data-theme="light"] .results li.selected {
   height: 24px;
   object-fit: contain;
   flex: 0 0 auto;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
   transition: all 0.2s ease;
 }
 
@@ -996,13 +1020,14 @@ html[data-theme="light"] .results li.selected {
   object-fit: cover;
   border: 1.5px solid var(--fs-border);
   background: var(--fs-surface-2);
-  margin-right: -4px; /* 补偿增大的宽度，保持对齐 */
+  margin-right: -4px;
+  /* 补偿增大的宽度，保持对齐 */
   margin-left: -4px;
 }
 
 .results li.selected .result-icon.image-preview {
   border-color: var(--fs-border);
-  box-shadow: 0 0 10px rgba(0,0,0,0.18);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.18);
 }
 
 .result-icon.placeholder {
@@ -1145,7 +1170,7 @@ html[data-theme="light"] .results li.selected .action-btn {
 
 .settings-panel {
   background: transparent;
-  border-radius: 14px;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -1169,7 +1194,8 @@ html[data-theme="light"] .results li.selected .action-btn {
   font-weight: 600;
   color: var(--fs-text);
   padding: 0;
-  border-bottom: 1px solid var(--fs-border); /* 添加分隔线 */
+  border-bottom: 1px solid var(--fs-border);
+  /* 添加分隔线 */
   background: transparent;
 }
 
@@ -1249,6 +1275,8 @@ html[data-theme="light"] .results li.selected .action-btn {
   padding: 0;
   max-width: 700px;
   width: 100%;
+  overflow-y: auto;
+  height: calc(100% - 90px);
   margin: 0;
 }
 
@@ -1278,7 +1306,8 @@ html[data-theme="light"] .results li.selected .action-btn {
   color: var(--fs-muted);
   font-size: 12px;
   font-weight: 600;
-  width: 92px; /* 原 grid-template-columns 的第一列宽度 */
+  width: 92px;
+  /* 原 grid-template-columns 的第一列宽度 */
   flex-shrink: 0;
 }
 
@@ -1286,10 +1315,12 @@ html[data-theme="light"] .results li.selected .action-btn {
   display: flex;
   gap: 10px;
   align-items: center;
-  & .input-with-btn{
+
+  & .input-with-btn {
     display: flex;
     gap: 10px;
-    .text-input{
+
+    .text-input {
       width: calc(100% - 50px);
     }
   }
@@ -1299,17 +1330,23 @@ html[data-theme="light"] .results li.selected .action-btn {
   color: var(--fs-muted);
   font-size: 12px;
   font-weight: 600;
-  width: 92px; /* 原 grid-template-columns 的第一列宽度 */
+  width: 92px;
+  /* 原 grid-template-columns 的第一列宽度 */
   flex-shrink: 0;
 }
 
-.number-input, .text-input, .select-input {
-  flex: 1; /* 占据剩余空间 */
-  min-width: 0; /* 允许 flex 项目缩小到其最小内容大小以下 */
+.number-input,
+.text-input,
+.select-input {
+  flex: 1;
+  /* 占据剩余空间 */
+  min-width: 0;
+  /* 允许 flex 项目缩小到其最小内容大小以下 */
   background: var(--fs-bg);
   border: 1px solid var(--fs-border);
   color: var(--fs-text);
-  border-radius: 6px; /* 减小圆角 */
+  border-radius: 6px;
+  /* 减小圆角 */
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
@@ -1339,7 +1376,9 @@ html[data-theme="light"] .results li.selected .action-btn {
   background: var(--fs-surface);
 }
 
-.number-input:focus, .text-input:focus, .select-input:focus {
+.number-input:focus,
+.text-input:focus,
+.select-input:focus {
   border-color: var(--fs-accent);
   background: var(--fs-surface);
   box-shadow: 0 0 0 3px var(--fs-accent-soft);
@@ -1351,7 +1390,8 @@ html[data-theme="light"] .results li.selected .action-btn {
   background: var(--fs-surface-2);
   border: 1px solid var(--fs-border);
   color: var(--fs-text);
-  border-radius: 6px; /* 减小圆角 */
+  border-radius: 6px;
+  /* 减小圆角 */
   cursor: pointer;
   font-size: 12px;
   font-weight: 800;
@@ -1375,7 +1415,8 @@ html[data-theme="light"] .results li.selected .action-btn {
   padding: 10px 14px;
   background: var(--fs-surface-2);
   border: 1px solid var(--fs-border);
-  border-radius: 8px; /* 减小圆角 */
+  border-radius: 8px;
+  /* 减小圆角 */
   cursor: grab;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
@@ -1491,7 +1532,8 @@ html[data-theme="light"] .results li.selected .action-btn {
 
 .type-order-list {
   border: 1px solid var(--fs-border);
-  border-radius: 8px; /* 减小圆角 */
+  border-radius: 8px;
+  /* 减小圆角 */
   padding: 8px;
   background: var(--fs-bg);
   max-height: 500px;
@@ -1782,35 +1824,38 @@ html[data-theme="light"] .settings-nav-item:hover {
   display: flex;
   flex-direction: column;
   -webkit-app-region: no-drag;
-  overflow: hidden; /* 改为 hidden */
+  overflow: hidden;
+  /* 改为 hidden */
   background: transparent;
 }
 
 .settings-main-inner {
   flex: 1;
-  overflow-y: auto;
-  padding: 18px 22px;
+  height: calc(100% - 90px);
+  overflow-y: hidden;
+  padding:0 0px 0px 16px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
 }
 
-.settings-main-inner > * {
+.settings-main-inner>* {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
 }
 
 .settings-section-header {
-  position: sticky;
+  position: relative;
   top: 0;
   z-index: 3;
-  padding: 10px 2px 14px;
+  padding: 14px 2px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
   background: transparent;
+  height: 64px;
 }
 
 .settings-section-title {
@@ -1899,6 +1944,91 @@ html[data-theme="light"] .settings-nav-item:hover {
   opacity: 0.5;
 }
 
+.settings-hint {
+  color: var(--fs-muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.action-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+}
+
+.action-config-row.disabled {
+  opacity: 0.55;
+}
+
+.action-config-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.action-config-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fs-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.action-config-note {
+  color: var(--fs-muted);
+  font-size: 11px;
+  font-weight: 650;
+  padding: 2px 6px;
+  border: 1px solid var(--fs-border);
+  border-radius: 999px;
+  background: var(--fs-surface);
+}
+
+.action-config-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-config-order {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--fs-accent-soft);
+  color: var(--fs-accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.small-btn.ghost {
+  height: 28px;
+  padding: 0 8px;
+  font-weight: 800;
+  background: transparent;
+}
+
+.small-btn.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .setting-row {
   display: flex;
   align-items: center;
@@ -1912,7 +2042,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   appearance: none;
   width: 40px;
   height: 22px;
-  border-radius: 11px; /* 圆角半径改为高度的一半 */
+  border-radius: 11px;
+  /* 圆角半径改为高度的一半 */
   background: rgba(0, 0, 0, 0.16);
   border: 1px solid var(--fs-border);
   position: relative;
@@ -1927,7 +2058,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   left: 2px;
   width: 18px;
   height: 18px;
-  border-radius: 9px; /* 圆角半径改为宽度的一半 */
+  border-radius: 9px;
+  /* 圆角半径改为宽度的一半 */
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   transition:
@@ -1951,7 +2083,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   background: var(--fs-surface);
   border: 1px solid var(--fs-border);
   color: var(--fs-text);
-  border-radius: 4px; /* 减小圆角 */
+  border-radius: 4px;
+  /* 减小圆角 */
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
@@ -1984,7 +2117,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   flex: 1;
   background: var(--fs-surface-2);
   border: 2px solid transparent;
-  border-radius: 8px; /* 减小圆角 */
+  border-radius: 8px;
+  /* 减小圆角 */
   padding: 12px;
   cursor: pointer;
   display: flex;
@@ -2072,7 +2206,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   height: 30%;
   background: #ffffff;
   border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .theme-card span {
@@ -2085,7 +2219,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 16px 20px;
+  padding:12px 0 0 0;
   background: transparent;
   border-top: 1px solid var(--fs-border);
   -webkit-app-region: no-drag;
@@ -2095,9 +2229,12 @@ html[data-theme="light"] .settings-nav-item:hover {
   background: var(--fs-surface-2);
   color: var(--fs-text);
   border: 1px solid var(--fs-border);
-  padding: 0 16px; /* 稍微减小内边距 */
-  height: 34px; /* 减小高度 */
-  border-radius: 6px; /* 减小圆角 */
+  padding: 0 16px;
+  /* 稍微减小内边距 */
+  height: 34px;
+  /* 减小高度 */
+  border-radius: 6px;
+  /* 减小圆角 */
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -2117,9 +2254,12 @@ html[data-theme="light"] .settings-nav-item:hover {
   background: var(--fs-accent);
   color: white;
   border: none;
-  padding: 0 16px; /* 稍微减小内边距 */
-  height: 34px; /* 减小高度 */
-  border-radius: 6px; /* 减小圆角 */
+  padding: 0 16px;
+  /* 稍微减小内边距 */
+  height: 34px;
+  /* 减小高度 */
+  border-radius: 6px;
+  /* 减小圆角 */
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -2294,7 +2434,8 @@ html[data-theme="light"] .settings-confirm {
   align-items: center;
   justify-content: center;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-left: auto; /* 将按钮推到最右侧 */
+  margin-left: auto;
+  /* 将按钮推到最右侧 */
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
@@ -2314,7 +2455,8 @@ html[data-theme="light"] .settings-confirm {
   /* 移除禁用样式，保持可点击外观但无交互 */
   cursor: default;
   opacity: 1;
-  color: var(--fs-accent); /* loading 时保持高亮颜色 */
+  color: var(--fs-accent);
+  /* loading 时保持高亮颜色 */
   border-color: var(--fs-accent);
   box-shadow: none;
   transform: none;
