@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen, nativeImage } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { FileIndex } from './fileIndex';
 
@@ -44,6 +45,7 @@ const SETTINGS_WINDOW_CONFIG_PATH = path.join(app.getPath('userData'), 'settings
 const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
 const FILE_INDEX_META_PATH = path.join(app.getPath('userData'), 'file-index-meta.json');
 const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
+const HISTORY_STATS_PATH = path.join(app.getPath('userData'), 'history-stats.json');
 
 const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
 const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
@@ -61,6 +63,13 @@ let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
 const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
 const userDirWatchers: Array<ReturnType<typeof watch>> = [];
+// Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
+let windowsFileSystemRootsCache: string[] = [];
+// 最近变更索引：用于弥补 fs.watch 丢事件/全量索引未覆盖导致的“新建文件搜不到”
+const RECENT_INDEX_MAX = 30_000;
+const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
+let recentReconcileInFlight = false;
+let recentReconcileLastAt = 0;
 const startMenuShortcutIndex = new Map<string, string>();
 const iconDataCache = new Map<string, string>();
 const ICON_CACHE_MAX = 1500;
@@ -72,6 +81,28 @@ function setIconCache(key: string, value: string) {
 		if (firstKey) iconDataCache.delete(firstKey);
 	}
 	iconDataCache.set(key, value);
+}
+
+function normalizeRecentKey(rawPath: string) {
+	return typeof rawPath === 'string' ? rawPath.trim().toLowerCase() : '';
+}
+
+function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs: number) {
+	// 最近变更索引：只保存必要字段，优先保证“新建/刚改动”的内容可被搜索到
+	const key = normalizeRecentKey(fullPath);
+	if (!key) return;
+	const name = path.basename(fullPath);
+	if (!name) return;
+	recentIndex.set(key, { path: fullPath, name, isDirectory, timeMs });
+	if (recentIndex.size > RECENT_INDEX_MAX) {
+		const keys = Array.from(recentIndex.keys());
+		keys.sort((a, b) => (recentIndex.get(b)?.timeMs || 0) - (recentIndex.get(a)?.timeMs || 0));
+		const keep = new Set(keys.slice(0, Math.floor(RECENT_INDEX_MAX * 0.85)));
+		for (const k of keys) {
+			if (keep.has(k)) continue;
+			recentIndex.delete(k);
+		}
+	}
 }
 
 function buildStartMenuShortcutIndex() {
@@ -391,6 +422,98 @@ function saveSettings(settings: AppSettings) {
 
 type HistoryItem = { name: string; path: string; type: string; lastUsed: number };
 
+type HistoryStats = {
+	version: 1;
+	byPath: Record<string, { count: number; lastUsed: number }>;
+	byType: Record<string, number>;
+	byExt: Record<string, number>;
+};
+
+function normalizeHistoryKey(rawPath: string) {
+	return typeof rawPath === 'string' ? rawPath.trim().toLowerCase() : '';
+}
+
+function normalizeExtKey(rawPath: string) {
+	try {
+		const resolved = resolveAppId(rawPath);
+		const ext = path.extname(resolved).toLowerCase();
+		if (!ext) return '';
+		if (ext.length > 12) return '';
+		return ext;
+	} catch {
+		return '';
+	}
+}
+
+function loadHistoryStats(): HistoryStats {
+	try {
+		if (!existsSync(HISTORY_STATS_PATH)) {
+			// 首次启用统计：用已有历史记录做一次轻量种子，避免“刚升级就完全没权重”
+			const seed: HistoryStats = { version: 1, byPath: {}, byType: {}, byExt: {} };
+			const history = loadHistory();
+			for (const h of history) {
+				const key = normalizeHistoryKey(h.path);
+				if (!key) continue;
+				seed.byPath[key] = { count: 1, lastUsed: h.lastUsed || 0 };
+				const t = typeof h.type === 'string' && h.type ? h.type : 'file';
+				seed.byType[t] = (typeof seed.byType[t] === 'number' ? seed.byType[t] : 0) + 1;
+				const ext = t === 'file' ? normalizeExtKey(h.path) : '';
+				if (ext) seed.byExt[ext] = (typeof seed.byExt[ext] === 'number' ? seed.byExt[ext] : 0) + 1;
+			}
+			if (history.length > 0) saveHistoryStats(seed);
+			return seed;
+		}
+		const raw = JSON.parse(readFileSync(HISTORY_STATS_PATH, 'utf-8'));
+		if (raw?.version !== 1) return { version: 1, byPath: {}, byType: {}, byExt: {} };
+		return {
+			version: 1,
+			byPath: typeof raw?.byPath === 'object' && raw.byPath ? raw.byPath : {},
+			byType: typeof raw?.byType === 'object' && raw.byType ? raw.byType : {},
+			byExt: typeof raw?.byExt === 'object' && raw.byExt ? raw.byExt : {},
+		};
+	} catch {
+		return { version: 1, byPath: {}, byType: {}, byExt: {} };
+	}
+}
+
+function saveHistoryStats(stats: HistoryStats) {
+	try {
+		writeFileSync(HISTORY_STATS_PATH, JSON.stringify(stats));
+	} catch {}
+}
+
+function updateHistoryStatsOnUse(item: { path: string; type?: string }, now: number) {
+	// 访问统计用于综合排序：路径访问频次、类型偏好、扩展名偏好
+	const key = normalizeHistoryKey(item.path);
+	if (!key) return;
+	const stats = loadHistoryStats();
+
+	const prev = stats.byPath[key];
+	const nextCount = typeof prev?.count === 'number' && prev.count > 0 ? prev.count + 1 : 1;
+	stats.byPath[key] = { count: nextCount, lastUsed: now };
+
+	const t = typeof item.type === 'string' && item.type ? item.type : 'file';
+	stats.byType[t] = (typeof stats.byType[t] === 'number' ? stats.byType[t] : 0) + 1;
+
+	const extKey = t === 'file' ? normalizeExtKey(item.path) : '';
+	if (extKey) {
+		stats.byExt[extKey] = (typeof stats.byExt[extKey] === 'number' ? stats.byExt[extKey] : 0) + 1;
+	}
+
+	const MAX_PATH_KEYS = 6000;
+	const KEEP_PATH_KEYS = 5000;
+	const keys = Object.keys(stats.byPath);
+	if (keys.length > MAX_PATH_KEYS) {
+		keys.sort((a, b) => (stats.byPath[b]?.lastUsed || 0) - (stats.byPath[a]?.lastUsed || 0));
+		const keep = new Set(keys.slice(0, KEEP_PATH_KEYS));
+		const nextByPath: Record<string, { count: number; lastUsed: number }> = {};
+		for (const k of keep) nextByPath[k] = stats.byPath[k];
+		stats.byPath = nextByPath;
+	}
+
+	saveHistoryStats(stats);
+}
+
 function loadHistory(): HistoryItem[] {
 	try {
 		if (!existsSync(HISTORY_PATH)) return [];
@@ -494,6 +617,7 @@ export function recordHistoryItem(item: { name: string; path: string; type?: str
 
 	const limit = settings.historyLimit;
 	saveHistory(limit > 0 ? next.slice(0, limit) : []);
+	updateHistoryStatsOnUse({ path: item.path, type: item.type }, now);
 }
 
 function loadSettingsWindowConfig() {
@@ -864,29 +988,127 @@ function shouldSkipWatchPath(fullPath: string) {
 }
 
 async function startUserDirectoryWatchers() {
-	const roots =
-		process.platform === 'win32'
-			? await getWindowsFileSystemRoots()
-			: [app.getPath('home')].filter((p) => typeof p === 'string' && p.trim());
+	if (process.platform === 'win32' && (!windowsFileSystemRootsCache || windowsFileSystemRootsCache.length === 0)) {
+		try {
+			windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
+		} catch {}
+	}
+	const roots = (() => {
+		// 监听新增/改动文件：Windows 下递归监听盘符根目录可能失败或丢事件，这里额外监听用户目录与常用目录兜底
+		if (process.platform === 'win32') {
+			const home = app.getPath('home');
+			const desktop = app.getPath('desktop');
+			const documents = app.getPath('documents');
+			const downloads = app.getPath('downloads');
+			return [...windowsFileSystemRootsCache, home, desktop, documents, downloads]
+				.filter((p): p is string => typeof p === 'string' && Boolean(p.trim()))
+				.map((p) => (p.endsWith('\\') ? p : `${p}\\`));
+		}
+		return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+	})();
+	const uniqueRoots = Array.from(new Set(roots));
 
-	for (const root of roots) {
+	for (const root of uniqueRoots) {
 		if (!root || typeof root !== 'string') continue;
 		if (!existsSync(root)) continue;
 		try {
 			const w = watch(root, { recursive: true }, (_eventType, filename) => {
 				if (!filename) return;
-				const fullPath = path.join(root, filename.toString());
+				const raw = filename.toString();
+				const fullPath = path.isAbsolute(raw) ? raw : path.join(root, raw);
 				if (shouldSkipWatchPath(fullPath)) return;
 				setTimeout(() => {
 					try {
-						if (!existsSync(fullPath)) return;
+						if (!existsSync(fullPath)) {
+							// 删除事件不保证可靠：这里至少从最近变更索引里清理，避免结果残留
+							recentIndex.delete(normalizeRecentKey(fullPath));
+							return;
+						}
 						const st = statSync(fullPath);
-						fileIndex.ingestPath(fullPath, st.isDirectory());
+						const isDir = st.isDirectory();
+						const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+						upsertRecentIndex(fullPath, isDir, timeMs);
+						fileIndex.ingestPath(fullPath, isDir);
 					} catch {}
 				}, 80);
 			});
 			userDirWatchers.push(w);
 		} catch {}
+	}
+}
+
+async function reconcileRecentIndex(budgetMs = 1200) {
+	// 兜底扫描：当 fs.watch 丢事件或全量索引未覆盖时，尽量把“最近新增/改动”的文件补进 recentIndex
+	if (recentReconcileInFlight) return;
+	const now = Date.now();
+	if (now - recentReconcileLastAt < 2000) return;
+	recentReconcileInFlight = true;
+	recentReconcileLastAt = now;
+
+	try {
+		const roots = (() => {
+			if (process.platform === 'win32') {
+				const home = app.getPath('home');
+				const desktop = app.getPath('desktop');
+				const documents = app.getPath('documents');
+				const downloads = app.getPath('downloads');
+				return [home, desktop, documents, downloads].filter(
+					(p): p is string => typeof p === 'string' && Boolean(p.trim())
+				);
+			}
+			return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+		})();
+
+		const startAt = Date.now();
+		const MAX_DEPTH = 5;
+		const MAX_VISIT = 14_000;
+		let visited = 0;
+		const queue: Array<{ dir: string; depth: number }> = roots.map((d) => ({ dir: d, depth: 0 }));
+
+		while (queue.length > 0) {
+			if (Date.now() - startAt > Math.max(50, budgetMs)) break;
+			if (visited >= MAX_VISIT) break;
+			const it = queue.shift();
+			if (!it) break;
+			const dir = it.dir;
+			const depth = it.depth;
+			if (!dir) continue;
+			if (!existsSync(dir)) continue;
+			if (shouldSkipWatchPath(dir)) continue;
+
+			let dh: any = null;
+			try {
+				dh = await fs.opendir(dir);
+			} catch {
+				continue;
+			}
+
+			try {
+				for await (const ent of dh) {
+					visited += 1;
+					if (visited % 350 === 0) {
+						await new Promise<void>((resolve) => setTimeout(resolve, 0));
+					}
+					if (Date.now() - startAt > Math.max(50, budgetMs)) break;
+					if (!ent?.name) continue;
+					const fullPath = path.join(dir, ent.name);
+					if (shouldSkipWatchPath(fullPath)) continue;
+					try {
+						const st = statSync(fullPath);
+						const isDir = st.isDirectory();
+						const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+						upsertRecentIndex(fullPath, isDir, timeMs);
+						if (isDir && depth < MAX_DEPTH) queue.push({ dir: fullPath, depth: depth + 1 });
+					} catch {}
+				}
+			} finally {
+				try {
+					await dh.close();
+				} catch {}
+			}
+		}
+	} finally {
+		recentReconcileInFlight = false;
 	}
 }
 
@@ -908,6 +1130,7 @@ function openSearchWindow() {
 		ignoreSearchBlurUntil = Date.now() + 900;
 		win.show();
 		win.focus();
+		void reconcileRecentIndex();
 		searchVisibleAt = Date.now();
 		setTimeout(() => {
 			if (win && !win.isDestroyed() && win.isVisible()) win.focus();
@@ -1547,11 +1770,16 @@ ipcMain.handle('rebuild-file-index', async () => {
 	return fileIndex.getStatus();
 });
 
-ipcMain.handle('search-files', async (event, query: string, options?: { searchTypeId?: string }) => {
+ipcMain.handle(
+	'search-files',
+	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string }) => {
 	if (!query || query.trim().length < 2) return { results: [], isIndexing: fileIndex.getStatus().isIndexing };
 	fileIndex.pauseIndexingFor(900);
+	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
+	void reconcileRecentIndex();
 
 	const lowerQuery = query.trim().toLowerCase();
+	const queryParts = lowerQuery.split(/\s+/).filter(Boolean);
 	const aliases: Record<string, string[]> = {
 		wechat: ['wechat', 'weixin', '微信'],
 		微信: ['wechat', 'weixin', '微信'],
@@ -1562,7 +1790,82 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 	const keywords = aliases[lowerQuery] || [lowerQuery];
 
 	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
+	// 搜索会话 ID：用于将后台分批推送的 more-results 与当前搜索绑定，避免切换类型后出现重复项/数量不一致
+	const searchSessionId =
+		typeof options?.searchSessionId === 'string' && options.searchSessionId.trim()
+			? options.searchSessionId.trim()
+			: `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
+	// 综合排序权重：①名称匹配度 > ④访问频次 > ③常用类型 > ②时间（新建/改动更近）
+	const now = Date.now();
+	const historyStats = loadHistoryStats();
+	const getAccessBoost = (rawPath: string) => {
+		const key = normalizeHistoryKey(rawPath);
+		if (!key) return 0;
+		const it = historyStats.byPath[key];
+		if (!it) return 0;
+		const count = typeof it.count === 'number' && it.count > 0 ? it.count : 0;
+		const lastUsed = typeof it.lastUsed === 'number' && it.lastUsed > 0 ? it.lastUsed : 0;
+		const countBoost = Math.min(18_000, count * 1_600);
+		const ageDays = lastUsed ? (now - lastUsed) / 86_400_000 : 9999;
+		const recBoost = ageDays <= 30 ? Math.round(7_000 * (1 - ageDays / 30)) : 0;
+		return countBoost + recBoost;
+	};
+	const getTypeBoost = (type: string, rawPath: string) => {
+		// “常用类型”优先：文件用扩展名统计；非文件用类型统计（folder/settings/app）
+		if (type === 'file') {
+			const ext = normalizeExtKey(rawPath);
+			if (!ext) return 0;
+			const cnt = typeof historyStats.byExt[ext] === 'number' ? historyStats.byExt[ext] : 0;
+			return Math.min(7_000, cnt * 260);
+		}
+		const cnt = typeof historyStats.byType[type] === 'number' ? historyStats.byType[type] : 0;
+		return Math.min(5_000, cnt * 180);
+	};
+	const getTimeBoost = (timeMs: number) => {
+		// 时间权重最低：只在相近匹配下做“更近时间更靠前”的微调
+		if (!timeMs || !Number.isFinite(timeMs)) return 0;
+		const ageDays = (now - timeMs) / 86_400_000;
+		if (ageDays <= 0) return 1_200;
+		if (ageDays <= 7) return Math.round(1_200 * (1 - ageDays / 7));
+		if (ageDays <= 30) return Math.round(350 * (1 - ageDays / 30));
+		return 0;
+	};
+	const computeCombinedScore = (baseScore: number, type: string, rawPath: string, timeMs: number) => {
+		return baseScore + getAccessBoost(rawPath) + getTypeBoost(type, rawPath) + getTimeBoost(timeMs);
+	};
+
+	const normalizeForMatchName = (name: string) => name.replace(/\.(exe|lnk)$/i, '').toLowerCase();
+	const fuzzySubsequenceScore = (target: string, q: string) => {
+		let t = 0;
+		let i = 0;
+		let score = 0;
+		let streak = 0;
+		while (t < target.length && i < q.length) {
+			if (target[t] === q[i]) {
+				streak += 1;
+				score += 3 + Math.min(streak, 10);
+				i += 1;
+			} else {
+				streak = 0;
+			}
+			t += 1;
+		}
+		return i === q.length ? score : -1;
+	};
+	const scoreRecentName = (name: string) => {
+		const base = normalizeForMatchName(name);
+		if (!base) return 0;
+		if (queryParts.length > 0 && !queryParts.every((p) => base.includes(p))) return 0;
+		let score = 0;
+		score += queryParts.length * 500;
+		if (base === lowerQuery) score += 2000;
+		if (base.startsWith(lowerQuery)) score += 1200;
+		if (base.includes(lowerQuery)) score += 900;
+		const subseq = fuzzySubsequenceScore(base, lowerQuery);
+		if (subseq > 0) score += subseq;
+		return score;
+	};
 	const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 	const videoExts = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
 	const settingsItems =
@@ -1605,14 +1908,15 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 		for (const it of settingsItems) {
 			const nameLower = it.name.toLowerCase();
 			if (!keywords.some((k) => nameLower.includes(k))) continue;
-			const score = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+			const baseScore = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+			const score = computeCombinedScore(baseScore, 'settings', it.uri, now);
 			out.push({ name: it.name, path: it.uri, type: 'settings', score });
 		}
 		const merged = out
 			.sort((a, b) => (b.score || 0) - (a.score || 0))
 			.slice(0, 100)
 			.map(({ score, ...rest }) => rest);
-		return { results: merged, isIndexing: false, hasMore: false };
+		return { results: merged, isIndexing: false, hasMore: false, searchSessionId, totalCount: out.length };
 	}
 	const settingsResults =
 		searchTypeId === 'all'
@@ -1621,7 +1925,8 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 					for (const it of settingsItems) {
 						const nameLower = it.name.toLowerCase();
 						if (!keywords.some((k) => nameLower.includes(k))) continue;
-						const score = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+						const baseScore = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+						const score = computeCombinedScore(baseScore, 'settings', it.uri, now);
 						out.push({ name: it.name, path: it.uri, type: 'settings', score });
 					}
 					return out;
@@ -1644,7 +1949,7 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 				path: appItem.AppID,
 				type: 'app',
 				icon: iconData,
-				score: 10_000,
+				score: computeCombinedScore(10_000, 'app', appItem.AppID, now),
 			});
 		}
 		return results;
@@ -1652,17 +1957,22 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 
 	// 文件索引搜索的候选上限：当用户指定“文件夹/图片/视频/扩展名”等更窄的类型时，提高候选数量，
 	// 避免同名文件过多导致目录/特定类型结果在 topN 之外被截断，从而出现“所有类型能搜到，但对应类型搜不到”
-	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 1000;
+	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 5000;
 	const fileSearch = fileIndex.search(query, fileSearchLimit);
+	const totalCount =
+		searchTypeId === 'all'
+			? settingsResults.length + appResults.length + fileSearch.totalCount
+			: searchTypeId === 'file'
+				? appResults.length + fileSearch.totalCount
+				: fileSearch.totalCount;
 
 	// 目录标识需要可靠：索引缓存可能导致 isDirectory 丢失，从而出现“文件夹搜不到、反而在文件里出现”的错位
-	// 这里在必要场景下用 statSync 兜底校验，保证类型归属准确（不影响其它搜索类型）
-	const needAccurateDirFlag = searchTypeId === 'all' || searchTypeId === 'file' || searchTypeId === 'folder';
-	const safeIsDirectory = (p: string) => {
+	// 这里通过 statSync 兜底校验，并顺便获取时间信息用于综合排序
+	const safeStat = (p: string) => {
 		try {
-			return statSync(p).isDirectory();
+			return statSync(p);
 		} catch {
-			return false;
+			return null;
 		}
 	};
 
@@ -1670,9 +1980,10 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 	const filteredFiles: Array<{ path: string; name: string; isDirectory: boolean; score: number }> = [];
 	for (const r of fileSearch.results) {
 		if (fileIndex.isIgnoredPath(r.path)) continue;
-		if (!existsSync(r.path)) continue;
-
-		const isDirectory = r.isDirectory || (needAccurateDirFlag ? safeIsDirectory(r.path) : false);
+		const st = safeStat(r.path);
+		if (!st) continue;
+		const isDirectory = st.isDirectory();
+		const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
 
 		if (searchTypeId === 'file') {
 			// “文件”类型：不包含文件夹，也不包含图片/视频（它们归属到“图片/视频”类型，且仍可在“所有类型”中搜到）
@@ -1703,12 +2014,199 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 			if (path.extname(r.path).toLowerCase() !== extFilter) continue;
 		}
 
-		filteredFiles.push({ path: r.path, name: r.name, isDirectory, score: r.score });
+		const type = isDirectory ? 'folder' : 'file';
+		const score = computeCombinedScore(r.score, type, r.path, timeMs);
+		filteredFiles.push({ path: r.path, name: r.name, isDirectory, score });
 	}
 
+	const appendRecentMatches = () => {
+		const seen = new Set(filteredFiles.map((x) => normalizeRecentKey(x.path)));
+		const items = Array.from(recentIndex.values());
+		const start = Math.max(0, items.length - 6000);
+		for (let i = start; i < items.length; i++) {
+			const it = items[i];
+			if (!it?.path) continue;
+			const key = normalizeRecentKey(it.path);
+			if (!key) continue;
+			if (seen.has(key)) continue;
+			if (fileIndex.isIgnoredPath(it.path)) continue;
+
+			const st = safeStat(it.path);
+			if (!st) {
+				recentIndex.delete(key);
+				continue;
+			}
+
+			const isDirectory = st.isDirectory();
+			const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+
+			const baseScore = scoreRecentName(it.name);
+			if (baseScore <= 0) continue;
+
+			if (searchTypeId === 'file') {
+				if (isDirectory) continue;
+				const ext = path.extname(it.path).toLowerCase();
+				if (imageExts.has(ext)) continue;
+				if (videoExts.has(ext)) continue;
+			}
+			if (searchTypeId === 'folder') {
+				if (!isDirectory) continue;
+			}
+			if (searchTypeId === 'image') {
+				if (isDirectory) continue;
+				if (!imageExts.has(path.extname(it.path).toLowerCase())) continue;
+			}
+			if (searchTypeId === 'video') {
+				if (isDirectory) continue;
+				if (!videoExts.has(path.extname(it.path).toLowerCase())) continue;
+			}
+			if (extFilter) {
+				if (isDirectory) continue;
+				if (path.extname(it.path).toLowerCase() !== extFilter) continue;
+			}
+
+			const type = isDirectory ? 'folder' : 'file';
+			const score = computeCombinedScore(baseScore, type, it.path, timeMs);
+			filteredFiles.push({ path: it.path, name: it.name, isDirectory, score });
+			seen.add(key);
+		}
+	};
+
+	appendRecentMatches();
+	if (filteredFiles.length < 30) {
+		await reconcileRecentIndex(220);
+		appendRecentMatches();
+	}
+
+	const scanUserRootsForNameMatches = async (budgetMs: number) => {
+		// 兜底：当索引/监听都漏掉时，对用户常用目录做一次“按名称”小范围扫描，尽量补齐可检索性
+		const roots = (() => {
+			if (process.platform === 'win32') {
+				const home = app.getPath('home');
+				const desktop = app.getPath('desktop');
+				const documents = app.getPath('documents');
+				const downloads = app.getPath('downloads');
+				return [desktop, documents, downloads, home].filter(
+					(p): p is string => typeof p === 'string' && Boolean(p.trim())
+				);
+			}
+			const home = app.getPath('home');
+			return [home].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+		})();
+		if (roots.length === 0) return;
+
+		const startAt = Date.now();
+		const MAX_DEPTH = 7;
+		const MAX_VISIT = 45_000;
+		let visited = 0;
+		const queue: Array<{ dir: string; depth: number }> = roots.map((d) => ({ dir: d, depth: 0 }));
+		const seen = new Set(filteredFiles.map((x) => normalizeRecentKey(x.path)));
+
+		while (queue.length > 0) {
+			if (Date.now() - startAt > Math.max(80, budgetMs)) break;
+			if (visited >= MAX_VISIT) break;
+			const cur = queue.shift();
+			if (!cur) break;
+			const dir = cur.dir;
+			const depth = cur.depth;
+			if (!dir) continue;
+			if (!existsSync(dir)) continue;
+			if (shouldSkipWatchPath(dir)) continue;
+
+			let dh: any = null;
+			try {
+				dh = await fs.opendir(dir);
+			} catch {
+				continue;
+			}
+
+			try {
+				for await (const ent of dh) {
+					visited += 1;
+					if (visited % 400 === 0) {
+						await new Promise<void>((resolve) => setTimeout(resolve, 0));
+					}
+					if (Date.now() - startAt > Math.max(80, budgetMs)) break;
+					if (!ent?.name) continue;
+
+					const fullPath = path.join(dir, ent.name);
+					if (shouldSkipWatchPath(fullPath)) continue;
+
+					const baseScore = scoreRecentName(ent.name);
+					const likelyMatch = baseScore > 0;
+
+					// 优先把“名称命中”的目录继续向下扫，以更快找到同名/相近命名的子目录
+					if (ent.isDirectory && typeof ent.isDirectory === 'function' && ent.isDirectory()) {
+						if (depth < MAX_DEPTH && (likelyMatch || depth < 2)) {
+							queue.push({ dir: fullPath, depth: depth + 1 });
+						}
+					}
+					if (!likelyMatch) continue;
+
+					const key = normalizeRecentKey(fullPath);
+					if (!key) continue;
+					if (seen.has(key)) continue;
+					if (fileIndex.isIgnoredPath(fullPath)) continue;
+
+					const st = safeStat(fullPath);
+					if (!st) continue;
+					const isDirectory = st.isDirectory();
+					const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+
+					// 将兜底扫描到的条目写入“最近变更索引”与主索引，后续检索更稳定
+					upsertRecentIndex(fullPath, isDirectory, timeMs);
+					fileIndex.ingestPath(fullPath, isDirectory);
+
+					if (searchTypeId === 'file') {
+						if (isDirectory) continue;
+						const ext = path.extname(fullPath).toLowerCase();
+						if (imageExts.has(ext)) continue;
+						if (videoExts.has(ext)) continue;
+					}
+					if (searchTypeId === 'folder') {
+						if (!isDirectory) continue;
+					}
+					if (searchTypeId === 'image') {
+						if (isDirectory) continue;
+						if (!imageExts.has(path.extname(fullPath).toLowerCase())) continue;
+					}
+					if (searchTypeId === 'video') {
+						if (isDirectory) continue;
+						if (!videoExts.has(path.extname(fullPath).toLowerCase())) continue;
+					}
+					if (extFilter) {
+						if (isDirectory) continue;
+						if (path.extname(fullPath).toLowerCase() !== extFilter) continue;
+					}
+
+					const type = isDirectory ? 'folder' : 'file';
+					const score = computeCombinedScore(baseScore, type, fullPath, timeMs);
+					filteredFiles.push({ path: fullPath, name: ent.name, isDirectory, score });
+					seen.add(key);
+				}
+			} finally {
+				try {
+					await dh.close();
+				} catch {}
+			}
+		}
+	};
+
+	// 当结果过少时启用兜底扫描，优先保障用户目录内的新建/小众文件可被检索到
+	if (filteredFiles.length === 0 || (filteredFiles.length < 8 && (searchTypeId === 'all' || searchTypeId === 'folder'))) {
+		await scanUserRootsForNameMatches(900);
+	}
+
+	// 应用综合权重后的排序：保证“匹配度/访问频次/常用类型/时间”共同影响最终展示顺序
+	filteredFiles.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+	const DISPLAY_LIMIT = 500;
+	// 当命中数量过多时仅展示最匹配的前 500：避免渲染/图标提取过重导致卡顿
+	const limitedFiles = filteredFiles.slice(0, DISPLAY_LIMIT);
+
 	// 取前 100 个立即返回（提高初始展示数量）
-	const first100Files = filteredFiles.slice(0, 100);
-	const remainingFiles = filteredFiles.slice(100); // 后续结果通过后台发送
+	const first100Files = limitedFiles.slice(0, 100);
+	const remainingFiles = limitedFiles.slice(100); // 后续结果通过后台发送（最多补齐到 500）
 
 	const first100Results = (await Promise.all(
 		first100Files.map(async (r) => {
@@ -1751,7 +2249,12 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 				)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
 
 				if (backgroundResults.length > 0) {
-					event.sender.send('more-results', { query, results: backgroundResults });
+					event.sender.send('more-results', {
+						query,
+						searchTypeId,
+						searchSessionId,
+						results: backgroundResults,
+					});
 				}
 				// 给一点喘息时间
 				await new Promise(resolve => setTimeout(resolve, 50));
@@ -1762,6 +2265,9 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 	return { 
 		results: merged, 
 		isIndexing: fileSearch.isIndexing,
-		hasMore: remainingFiles.length > 0 
+		hasMore: remainingFiles.length > 0,
+		searchSessionId,
+		totalCount,
 	};
-});
+	}
+);

@@ -82,10 +82,10 @@ async function main() {
 
   const resolvedUserData = app.getPath("userData");
   const keepNames = new Set([
+    // clear:cache 只保留用户设置与窗口布局：其余内容（索引/历史/统计/Electron 存储）都清空，确保“所有索引都清空”
     "settings.json",
     "window-config.json",
     "settings-window-config.json",
-    "Local Storage",
   ]);
 
   const entries = listEntries(resolvedUserData);

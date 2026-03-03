@@ -371,12 +371,16 @@ export class FileIndex {
 		}
 	}
 
-	search(query: string, limit = 100): { results: FileIndexSearchResult[]; isIndexing: boolean } {
+	search(
+		query: string,
+		limit = 100
+	): { results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number } {
 		const queryLower = query.trim().toLowerCase();
-		if (!queryLower) return { results: [], isIndexing: this.isIndexing };
+		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0 };
 
 		const queryParts = queryLower.split(/\s+/).filter(Boolean);
 		const heap: FileIndexSearchResult[] = [];
+		let totalCount = 0;
 
 		const siftUp = (idx: number) => {
 			while (idx > 0) {
@@ -416,10 +420,11 @@ export class FileIndex {
 			if (this.isIgnoredPath(entry.path)) continue;
 			const score = scoreEntry(entry, queryLower, queryParts);
 			if (score <= 0) continue;
+			totalCount += 1;
 			pushTop({ ...entry, score });
 		}
 
 		heap.sort((a, b) => b.score - a.score);
-		return { results: heap, isIndexing: this.isIndexing };
+		return { results: heap, isIndexing: this.isIndexing, totalCount };
 	}
 }

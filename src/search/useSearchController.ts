@@ -17,10 +17,10 @@ export function useSearchController() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [lastSelectedBy, setLastSelectedBy] = useState<"keyboard" | "mouse">("keyboard");
   const [results, setResults] = useState<AppItem[]>([]);
-  const [visibleCount, setVisibleCount] = useState(50);
   const [isSearching, setIsSearching] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
 
   // 关键元素引用：输入框聚焦、列表滚动、下拉菜单点击外部关闭等
   const inputRef = useRef<HTMLInputElement>(null);
@@ -38,6 +38,8 @@ export function useSearchController() {
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
   const searchRequestIdRef = useRef(0);
+  // 搜索会话 ID：用于关联主进程分批推送的 more-results，避免切换类型/重复搜索导致重复项与数量不一致
+  const searchSessionIdRef = useRef("");
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
@@ -59,6 +61,17 @@ export function useSearchController() {
     selectedPathRef.current = results[selectedIndex]?.path || "";
   }, [results, selectedIndex]);
 
+  useEffect(() => {
+    // 结果集变化时保护 selectedIndex：避免指向越界导致列表滚动/渲染异常
+    if (results.length === 0) return;
+    if (selectedIndex < 0) {
+      setSelectedIndex(0);
+      return;
+    }
+    if (selectedIndex > results.length - 1) {
+      setSelectedIndex(results.length - 1);
+    }
+  }, [results.length, selectedIndex]);
   // 根据当前选择的搜索类型对结果做二次过滤（历史/增量结果都会走这里）
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
@@ -110,6 +123,25 @@ export function useSearchController() {
       );
     }
     return items;
+  };
+
+  const normalizeResultKey = (x: AppItem) => {
+    const t = typeof x?.type === "string" ? x.type : "";
+    const p = typeof x?.path === "string" ? x.path.trim().toLowerCase() : "";
+    return `${t}|${p}`;
+  };
+
+  const dedupeResults = (items: AppItem[]) => {
+    // 去重：保证切换类型/后台增量合并时不会出现重复项，且列表数量稳定可预期
+    const seen = new Set<string>();
+    const out: AppItem[] = [];
+    for (const it of items) {
+      const key = normalizeResultKey(it);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(it);
+    }
+    return out;
   };
 
   useEffect(() => {
@@ -171,10 +203,12 @@ export function useSearchController() {
     const historyItems = resp?.results ?? [];
     const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
     const filtered = filterItemsBySearchType(historyItems, typeId);
-    setResults(filtered);
+    const deduped = dedupeResults(filtered);
+    setResults(deduped);
+    setTotalCount(deduped.length);
     const preservePath = typeof opts?.preserveSelectedPath === "string" ? opts.preserveSelectedPath : "";
     if (preservePath) {
-      const idx = filtered.findIndex((x) => x.path === preservePath);
+      const idx = deduped.findIndex((x) => x.path === preservePath);
       setSelectedIndex(idx >= 0 ? idx : 0);
     } else {
       setSelectedIndex(0);
@@ -211,7 +245,6 @@ export function useSearchController() {
           | undefined;
         const historyItems = resp?.results ?? [];
         setResults(filterItemsBySearchType(historyItems, nextTypeId));
-        setVisibleCount(50);
         setIsSearching(false);
         setTimeout(() => {
           inputRef.current?.focus();
@@ -255,12 +288,23 @@ export function useSearchController() {
 
   useEffect(() => {
     const handler = (_event: any, payload: { query: string; results: AppItem[] }) => {
-      if (payload.query === query) {
-        const filteredMore = filterItemsBySearchType(payload.results, searchTypeId);
+      const currentQuery = queryRef.current.trim();
+      const currentTypeId = searchTypeIdRef.current;
+      const currentSessionId = searchSessionIdRef.current;
+      const payloadQuery = typeof payload?.query === "string" ? payload.query : "";
+      const payloadTypeId = typeof (payload as any)?.searchTypeId === "string" ? (payload as any).searchTypeId : "";
+      const payloadSessionId =
+        typeof (payload as any)?.searchSessionId === "string" ? (payload as any).searchSessionId : "";
+      if (!currentQuery) return;
+      if (!currentSessionId) return;
+      if (payloadQuery !== currentQuery) return;
+      if (payloadTypeId !== currentTypeId) return;
+      if (payloadSessionId !== currentSessionId) return;
+
+      const filteredMore = filterItemsBySearchType(payload.results, currentTypeId);
         if (filteredMore.length > 0) {
-          setResults((prev) => [...prev, ...filteredMore]);
+          setResults((prev) => dedupeResults([...prev, ...filteredMore]));
         }
-      }
     };
     window.ipcRenderer?.on("more-results", handler);
     return () => {
@@ -277,7 +321,7 @@ export function useSearchController() {
         refreshHistory();
       } else {
         setResults([]);
-        setVisibleCount(50);
+        setTotalCount(0);
         setIsSearching(false);
         setHasMore(false);
       }
@@ -286,23 +330,26 @@ export function useSearchController() {
 
     searchRequestIdRef.current += 1;
     const requestId = searchRequestIdRef.current;
+    const searchSessionId = `${Date.now()}-${requestId}`;
+    searchSessionIdRef.current = searchSessionId;
     setIsSearching(true);
     setHasMore(false);
+    setTotalCount(0);
     // 防抖：避免连续输入触发过多 IPC 搜索请求
     const timer = setTimeout(async () => {
       try {
         const resp = (await window.ipcRenderer?.invoke(
           "search-files",
           trimmed,
-          { searchTypeId },
+          { searchTypeId, searchSessionId },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
         // 竞态保护：只接受“最新请求 + 当前 query/type”对应的结果
         if (searchRequestIdRef.current !== requestId) return;
         if (queryRef.current.trim() !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
-        setResults(nextResults);
-        setVisibleCount(50);
+        setResults(dedupeResults(nextResults));
+        setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
         setSelectedIndex(0);
         setIsIndexing(Boolean(resp?.isIndexing));
         setHasMore(Boolean(resp?.hasMore));
@@ -331,11 +378,14 @@ export function useSearchController() {
       if (currentQuery !== trimmed) return;
 
       const currentTypeId = searchTypeIdRef.current;
+      const refreshSessionId = `${Date.now()}-refresh-${searchRequestIdRef.current}`;
+      searchSessionIdRef.current = refreshSessionId;
+      setTotalCount(0);
       try {
         const resp = (await window.ipcRenderer.invoke(
           "search-files",
           trimmed,
-          { searchTypeId: currentTypeId },
+          { searchTypeId: currentTypeId, searchSessionId: refreshSessionId },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
 
         if (cancelled) return;
@@ -343,8 +393,8 @@ export function useSearchController() {
         if (searchTypeIdRef.current !== currentTypeId) return;
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
-        setResults(nextResults);
-        setVisibleCount(50);
+        setResults(dedupeResults(nextResults));
+        setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
         const preservePath = selectedPathRef.current;
         if (preservePath) {
           const idx = nextResults.findIndex((x) => x.path === preservePath);
@@ -370,12 +420,18 @@ export function useSearchController() {
   useEffect(() => {
     if (listRef.current && lastSelectedBy === "keyboard") {
       if (typeof listRef.current.scrollToItem === "function") {
-        listRef.current.scrollToItem(selectedIndex, "smart");
+        const align =
+          results.length > 0 && selectedIndex >= results.length - 1
+            ? "end"
+            : selectedIndex <= 0
+              ? "start"
+              : "smart";
+        listRef.current.scrollToItem(selectedIndex, align);
       } else if (typeof listRef.current.scrollToRow === "function") {
         listRef.current.scrollToRow({ index: selectedIndex, align: "auto" });
       }
     }
-  }, [selectedIndex, lastSelectedBy]);
+  }, [selectedIndex, lastSelectedBy, results.length]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -471,7 +527,8 @@ export function useSearchController() {
     }
   };
 
-  const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
+  // 列表使用虚拟滚动（react-window v2），这里直接使用全量 results，避免“选中索引超出可见切片”导致空白渲染
+  const visibleResults = results;
   const currentTypeLabel = useMemo(() => {
     return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
   }, [searchTypeId, enabledSearchTypeOptions]);
@@ -548,9 +605,7 @@ export function useSearchController() {
   };
 
   const onItemsRendered = (visibleRows: { startIndex: number; stopIndex: number }) => {
-    if (visibleRows.stopIndex >= visibleResults.length - 1 && visibleResults.length < results.length) {
-      setVisibleCount((prev) => prev + 50);
-    }
+    return;
   };
 
   const statusText = isSearching
@@ -572,11 +627,10 @@ export function useSearchController() {
     lastSelectedBy,
     setLastSelectedBy,
     results,
-    visibleCount,
-    setVisibleCount,
     isSearching,
     isIndexing,
     hasMore,
+    totalCount,
     placeholder,
     searchTypeOptions: enabledSearchTypeOptions,
     currentTypeLabel,

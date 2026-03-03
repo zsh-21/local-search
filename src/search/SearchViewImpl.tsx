@@ -136,10 +136,7 @@ export function SearchViewImpl() {
         className={`result-item-wrapper ${isSelected ? "selected" : ""}`}
         onClick={() => c.launchApp(item)}
         onMouseEnter={() => {
-          if (c.selectedIndex !== index) {
-            c.setLastSelectedBy("mouse");
-            c.setSelectedIndex(index);
-          }
+          return;
         }}
       >
         <li className={isSelected ? "selected" : ""}>
@@ -242,21 +239,12 @@ export function SearchViewImpl() {
     if (c.results.length === 0) return null;
     return (
       <div className="list-bottom-info">
-        {c.visibleResults.length < c.results.length ? (
-          c.isSearching || c.isIndexing ? (
-            <div className="loading-more">
-              <span className="spinner" />
-              <span>正在加载更多结果...</span>
-            </div>
-          ) : (
-            <div className="no-more-results">
-              {`已显示 ${c.visibleResults.length} / ${c.results.length} ${isHistoryMode ? "条历史记录" : "个结果"}`}
-            </div>
-          )
+        {isHistoryMode ? (
+          <div className="no-more-results">{`已显示全部 ${c.results.length} 条历史记录`}</div>
+        ) : c.totalCount > 500 ? (
+          <div className="no-more-results">由于内容太多，展示最匹配的前500</div>
         ) : (
-          <div className="no-more-results">
-            {isHistoryMode ? `已显示全部 ${c.results.length} 条历史记录` : `已显示全部 ${c.results.length} 个结果`}
-          </div>
+          <div className="no-more-results">{`共 ${c.totalCount} 个结果`}</div>
         )}
       </div>
     );
@@ -311,7 +299,7 @@ export function SearchViewImpl() {
           ) : null}
 
           <div className="result-count">
-            {c.results.length > 0 ? `${c.results.length} 条结果` : ""}
+            {c.query.trim().length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : ""}
           </div>
 
           <div className="type-select" ref={c.typeSelectRef}>
@@ -409,8 +397,8 @@ export function SearchViewImpl() {
                   rowProps={{}}
                   onRowsRendered={(visibleRows: any) => c.onItemsRendered(visibleRows)}
                 />
-                <BottomInfo />
               </div>
+              <BottomInfo />
               {c.selectedIndex > 8 && (
                 <button
                   className="back-to-top-btn"
