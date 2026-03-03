@@ -39,6 +39,7 @@ export function normalizeSettings(s: any): AppSettings {
       ? defaultSearchTypeIdRaw
       : "all";
 
+  // 规范化搜索类型顺序：过滤非法值并补齐内置/自定义类型
   const normalizeSearchTypeOrder = (order: any) => {
     const baseIds = ["all", "file"];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
@@ -133,6 +134,7 @@ function clearBackupSettings() {
   localStorage.removeItem(BACKUP_SETTINGS_KEY);
 }
 
+// 会员限制：非会员时强制回退高级配置，避免 UI 展示与权限不一致
 export function applyMembershipRestrictionsToSettings(settings: AppSettings, isMember: boolean): AppSettings {
   if (isMember) return settings;
 

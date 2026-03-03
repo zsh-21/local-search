@@ -1,8 +1,10 @@
+/* 全局基础样式：统一盒模型与禁止选中文本（符合快捷搜索的交互预期） */
 * {
   box-sizing: border-box;
   user-select: none;
 }
 
+/* 全局字体应用：保证搜索/设置两套界面字体一致 */
 .container,
 .settings-panel,
 .search-box,
@@ -25,6 +27,7 @@
   outline: none;
 }
 
+/* 搜索窗口拖拽缩放热区：仅用于命中鼠标手势，不展示视觉元素 */
 .resize-handle {
   position: absolute;
   background: transparent;
@@ -32,6 +35,7 @@
   z-index: 50;
 }
 
+/* 预留：边/角热区的语义类，方便后续扩展不同形态的缩放逻辑 */
 .resize-handle.edge {}
 
 .resize-handle.corner {}
@@ -100,6 +104,7 @@
   cursor: nwse-resize;
 }
 
+/* 主题变量：深色/浅色模式统一从这里派生，组件尽量只使用 CSS 变量 */
 html[data-theme="dark"] {
   --fs-bg: #0f172a;
   /* 更深邃的蓝黑背景 */
@@ -385,6 +390,7 @@ html[data-theme="light"] .container.settings-container {
   overflow: visible;
 }
 
+/* 搜索输入框区域：包含输入、类型选择、右侧按钮与拖拽手柄 */
 .search-box {
   display: flex;
   align-items: center;
@@ -848,6 +854,7 @@ input::placeholder {
   opacity: 0.7;
 }
 
+/* 搜索结果列表容器：虚拟列表与空态展示的外层 */
 .results {
   margin: 10px 0 0 0;
   padding: 0;
@@ -1846,6 +1853,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   margin: 0 auto;
 }
 
+/* 设置页主内容顶部标题区域 */
 .settings-section-header {
   position: relative;
   top: 0;
@@ -1904,6 +1912,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   }
 }
 
+/* 设置页分组卡片样式 */
 .settings-group {
   background: var(--fs-surface);
   border: 1px solid var(--fs-border);
@@ -1944,6 +1953,7 @@ html[data-theme="light"] .settings-nav-item:hover {
   opacity: 0.5;
 }
 
+/* 设置页分组内的提示文本 */
 .settings-hint {
   color: var(--fs-muted);
   font-size: 12px;
@@ -1951,12 +1961,14 @@ html[data-theme="light"] .settings-nav-item:hover {
   line-height: 1.4;
 }
 
+/* 搜索结果右侧按钮配置列表 */
 .action-config-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+/* 单行按钮配置项：包含复选与排序按钮 */
 .action-config-row {
   display: flex;
   align-items: center;

@@ -28,6 +28,7 @@ export function AppearanceSection({
             type="button"
             className={`theme-card dark ${draft.theme === "dark" ? "active" : ""}`}
             onClick={() => {
+              // 主题切换即时生效，避免保存前视觉不一致
               setDraft({ ...draft, theme: "dark" });
               document.documentElement.dataset.theme = "dark";
             }}
@@ -39,6 +40,7 @@ export function AppearanceSection({
             type="button"
             className={`theme-card light ${draft.theme === "light" ? "active" : ""}`}
             onClick={() => {
+              // 主题切换即时生效，避免保存前视觉不一致
               setDraft({ ...draft, theme: "light" });
               document.documentElement.dataset.theme = "light";
             }}
@@ -60,6 +62,7 @@ export function AppearanceSection({
             checked={draft.enableEffect}
             disabled={!isMember}
             onChange={(e) => {
+              // 非会员禁用特效，避免保存后被回退产生困惑
               setDraft({ ...draft, enableEffect: e.target.checked });
               setError("");
             }}

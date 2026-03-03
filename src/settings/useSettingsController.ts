@@ -10,6 +10,7 @@ export type SettingsTabKey = "general" | "search" | "shortcuts" | "appearance" |
 export function useSettingsController() {
   const { settings, loaded } = useSettings();
 
+  // draft 用于承载“未保存的设置修改”，避免直接改动全局 settings 导致其他窗口立即变化
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [error, setError] = useState("");
   const [maximized, setMaximized] = useState(false);
@@ -18,6 +19,7 @@ export function useSettingsController() {
   const readySentRef = useRef(false);
 
   useEffect(() => {
+    // 当全局 settings 更新（主进程保存后广播）时，同步刷新 draft
     setDraft(settings);
   }, [
     settings.autoStart,
@@ -60,6 +62,7 @@ export function useSettingsController() {
   }, [draft, settings]);
 
   useEffect(() => {
+    // 与主进程握手：等设置加载完成且 draft 与 settings 一致后，通知主进程可以显示窗口
     if (!loaded) return;
     if (!isDraftSynced) return;
     if (readySentRef.current) return;
@@ -68,6 +71,7 @@ export function useSettingsController() {
   }, [loaded, isDraftSynced]);
 
   const applyThemePreview = (theme: AppSettings["theme"], accentColor: string) => {
+    // 主题预览即时应用到 document：保存前也能看到真实效果
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.setProperty("--fs-accent", accentColor);
     const r = parseInt(accentColor.slice(1, 3), 16);
@@ -84,6 +88,7 @@ export function useSettingsController() {
   };
 
   useEffect(() => {
+    // 设置窗口每次打开时重置到“账号页”，并刷新一次订阅状态
     const handler = () => {
       void refreshUserStatusSilently({ onUser: (nextUser) => setUser(nextUser) });
       setDraft(settings);
@@ -99,6 +104,7 @@ export function useSettingsController() {
   }, [settings]);
 
   const onClose = () => {
+    // 取消关闭：丢弃草稿并回到账号页，避免误保存
     setError("");
     setDraft(settings);
     setActiveKey("account");
@@ -116,6 +122,7 @@ export function useSettingsController() {
 
   const save = async () => {
     setError("");
+    // 保存前做会员降级：非会员的高级选项会被统一回退
     const nextDraft = applyMembershipRestrictionsToSettings(draft, isUserMember(user));
     const resp = (await window.ipcRenderer?.invoke("save-settings", nextDraft)) as
       | { ok: boolean; message?: string }
@@ -144,12 +151,14 @@ export function useSettingsController() {
 
   useEffect(() => {
     if (!defaultTypeMenuOpen) return;
+    // 菜单打开时将键盘高亮定位到当前默认类型，便于上下键操作
     const idx = typeOptions.findIndex((x) => x.id === (draft.defaultSearchTypeId || "all"));
     setDefaultTypeActiveIndex(idx >= 0 ? idx : 0);
   }, [defaultTypeMenuOpen, draft.defaultSearchTypeId, typeOptions]);
 
   useEffect(() => {
     if (!defaultTypeMenuOpen) return;
+    // 点击下拉之外关闭菜单，避免菜单悬浮影响交互
     const onMouseDown = (e: MouseEvent) => {
       const el = defaultTypeSelectRef.current;
       if (!el) return;
@@ -200,6 +209,7 @@ export function useSettingsController() {
   const toastTimerRef = useRef<number | null>(null);
 
   const showToast = (message: string, kind: "success" | "error" | "info" = "info") => {
+    // toast 只保留一个：重复触发时先清理旧定时器，避免叠加闪烁
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ kind, message });
     toastTimerRef.current = window.setTimeout(() => {
@@ -215,6 +225,7 @@ export function useSettingsController() {
   }, []);
 
   const clearLoginState = () => {
+    // 清理本地登录态并广播：用于跨窗口刷新会员状态
     setUser(null);
     localStorage.removeItem("fs_user");
     localStorage.removeItem("fs_token");
@@ -222,6 +233,7 @@ export function useSettingsController() {
   };
 
   const doRefreshStatus = async () => {
+    // 防并发刷新：避免重复点击导致多次请求与状态覆盖
     if (isRefreshingStatus) return;
     if (!getStoredTokenFromLocalStorage()) return;
     setIsRefreshingStatus(true);

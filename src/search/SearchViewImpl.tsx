@@ -25,12 +25,14 @@ export function SearchViewImpl() {
     return out;
   }, [c.settings.resultActionButtons, isHistoryMode]);
 
+  // 仅在输入较稳定时高亮，避免短字符导致过度高亮与误匹配
   const highlightQuery = useMemo(() => {
     const q = c.query.trim();
     if (q.length < 2 || q.length > 32) return "";
     return q.toLowerCase();
   }, [c.query]);
 
+  // 将命中片段拆分为“前/中/后”，仅渲染一次高亮，避免视觉干扰
   const renderHighlightedText = (text: string) => {
     if (!highlightQuery) return text;
     const lower = (text || "").toLowerCase();
@@ -53,11 +55,13 @@ export function SearchViewImpl() {
     return parts.length > 1 ? parts.pop()?.toUpperCase() : "";
   };
 
+  // 图片类型用于显示预览缩略图，非图片使用扩展名图标
   const isImageFile = (path: string) => {
     const ext = (path.split(".").pop() || "").toLowerCase();
     return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
   };
 
+  // 根据结果类型渲染不同图标：文件夹/应用/文件
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
     if (item.type === "folder") {
       return (
@@ -115,6 +119,7 @@ export function SearchViewImpl() {
     const item = c.visibleResults[index];
     if (!item) return null;
 
+    // 当前选中项用于键盘导航与样式高亮
     const isSelected = index === c.selectedIndex;
     const isImg = item.type === "file" && isImageFile(item.path);
     const lowerPath = (item.path || "").toLowerCase();
@@ -157,6 +162,7 @@ export function SearchViewImpl() {
             ) : null}
           </div>
           <div className="action-group">
+            {/* 右侧按钮按用户配置与模式渲染，保持最多三项 */}
             {visibleActionIds.map((actionId) => {
               if (actionId === "openFolder") {
                 return (

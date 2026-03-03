@@ -49,6 +49,7 @@ export function SearchSection({
   ];
   const selectedActionIds = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];
 
+  // 勾选/取消按钮：限制最多三项，超限给出提示
   const toggleAction = (id: AppSettings["resultActionButtons"][number]) => {
     const exists = selectedActionIds.includes(id);
     if (exists) {
@@ -70,6 +71,7 @@ export function SearchSection({
     setError("");
   };
 
+  // 上下移动顺序：仅调整已选项的展示顺序
   const moveAction = (id: AppSettings["resultActionButtons"][number], dir: "up" | "down") => {
     const idx = selectedActionIds.indexOf(id);
     if (idx < 0) return;

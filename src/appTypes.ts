@@ -29,6 +29,7 @@ export interface AppSettings {
   effectType: "particles" | "warp" | "waves";
   backgroundImagePath: string;
   backgroundImageOpacity: number;
+  // 右侧按钮显示顺序：最多三项，由设置面板控制
   resultActionButtons: ResultActionButtonId[];
 }
 

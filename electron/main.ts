@@ -282,6 +282,7 @@ function loadSettings(): AppSettings {
 				if (!searchTypeOrder.includes(id)) searchTypeOrder.push(id);
 			}
 
+			// 结果右侧按钮配置：过滤非法值、去重并限制最多三项
 			const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
 			const rawActionButtons: string[] = Array.isArray(raw?.resultActionButtons)
 				? raw.resultActionButtons.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
@@ -653,6 +654,7 @@ function createWindow() {
 	});
 
 	if (!app.isPackaged) {
+		// 开发环境快捷键：F12 打开/关闭 DevTools，避免影响生产环境
 		win.webContents.on('before-input-event', (event, input) => {
 			if (input.type !== 'keyDown') return;
 			if (input.key !== 'F12') return;
@@ -738,6 +740,7 @@ function createSettingsWindow() {
 	});
 
 	if (!app.isPackaged) {
+		// 开发环境快捷键：F12 打开/关闭 DevTools，避免影响生产环境
 		settingsWin.webContents.on('before-input-event', (event, input) => {
 			if (input.type !== 'keyDown') return;
 			if (input.key !== 'F12') return;

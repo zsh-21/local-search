@@ -10,6 +10,7 @@ export function useSearchController() {
   // 统一读取设置：搜索页会用到默认类型、类型顺序、主题与背景相关配置
   const { settings } = useSettings();
 
+  // 搜索输入与类型选择：驱动查询与结果过滤
   const [query, setQuery] = useState("");
   const [searchTypeId, setSearchTypeId] = useState<string>(settings.defaultSearchTypeId || "all");
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
@@ -21,6 +22,7 @@ export function useSearchController() {
   const [isIndexing, setIsIndexing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
+  // 关键元素引用：输入框聚焦、列表滚动、下拉菜单点击外部关闭等
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<any>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -28,8 +30,10 @@ export function useSearchController() {
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // 窗口高度自适应：减少频繁 resize 的抖动与重复调用
   const lastResizeHeightRef = useRef(0);
   const resizeRafRef = useRef<number | null>(null);
+  // 竞态保护：异步搜索返回时对齐“当前 query/type”，避免旧请求覆盖新结果
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
@@ -55,6 +59,7 @@ export function useSearchController() {
     selectedPathRef.current = results[selectedIndex]?.path || "";
   }, [results, selectedIndex]);
 
+  // 根据当前选择的搜索类型对结果做二次过滤（历史/增量结果都会走这里）
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
     if (id === "all") return items;
@@ -71,6 +76,7 @@ export function useSearchController() {
   };
 
   useEffect(() => {
+    // 点击下拉选择器之外时关闭菜单，避免菜单悬浮影响键盘操作
     const handleClickOutside = (e: MouseEvent) => {
       if (typeSelectRef.current && !typeSelectRef.current.contains(e.target as Node)) {
         setTypeMenuOpen(false);
@@ -111,6 +117,7 @@ export function useSearchController() {
     return "搜索所有文件与文件夹...";
   }, [searchTypeId]);
 
+  // 刷新历史记录：用于“空输入”模式下展示最近打开项
   const refreshHistory = async (opts?: RefreshHistoryOpts) => {
     const resp = (await window.ipcRenderer?.invoke("get-history")) as
       | { results: AppItem[] }
@@ -138,6 +145,7 @@ export function useSearchController() {
 
   useEffect(() => {
     inputRef.current?.focus();
+    // 主进程通知“需要重置搜索页”时触发：按用户设置决定是否保留上次状态
     const handleReset = async () => {
       void refreshUserStatusSilently();
       window.ipcRenderer?.invoke("get-settings").then(async (latestSettings: AppSettings) => {
@@ -217,6 +225,7 @@ export function useSearchController() {
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed || trimmed.length < 2) {
+      // 少于 2 个字符时不触发搜索：空输入显示历史，其余清空结果并收起状态
       searchRequestIdRef.current += 1;
       if (trimmed.length === 0) {
         refreshHistory();
@@ -233,6 +242,7 @@ export function useSearchController() {
     const requestId = searchRequestIdRef.current;
     setIsSearching(true);
     setHasMore(false);
+    // 防抖：避免连续输入触发过多 IPC 搜索请求
     const timer = setTimeout(async () => {
       try {
         const resp = (await window.ipcRenderer?.invoke(
@@ -240,6 +250,7 @@ export function useSearchController() {
           trimmed,
           { searchTypeId },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
+        // 竞态保护：只接受“最新请求 + 当前 query/type”对应的结果
         if (searchRequestIdRef.current !== requestId) return;
         if (queryRef.current.trim() !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;

@@ -1,6 +1,7 @@
 
 export const API_BASE_URL = "http://localhost:3001";
 
+// 用户结构：由后端返回，前端仅做展示与会员判断
 export interface User {
   id: string;
   nickname: string;
@@ -49,11 +50,13 @@ type ApiRequestResult = {
 };
 
 async function requestJson(url: string, options: any): Promise<ApiRequestResult> {
+  // 通过主进程代理请求：避免渲染进程跨域/证书等限制，并统一复用 fetch 能力
   const result = (await window.ipcRenderer.invoke("login-request", { url, options })) as ApiRequestResult;
   return result;
 }
 
 function normalizeUserFromLoginData(data: { token: string; user: User; membership?: { expiresAt: string } }): User {
+  // 兼容不同接口的会员字段：后端可能返回 membership.expiresAt 或 user.memberExpiresAt
   return {
     ...data.user,
     memberExpiresAt: data.user.memberExpiresAt ?? data.membership?.expiresAt,
@@ -62,6 +65,7 @@ function normalizeUserFromLoginData(data: { token: string; user: User; membershi
 
 export async function login(account: string, password: string): Promise<{ token: string; user: User }> {
   try {
+    // 登录接口：成功返回 token 与 user；失败抛错交给 UI 统一提示
     const result = await requestJson(`${API_BASE_URL}/api/exe/login`, {
       method: "POST",
       headers: {
@@ -88,6 +92,7 @@ export async function login(account: string, password: string): Promise<{ token:
 }
 
 function normalizeBearerToken(token: string): string {
+  // 统一 Authorization 格式：允许传入纯 token 或 Bearer token
   const trimmed = (token || "").trim();
   if (!trimmed) return "";
   return /^bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
