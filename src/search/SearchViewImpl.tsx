@@ -61,29 +61,14 @@ export function SearchViewImpl() {
     return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
   };
 
-  // 根据结果类型渲染不同图标：文件夹/应用/文件
+  // 根据结果类型渲染不同图标：文件夹/应用/设置/文件
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
     if (item.type === "folder") {
+      // 文件夹图标使用 📂：无需额外图标资源，且在深浅色主题下对比度稳定
       return (
-        <svg className="result-icon folder-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M10.2 5.2h-5A2.2 2.2 0 0 0 3 7.4v9.3A2.3 2.3 0 0 0 5.3 19h13.4A2.3 2.3 0 0 0 21 16.7V9.3A2.3 2.3 0 0 0 18.7 7H12l-1.3-1.4a2 2 0 0 0-1.5-.4Z"
-            fill="currentColor"
-            opacity="0.16"
-          />
-          <path
-            d="M4.5 8.2h15.2a1.6 1.6 0 0 1 1.6 1.6v6.8a1.8 1.8 0 0 1-1.8 1.8H5.1A2.1 2.1 0 0 1 3 16.3V9.7a1.5 1.5 0 0 1 1.5-1.5Z"
-            fill="currentColor"
-            opacity="0.34"
-          />
-          <path
-            d="M4.5 8.2h15.2a1.6 1.6 0 0 1 1.6 1.6v6.8a1.8 1.8 0 0 1-1.8 1.8H5.1A2.1 2.1 0 0 1 3 16.3V9.7a1.5 1.5 0 0 1 1.5-1.5Z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            opacity="0.8"
-          />
-        </svg>
+        <span className="result-icon folder-emoji" aria-hidden="true">
+          📂
+        </span>
       );
     }
 

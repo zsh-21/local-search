@@ -63,8 +63,45 @@ export function useSearchController() {
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
     if (id === "all") return items;
-    if (id === "file") return items.filter((x) => x.type === "file");
+    if (id === "file") {
+      // “文件”类型只展示普通文件 + 应用：图片/视频/自定义扩展的文件统一归属到各自类型，避免串结果
+      const imageExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
+      const videoExts = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
+      const customExts = new Set(
+        (settings.customSearchTypes || [])
+          .map((x) => (typeof x === "string" ? x.trim().toLowerCase() : ""))
+          .filter(Boolean),
+      );
+      return items.filter((x) => {
+        if (x.type === "app") return true;
+        if (x.type !== "file") return false;
+        const p = (x.path || "").toLowerCase();
+        const dot = p.lastIndexOf(".");
+        const ext = dot >= 0 ? p.slice(dot) : "";
+        if (!ext) return true;
+        if (imageExts.has(ext)) return false;
+        if (videoExts.has(ext)) return false;
+        if (customExts.has(ext)) return false;
+        return true;
+      });
+    }
     if (id === "folder") return items.filter((x) => x.type === "folder");
+    // “设置”结果只出现在“设置/所有类型”中：这里用于过滤历史与后台增量结果
+    if (id === "settings") return items.filter((x) => x.type === "settings");
+    if (id === "image" || id === "video") {
+      // 图片/视频类型：只从文件结果里按扩展名筛选
+      const exts =
+        id === "image"
+          ? new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"])
+          : new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
+      return items.filter((x) => {
+        if (x.type !== "file") return false;
+        const p = (x.path || "").toLowerCase();
+        const dot = p.lastIndexOf(".");
+        const ext = dot >= 0 ? p.slice(dot) : "";
+        return exts.has(ext);
+      });
+    }
     if (id.startsWith("ext:")) {
       const ext = id.slice(4).toLowerCase();
       if (!ext) return items;
@@ -102,6 +139,7 @@ export function useSearchController() {
   );
 
   const enabledSearchTypeOptions = useMemo(() => {
+    // 搜索类型开关：设置面板可关闭某些类型（“所有类型”永远保留）
     const disabled = Array.isArray(settings.disabledSearchTypeIds) ? settings.disabledSearchTypeIds : [];
     return searchTypeOptions.filter((t) => t.id === "all" || !disabled.includes(t.id));
   }, [searchTypeOptions, settings.disabledSearchTypeIds]);
@@ -262,7 +300,7 @@ export function useSearchController() {
         if (searchRequestIdRef.current !== requestId) return;
         if (queryRef.current.trim() !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
-        const nextResults = resp?.results ?? [];
+        const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
         setResults(nextResults);
         setVisibleCount(50);
         setSelectedIndex(0);
@@ -304,7 +342,7 @@ export function useSearchController() {
         if (queryRef.current.trim() !== trimmed) return;
         if (searchTypeIdRef.current !== currentTypeId) return;
 
-        const nextResults = resp?.results ?? [];
+        const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
         setResults(nextResults);
         setVisibleCount(50);
         const preservePath = selectedPathRef.current;
@@ -436,7 +474,7 @@ export function useSearchController() {
   const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
   const currentTypeLabel = useMemo(() => {
     return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
-  }, [searchTypeId, searchTypeOptions]);
+  }, [searchTypeId, enabledSearchTypeOptions]);
 
   const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
   const trimmedQuery = query.trim();

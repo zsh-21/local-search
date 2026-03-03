@@ -1614,6 +1614,19 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 			.map(({ score, ...rest }) => rest);
 		return { results: merged, isIndexing: false, hasMore: false };
 	}
+	const settingsResults =
+		searchTypeId === 'all'
+			? (() => {
+					const out: Array<{ name: string; path: string; type: string; score: number }> = [];
+					for (const it of settingsItems) {
+						const nameLower = it.name.toLowerCase();
+						if (!keywords.some((k) => nameLower.includes(k))) continue;
+						const score = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+						out.push({ name: it.name, path: it.uri, type: 'settings', score });
+					}
+					return out;
+			  })()
+			: [];
 
 	const appResults = await (async () => {
 		// 如果指定了搜索类型且不是 'all' 或 'file'，则不显示应用结果
@@ -1637,24 +1650,61 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 		return results;
 	})();
 
-	const fileSearch = fileIndex.search(query, 500); // 增加搜索结果上限
+	// 文件索引搜索的候选上限：当用户指定“文件夹/图片/视频/扩展名”等更窄的类型时，提高候选数量，
+	// 避免同名文件过多导致目录/特定类型结果在 topN 之外被截断，从而出现“所有类型能搜到，但对应类型搜不到”
+	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 1000;
+	const fileSearch = fileIndex.search(query, fileSearchLimit);
+
+	// 目录标识需要可靠：索引缓存可能导致 isDirectory 丢失，从而出现“文件夹搜不到、反而在文件里出现”的错位
+	// 这里在必要场景下用 statSync 兜底校验，保证类型归属准确（不影响其它搜索类型）
+	const needAccurateDirFlag = searchTypeId === 'all' || searchTypeId === 'file' || searchTypeId === 'folder';
+	const safeIsDirectory = (p: string) => {
+		try {
+			return statSync(p).isDirectory();
+		} catch {
+			return false;
+		}
+	};
 
 	// 预过滤文件，避免为不需要的文件提取图标
-	const filteredFiles = fileSearch.results.filter((r) => {
-		if (fileIndex.isIgnoredPath(r.path)) return false;
-		if (searchTypeId === 'file' && r.isDirectory) return false;
-		if (searchTypeId === 'folder' && !r.isDirectory) return false;
+	const filteredFiles: Array<{ path: string; name: string; isDirectory: boolean; score: number }> = [];
+	for (const r of fileSearch.results) {
+		if (fileIndex.isIgnoredPath(r.path)) continue;
+		if (!existsSync(r.path)) continue;
+
+		const isDirectory = r.isDirectory || (needAccurateDirFlag ? safeIsDirectory(r.path) : false);
+
+		if (searchTypeId === 'file') {
+			// “文件”类型：不包含文件夹，也不包含图片/视频（它们归属到“图片/视频”类型，且仍可在“所有类型”中搜到）
+			if (isDirectory) continue;
+			const ext = path.extname(r.path).toLowerCase();
+			if (imageExts.has(ext)) continue;
+			if (videoExts.has(ext)) continue;
+		}
+
+		if (searchTypeId === 'folder') {
+			// “文件夹”类型：只包含文件夹
+			if (!isDirectory) continue;
+		}
+
 		if (searchTypeId === 'image') {
-			if (r.isDirectory) return false;
-			return imageExts.has(path.extname(r.path).toLowerCase());
+			if (isDirectory) continue;
+			if (!imageExts.has(path.extname(r.path).toLowerCase())) continue;
 		}
+
 		if (searchTypeId === 'video') {
-			if (r.isDirectory) return false;
-			return videoExts.has(path.extname(r.path).toLowerCase());
+			if (isDirectory) continue;
+			if (!videoExts.has(path.extname(r.path).toLowerCase())) continue;
 		}
-		if (extFilter && (r.isDirectory || path.extname(r.path).toLowerCase() !== extFilter)) return false;
-		return existsSync(r.path);
-	});
+
+		if (extFilter) {
+			// 自定义扩展类型：只包含对应扩展名的文件
+			if (isDirectory) continue;
+			if (path.extname(r.path).toLowerCase() !== extFilter) continue;
+		}
+
+		filteredFiles.push({ path: r.path, name: r.name, isDirectory, score: r.score });
+	}
 
 	// 取前 100 个立即返回（提高初始展示数量）
 	const first100Files = filteredFiles.slice(0, 100);
@@ -1673,7 +1723,7 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 		})
 	)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
 
-	let combined = [...appResults, ...first100Results];
+	let combined = [...settingsResults, ...appResults, ...first100Results];
 	const merged = combined
 		.sort((a, b) => (b.score || 0) - (a.score || 0))
 		.slice(0, 100) // 初始返回 100 条

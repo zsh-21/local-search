@@ -118,7 +118,7 @@ html[data-theme="dark"] {
   --fs-accent: #38bdf8;
   --fs-accent-soft: rgba(56, 189, 248, 0.1);
   --fs-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
-  --fs-dots: rgba(56, 189, 248, 0.2);
+  --fs-dots: rgba(56, 189, 248, 1);
   --fs-glow: 0 0 20px rgba(56, 189, 248, 0.15);
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
 }
@@ -717,14 +717,14 @@ html[data-theme="light"] .container.settings-container {
 }
 
 .drag-icon {
-  width: 20px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   margin-right: 12px;
   cursor: grab;
   -webkit-app-region: drag;
+  /* 使用更强的点阵颜色，提升可见性（避免拖拽点太淡） */
   background-image: radial-gradient(var(--fs-dots) 1.5px, transparent 0);
   background-size: 6px 6px;
-  background-position: center;
   opacity: 0.4;
   transition: opacity 0.2s;
   flex-shrink: 0;
@@ -997,6 +997,17 @@ html[data-theme="light"] .results li.selected {
 
 .result-icon.folder-icon {
   color: var(--fs-muted);
+}
+
+.result-icon.folder-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  line-height: 1;
+  filter: none;
 }
 
 .result-icon.ext-icon {
