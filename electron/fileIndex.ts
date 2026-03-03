@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
+import { create, insert, insertMultiple, search, count, type Orama, type Results } from '@orama/orama';
 
 export interface FileIndexEntry {
 	path: string;
@@ -19,60 +20,14 @@ export interface FileIndexStatus {
 	indexedCount: number;
 }
 
-function normalizeForMatch(name: string) {
-	return name.replace(/\.(exe|lnk)$/i, '').toLowerCase();
-}
+const SCHEMA = {
+	name: 'string',
+	path: 'string',
+	isDirectory: 'boolean',
+	ext: 'string',
+} as const;
 
-function bucketKey2(s: string) {
-	const norm = normalizeForMatch(s);
-	return norm.length >= 2 ? norm.slice(0, 2) : norm;
-}
-
-function fuzzySubsequenceScore(target: string, query: string) {
-	let t = 0;
-	let q = 0;
-	let score = 0;
-	let streak = 0;
-
-	while (t < target.length && q < query.length) {
-		if (target[t] === query[q]) {
-			streak += 1;
-			score += 3 + Math.min(streak, 10);
-			q += 1;
-		} else {
-			streak = 0;
-		}
-		t += 1;
-	}
-
-	return q === query.length ? score : -1;
-}
-
-function scoreEntry(entry: FileIndexEntry, queryLower: string, queryParts: string[]) {
-	const base = normalizeForMatch(entry.name);
-
-	let score = 0;
-
-	const allPartsMatch = queryParts.every((part) => base.includes(part));
-	if (!allPartsMatch) return 0;
-
-	// Higher score for matches in the name
-	const namePartsMatchCount = queryParts.filter(part => base.includes(part)).length;
-	score += namePartsMatchCount * 500;
-
-	if (base === queryLower) score += 2000;
-	if (base.startsWith(queryLower)) score += 1200;
-	if (base.includes(queryLower)) score += 900;
-	
-	const subseq = fuzzySubsequenceScore(base, queryLower);
-	if (subseq > 0) score += subseq;
-
-	const ext = path.extname(entry.name).toLowerCase();
-	if (ext === '.exe' || ext === '.lnk') score += 120;
-	if (entry.isDirectory) score -= 20;
-
-	return score;
-}
+type FileDB = Orama<typeof SCHEMA>;
 
 function shouldSkipDirName(name: string) {
 	const lower = name.toLowerCase();
@@ -108,8 +63,7 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 }
 
 export class FileIndex {
-	private entries: FileIndexEntry[] = [];
-	private buckets = new Map<string, number[]>();
+	private db: FileDB | null = null;
 	private pathSet = new Set<string>();
 	private readonly cachePath: string;
 	private readonly maxEntries: number;
@@ -127,10 +81,10 @@ export class FileIndex {
 		this.maxEntries = options.maxEntries ?? 750_000;
 	}
 
-	getStatus(): FileIndexStatus {
+	async getStatus(): Promise<FileIndexStatus> {
 		return {
 			isIndexing: this.isIndexing,
-			indexedCount: this.entries.length,
+			indexedCount: this.db ? await count(this.db) : 0,
 		};
 	}
 
@@ -224,49 +178,94 @@ export class FileIndex {
 		}
 	}
 
-	private addEntry(entry: FileIndexEntry) {
-		if (this.entries.length >= this.maxEntries) return;
-		if (this.isIgnoredPath(entry.path)) return;
-		if (this.pathSet.has(entry.path)) return;
-		const index = this.entries.length;
-		this.entries.push(entry);
-		this.pathSet.add(entry.path);
-		const key = bucketKey2(entry.name);
-		if (!key) return;
-		const arr = this.buckets.get(key);
-		if (arr) arr.push(index);
-		else this.buckets.set(key, [index]);
+	private async ensureDB() {
+		if (!this.db) {
+			this.db = await create({ schema: SCHEMA });
+		}
+		return this.db;
 	}
 
-	ingestPath(entryPath: string, isDirectory: boolean) {
+	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
-		this.addEntry({ path: entryPath, name: path.basename(entryPath), isDirectory });
+		const db = await this.ensureDB();
+		if (this.pathSet.has(entryPath)) return;
+		// Check ignore path
+		if (this.isIgnoredPath(entryPath)) return;
+
+		this.pathSet.add(entryPath);
+		const name = path.basename(entryPath);
+		const ext = path.extname(name).toLowerCase();
+		await insert(db, {
+			path: entryPath,
+			name,
+			isDirectory,
+			ext,
+		});
 	}
 
 	async loadCache(): Promise<boolean> {
 		if (!existsSync(this.cachePath)) return false;
 
+		// Initialize DB
+		this.db = await create({ schema: SCHEMA });
+		this.pathSet.clear();
+
 		try {
 			const stream = createReadStream(this.cachePath, { encoding: 'utf-8' });
 			const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+			
+			const batch: FileIndexEntry[] = [];
+			const BATCH_SIZE = 5000;
+
+			const processBatch = async () => {
+				if (batch.length === 0) return;
+				if (!this.db) return;
+				await insertMultiple(this.db, batch.map(e => ({
+					path: e.path,
+					name: e.name,
+					isDirectory: e.isDirectory,
+					ext: path.extname(e.name).toLowerCase()
+				})));
+				batch.length = 0;
+			};
+
+			let count = 0;
 			for await (const line of rl) {
 				const p = line.trim();
 				if (!p) continue;
-				this.addEntry({
+				
+				// Optimization: Don't check ignore path on loadCache, assume cache is clean or will be filtered on search
+				// But we should check maxEntries
+				if (count >= this.maxEntries) break;
+
+				this.pathSet.add(p);
+				batch.push({
 					path: p,
 					name: path.basename(p),
-					isDirectory: false,
+					isDirectory: false, // Cache currently doesn't store isDirectory, default to false. 
+                    // Wait, old code defaulted to false too. 
+                    // "isDirectory: false" in old loadCache (line 258)
 				});
-				if (this.entries.length >= this.maxEntries) break;
+				count++;
+
+				if (batch.length >= BATCH_SIZE) {
+					await processBatch();
+				}
 			}
-			return this.entries.length > 0;
+			await processBatch();
+			
+			return count > 0;
 		} catch {
+			// If load fails, ensure we have a valid empty db
+			if (!this.db) this.db = await create({ schema: SCHEMA });
 			return false;
 		}
 	}
 
 	async buildIfEmpty() {
-		if (this.entries.length > 0) return;
+		const db = await this.ensureDB();
+		const cnt = await count(db);
+		if (cnt > 0) return;
 		await this.rebuild();
 	}
 
@@ -277,30 +276,49 @@ export class FileIndex {
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
 
-		const nextEntries: FileIndexEntry[] = [];
-		const nextBuckets = new Map<string, number[]>();
+		const nextDb = await create({ schema: SCHEMA });
 		const nextPathSet = new Set<string>();
+		
+		let entryCount = 0;
+		const batch: FileIndexEntry[] = [];
+		const BATCH_SIZE = 2000;
+
+		const flushBatch = async () => {
+			if (batch.length === 0) return;
+			await insertMultiple(nextDb, batch.map(e => ({
+				path: e.path,
+				name: e.name,
+				isDirectory: e.isDirectory,
+				ext: path.extname(e.name).toLowerCase()
+			})));
+			batch.length = 0;
+		};
+
 		const maybePublishPartial = () => {
-			if (this.partialPublished) return;
-			if (Date.now() - this.rebuildStartedAt < 3000) return;
-			if (nextEntries.length <= 0) return;
-			this.entries = nextEntries;
-			this.buckets = nextBuckets;
-			this.pathSet = nextPathSet;
+			// We can't easily publish partial results with Orama by swapping DBs mid-stream without losing data or complexity.
+			// So we skip partial publishing for now, or we could just update the live DB if we were doing incremental.
+			// But rebuild implies fresh start. 
+			// Users will see old results until rebuild finishes.
+			// If this is acceptable, we just ignore partial publishing logic.
+			// If we want partial updates, we could insert into `this.db` if it exists, but we are building `nextDb`.
+			
+			// If we want to support "search while indexing", we could potentially expose nextDb?
+			// For simplicity and performance, let's just wait until finish or maybe swap in chunks?
+			// Swapping in chunks is hard because Orama is a single instance.
+			
+			// Let's stick to "swap at the end" for atomic update.
+			// But the UI shows "Indexing..." status.
 			this.partialPublished = true;
 		};
+
 		const addNext = (entry: FileIndexEntry) => {
-			if (nextEntries.length >= this.maxEntries) return;
+			if (entryCount >= this.maxEntries) return;
 			if (this.isIgnoredPath(entry.path)) return;
 			if (nextPathSet.has(entry.path)) return;
 			nextPathSet.add(entry.path);
-			const idx = nextEntries.length;
-			nextEntries.push(entry);
-			const key = bucketKey2(entry.name);
-			if (!key) return;
-			const arr = nextBuckets.get(key);
-			if (arr) arr.push(idx);
-			else nextBuckets.set(key, [idx]);
+			
+			batch.push(entry);
+			entryCount++;
 		};
 
 		const roots = await getWindowsFileSystemRoots();
@@ -309,7 +327,7 @@ export class FileIndex {
 			for (const root of roots) {
 				const queue: string[] = [root];
 				let q = 0;
-				while (q < queue.length && nextEntries.length < this.maxEntries) {
+				while (q < queue.length && entryCount < this.maxEntries) {
 					const current = queue[q++];
 					if (!current) break;
 					if (this.isIgnoredPath(current)) continue;
@@ -323,7 +341,7 @@ export class FileIndex {
 
 					let processedInDir = 0;
 					for await (const dirent of dir) {
-						if (nextEntries.length >= this.maxEntries) break;
+						if (entryCount >= this.maxEntries) break;
 						if (dirent.isSymbolicLink()) continue;
 
 						const fullPath = path.join(current, dirent.name);
@@ -338,22 +356,33 @@ export class FileIndex {
 
 						processedInDir += 1;
 						if (processedInDir % 250 === 0) {
+							if (batch.length >= BATCH_SIZE) await flushBatch();
 							await this.cooperativeYield(maybePublishPartial);
 						}
 					}
-
+                    
+                    if (batch.length >= BATCH_SIZE) await flushBatch();
 					await this.cooperativeYield(maybePublishPartial);
 				}
 			}
 
+			await flushBatch();
+
+			// Save cache to disk
 			const tmpPath = `${this.cachePath}.tmp`;
 			await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
+			
+            // To save cache, we need to iterate all docs.
+            // Orama search with limit: 0 doesn't return all docs easily without pagination.
+            // But we have `nextPathSet`. We can just write that!
+            // `nextPathSet` contains all paths we indexed.
+            
 			await new Promise<void>((resolve, reject) => {
 				const ws = createWriteStream(tmpPath, { encoding: 'utf-8' });
 				ws.on('error', reject);
 				ws.on('finish', () => resolve());
-				for (const e of nextEntries) {
-					ws.write(`${e.path}\n`);
+				for (const p of nextPathSet) {
+					ws.write(`${p}\n`);
 				}
 				ws.end();
 			});
@@ -362,8 +391,7 @@ export class FileIndex {
 				await fs.unlink(tmpPath);
 			});
 
-			this.entries = nextEntries;
-			this.buckets = nextBuckets;
+			this.db = nextDb;
 			this.pathSet = nextPathSet;
 		} finally {
 			this.isIndexing = false;
@@ -371,60 +399,45 @@ export class FileIndex {
 		}
 	}
 
-	search(
+	async search(
 		query: string,
 		limit = 100
-	): { results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number } {
+	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number }> {
+		const db = await this.ensureDB();
 		const queryLower = query.trim().toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0 };
 
-		const queryParts = queryLower.split(/\s+/).filter(Boolean);
-		const heap: FileIndexSearchResult[] = [];
-		let totalCount = 0;
+        // Orama search
+        // We use 'name' property for search
+        const searchResult = await search(db, {
+            term: queryLower,
+            properties: ['name'], // Boost name matches
+            limit: limit * 2, // Request more to allow for post-filtering
+            threshold: 0.2, // Fuzzy threshold
+            boost: {
+                name: 2, // Boost name matches
+            }
+        });
 
-		const siftUp = (idx: number) => {
-			while (idx > 0) {
-				const p = Math.floor((idx - 1) / 2);
-				if (heap[p].score <= heap[idx].score) break;
-				[heap[p], heap[idx]] = [heap[idx], heap[p]];
-				idx = p;
-			}
-		};
-		const siftDown = (idx: number) => {
-			for (;;) {
-				const l = idx * 2 + 1;
-				const r = l + 1;
-				let s = idx;
-				if (l < heap.length && heap[l].score < heap[s].score) s = l;
-				if (r < heap.length && heap[r].score < heap[s].score) s = r;
-				if (s === idx) break;
-				[heap[s], heap[idx]] = [heap[idx], heap[s]];
-				idx = s;
-			}
-		};
-		const pushTop = (item: FileIndexSearchResult) => {
-			if (limit <= 0) return;
-			if (heap.length < limit) {
-				heap.push(item);
-				siftUp(heap.length - 1);
-				return;
-			}
-			if (heap[0].score >= item.score) return;
-			heap[0] = item;
-			siftDown(0);
-		};
+        // Map results
+        const results: FileIndexSearchResult[] = [];
+        
+        for (const hit of searchResult.hits) {
+            const doc = hit.document;
+            const score = hit.score;
+            // Filter ignored paths
+            if (this.isIgnoredPath(doc.path as string)) continue;
 
-		// Full scan for better partial matching support
-		for (let i = 0; i < this.entries.length; i++) {
-			const entry = this.entries[i];
-			if (this.isIgnoredPath(entry.path)) continue;
-			const score = scoreEntry(entry, queryLower, queryParts);
-			if (score <= 0) continue;
-			totalCount += 1;
-			pushTop({ ...entry, score });
-		}
+            results.push({
+                path: doc.path as string,
+                name: doc.name as string,
+                isDirectory: doc.isDirectory as boolean,
+                score: score * 1000 // Scale up score to match old range roughly (0-10 -> 0-10000)
+            });
+            
+            if (results.length >= limit) break;
+        }
 
-		heap.sort((a, b) => b.score - a.score);
-		return { results: heap, isIndexing: this.isIndexing, totalCount };
+		return { results, isIndexing: this.isIndexing, totalCount: searchResult.count };
 	}
 }

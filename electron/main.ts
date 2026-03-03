@@ -1028,7 +1028,7 @@ async function startUserDirectoryWatchers() {
 						const isDir = st.isDirectory();
 						const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
 						upsertRecentIndex(fullPath, isDir, timeMs);
-						fileIndex.ingestPath(fullPath, isDir);
+						void fileIndex.ingestPath(fullPath, isDir);
 					} catch {}
 				}, 80);
 			});
@@ -1767,13 +1767,13 @@ ipcMain.handle('open-external', async (_event, url: string) => {
 
 ipcMain.handle('rebuild-file-index', async () => {
 	await fileIndex.rebuild();
-	return fileIndex.getStatus();
+	return await fileIndex.getStatus();
 });
 
 ipcMain.handle(
 	'search-files',
 	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string }) => {
-	if (!query || query.trim().length < 2) return { results: [], isIndexing: fileIndex.getStatus().isIndexing };
+	if (!query || query.trim().length < 2) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
 	void reconcileRecentIndex();
@@ -1958,7 +1958,7 @@ ipcMain.handle(
 	// 文件索引搜索的候选上限：当用户指定“文件夹/图片/视频/扩展名”等更窄的类型时，提高候选数量，
 	// 避免同名文件过多导致目录/特定类型结果在 topN 之外被截断，从而出现“所有类型能搜到，但对应类型搜不到”
 	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 5000;
-	const fileSearch = fileIndex.search(query, fileSearchLimit);
+	const fileSearch = await fileIndex.search(query, fileSearchLimit);
 	const totalCount =
 		searchTypeId === 'all'
 			? settingsResults.length + appResults.length + fileSearch.totalCount
@@ -2155,7 +2155,7 @@ ipcMain.handle(
 
 					// 将兜底扫描到的条目写入“最近变更索引”与主索引，后续检索更稳定
 					upsertRecentIndex(fullPath, isDirectory, timeMs);
-					fileIndex.ingestPath(fullPath, isDirectory);
+					await fileIndex.ingestPath(fullPath, isDirectory);
 
 					if (searchTypeId === 'file') {
 						if (isDirectory) continue;
