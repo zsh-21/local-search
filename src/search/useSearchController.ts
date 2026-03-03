@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getSearchTypeOptions, normalizeSettings, useSettings } from "../settingsStore";
@@ -40,6 +40,8 @@ export function useSearchController() {
   const searchRequestIdRef = useRef(0);
   // 搜索会话 ID：用于关联主进程分批推送的 more-results，避免切换类型/重复搜索导致重复项与数量不一致
   const searchSessionIdRef = useRef("");
+  const pendingAppendRef = useRef<AppItem[]>([]);
+  const flushAppendTimerRef = useRef<number | null>(null);
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
@@ -142,6 +144,19 @@ export function useSearchController() {
       out.push(it);
     }
     return out;
+  };
+
+  const flushPendingAppends = () => {
+    if (flushAppendTimerRef.current != null) {
+      window.clearTimeout(flushAppendTimerRef.current);
+      flushAppendTimerRef.current = null;
+    }
+    const batch = pendingAppendRef.current;
+    if (!batch || batch.length === 0) return;
+    pendingAppendRef.current = [];
+    startTransition(() => {
+      setResults((prev) => dedupeResults([...prev, ...batch]));
+    });
   };
 
   useEffect(() => {
@@ -302,12 +317,15 @@ export function useSearchController() {
       if (payloadSessionId !== currentSessionId) return;
 
       const filteredMore = filterItemsBySearchType(payload.results, currentTypeId);
-        if (filteredMore.length > 0) {
-          setResults((prev) => dedupeResults([...prev, ...filteredMore]));
-        }
+      if (filteredMore.length <= 0) return;
+      pendingAppendRef.current = [...pendingAppendRef.current, ...filteredMore];
+      if (flushAppendTimerRef.current == null) {
+        flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 50);
+      }
     };
     window.ipcRenderer?.on("more-results", handler);
     return () => {
+      flushPendingAppends();
       window.ipcRenderer?.off("more-results", handler);
     };
   }, [query, searchTypeId]);
@@ -335,6 +353,11 @@ export function useSearchController() {
     setIsSearching(true);
     setHasMore(false);
     setTotalCount(0);
+    pendingAppendRef.current = [];
+    if (flushAppendTimerRef.current != null) {
+      window.clearTimeout(flushAppendTimerRef.current);
+      flushAppendTimerRef.current = null;
+    }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
     const timer = setTimeout(async () => {
       try {
@@ -348,11 +371,13 @@ export function useSearchController() {
         if (queryRef.current.trim() !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
-        setResults(dedupeResults(nextResults));
-        setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
         setSelectedIndex(0);
-        setIsIndexing(Boolean(resp?.isIndexing));
-        setHasMore(Boolean(resp?.hasMore));
+        startTransition(() => {
+          setResults(dedupeResults(nextResults));
+          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
+          setIsIndexing(Boolean(resp?.isIndexing));
+          setHasMore(Boolean(resp?.hasMore));
+        });
       } finally {
         if (searchRequestIdRef.current === requestId) setIsSearching(false);
       }
@@ -381,6 +406,11 @@ export function useSearchController() {
       const refreshSessionId = `${Date.now()}-refresh-${searchRequestIdRef.current}`;
       searchSessionIdRef.current = refreshSessionId;
       setTotalCount(0);
+      pendingAppendRef.current = [];
+      if (flushAppendTimerRef.current != null) {
+        window.clearTimeout(flushAppendTimerRef.current);
+        flushAppendTimerRef.current = null;
+      }
       try {
         const resp = (await window.ipcRenderer.invoke(
           "search-files",
@@ -393,8 +423,6 @@ export function useSearchController() {
         if (searchTypeIdRef.current !== currentTypeId) return;
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
-        setResults(dedupeResults(nextResults));
-        setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
         const preservePath = selectedPathRef.current;
         if (preservePath) {
           const idx = nextResults.findIndex((x) => x.path === preservePath);
@@ -402,8 +430,12 @@ export function useSearchController() {
         } else {
           setSelectedIndex(0);
         }
-        setIsIndexing(Boolean(resp?.isIndexing));
-        setHasMore(Boolean(resp?.hasMore));
+        startTransition(() => {
+          setResults(dedupeResults(nextResults));
+          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
+          setIsIndexing(Boolean(resp?.isIndexing));
+          setHasMore(Boolean(resp?.hasMore));
+        });
       } catch {}
     };
 
