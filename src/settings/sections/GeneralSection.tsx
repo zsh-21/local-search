@@ -90,7 +90,7 @@ export function GeneralSection({
               await window.ipcRenderer?.invoke("clear-history");
             }}
           >
-            清除所有历史
+            清除所有历史操作记录
           </button>
         </div>
       </div>

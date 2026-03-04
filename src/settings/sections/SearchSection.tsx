@@ -43,6 +43,7 @@ export function SearchSection({
   moveTypeId: (list: string[], fromId: string, toId: string, position: "before" | "after") => string[];
 }) {
   const [newIgnoredPath, setNewIgnoredPath] = useState("");
+  const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<null | {
     text: string;
@@ -52,6 +53,33 @@ export function SearchSection({
     anchor: { left: number; right: number; top: number; bottom: number };
     arrowLeft: number;
   }>(null);
+
+  useEffect(() => {
+    // 索引建立状态跨页面切换保持：重新进入“搜索”设置页时，如果后台仍在索引，则继续显示“建立中...”
+    const syncIndexing = async () => {
+      try {
+        const st = (await window.ipcRenderer?.invoke("get-file-index-status")) as
+          | { isIndexing: boolean }
+          | undefined;
+        if (typeof st?.isIndexing === "boolean") setIsRebuildingIndex(st.isIndexing);
+      } catch {}
+    };
+    void syncIndexing();
+  }, []);
+
+  useEffect(() => {
+    if (!isRebuildingIndex) return;
+    // 索引完成后需要自动恢复按钮可点击：这里用轮询查询主进程索引状态，直到结束为止
+    const timer = window.setInterval(async () => {
+      try {
+        const st = (await window.ipcRenderer?.invoke("get-file-index-status")) as
+          | { isIndexing: boolean }
+          | undefined;
+        if (st?.isIndexing === false) setIsRebuildingIndex(false);
+      } catch {}
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [isRebuildingIndex]);
 
   useEffect(() => {
     if (!tooltip) return;
@@ -551,6 +579,34 @@ export function SearchSection({
               </div>
             );
           })}
+        </div>
+      </div>
+      <div className="settings-group">
+        <div className="settings-group-title">索引管理</div>
+        <div className="settings-hint">
+          扫描整台电脑建立/补齐索引。该过程可能持续一段时间，但会在后台进行，请耐心等待。
+        </div>
+        <div className="form-row">
+          <div className="form-label">全盘索引</div>
+          <button
+            type="button"
+            className="small-btn"
+            disabled={isRebuildingIndex}
+            onClick={async () => {
+              // 二次确认：全盘索引可能耗时较长，避免用户误触
+              const ok = window.confirm(
+                "将扫描整台电脑建立索引，此过程需要一定时间，期间可能会持续占用磁盘与 CPU。\n\n确定要开始吗？",
+              );
+              if (!ok) return;
+              // 触发后立即返回：避免等待索引任务完成导致 UI 阻塞，按钮状态由轮询自动恢复
+              setIsRebuildingIndex(true);
+              setError("");
+              // 索引构建需要尊重“路径黑名单”等配置：将当前 draft 配置传给主进程生效
+              void window.ipcRenderer?.invoke("rebuild-file-index", { ignoredPaths: draft.ignoredPaths }).catch(() => {});
+            }}
+          >
+            {isRebuildingIndex ? "建立中..." : "开始全盘建立索引"}
+          </button>
         </div>
       </div>
       {error ? <div className="settings-error">{error}</div> : null}

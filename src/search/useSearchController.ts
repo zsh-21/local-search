@@ -10,6 +10,16 @@ export function useSearchController() {
   // 统一读取设置：搜索页会用到默认类型、类型顺序、主题与背景相关配置
   const { settings } = useSettings();
 
+  const parseDrivePrefix = (raw: string) => {
+    // 输入支持“盘符前缀”：例如 C:、c:、C：，用于将搜索范围限制到指定盘符并提升速度
+    const s = typeof raw === "string" ? raw.trim() : "";
+    const m = s.match(/^([a-zA-Z])\s*[:：]\s*/);
+    if (!m) return { term: s, drive: "" };
+    const drive = (m[1] || "").toLowerCase();
+    const term = s.slice(m[0].length).trim();
+    return { term, drive };
+  };
+
   // 搜索输入与类型选择：驱动查询与结果过滤
   const [query, setQuery] = useState("");
   const [searchTypeId, setSearchTypeId] = useState<string>(settings.defaultSearchTypeId || "all");
@@ -21,6 +31,8 @@ export function useSearchController() {
   const [isIndexing, setIsIndexing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [hoveredKey, setHoveredKey] = useState("");
 
   // 关键元素引用：输入框聚焦、列表滚动、下拉菜单点击外部关闭等
   const inputRef = useRef<HTMLInputElement>(null);
@@ -42,11 +54,14 @@ export function useSearchController() {
   const searchSessionIdRef = useRef("");
   const pendingAppendRef = useRef<AppItem[]>([]);
   const flushAppendTimerRef = useRef<number | null>(null);
+  // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
+  const typeSwitchRequestedRef = useRef(false);
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
   const TYPE_MENU_MIN_LIST_SPACE = 240;
   const DISPLAY_LIMIT = 500;
+  const lastVisibleStartIndexRef = useRef(0);
 
   useEffect(() => {
     void refreshUserStatusSilently();
@@ -79,6 +94,10 @@ export function useSearchController() {
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
     if (id === "all") return items;
+    if (id === "app") {
+      // “应用”类型只展示应用：避免与“文件/文件夹”混杂，保证切换类型后结果清晰
+      return items.filter((x) => x.type === "app");
+    }
     if (id === "file") {
       // “文件”类型只展示普通文件 + 应用：图片/视频/自定义扩展的文件统一归属到各自类型，避免串结果
       const imageExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
@@ -279,6 +298,7 @@ export function useSearchController() {
 
   const placeholder = useMemo(() => {
     if (searchTypeId === "all") return "搜索所有文件与文件夹...";
+    if (searchTypeId === "app") return "搜索应用...";
     if (searchTypeId === "file") return "搜索文件（不含文件夹）...";
     if (searchTypeId === "folder") return "搜索文件夹（不含文件）...";
     if (searchTypeId === "image") return "搜索图片...";
@@ -383,8 +403,10 @@ export function useSearchController() {
   }, []);
 
   useEffect(() => {
+    // more-results 事件用于主进程“增量回填图标/更多结果”
+    // 这里必须常驻监听（不要随 query/searchTypeId 反复解绑/绑定），否则极易在首搜阶段丢事件，表现为“第一次没图标，第二次才有”
     const handler = (_event: any, payload: { query: string; results: AppItem[] }) => {
-      const currentQuery = queryRef.current.trim();
+      const currentQuery = parseDrivePrefix(queryRef.current).term;
       const currentTypeId = searchTypeIdRef.current;
       const currentSessionId = searchSessionIdRef.current;
       const payloadQuery = typeof payload?.query === "string" ? payload.query : "";
@@ -409,10 +431,10 @@ export function useSearchController() {
       flushPendingAppends();
       window.ipcRenderer?.off("more-results", handler);
     };
-  }, [query, searchTypeId]);
+  }, []);
 
   useEffect(() => {
-    const trimmed = query.trim();
+    const { term: trimmed, drive } = parseDrivePrefix(query);
     if (!trimmed || trimmed.length < 2) {
       // 少于 2 个字符时不触发搜索：空输入显示历史，其余清空结果并收起状态
       searchRequestIdRef.current += 1;
@@ -434,22 +456,25 @@ export function useSearchController() {
     setIsSearching(true);
     setHasMore(false);
     setTotalCount(0);
+    setHoveredKey("");
     pendingAppendRef.current = [];
     if (flushAppendTimerRef.current != null) {
       window.clearTimeout(flushAppendTimerRef.current);
       flushAppendTimerRef.current = null;
     }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
+    const delay = typeSwitchRequestedRef.current ? 0 : 120;
+    typeSwitchRequestedRef.current = false;
     const timer = setTimeout(async () => {
       try {
         const resp = (await window.ipcRenderer?.invoke(
           "search-files",
           trimmed,
-          { searchTypeId, searchSessionId },
+          { searchTypeId, searchSessionId, drive },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
         // 竞态保护：只接受“最新请求 + 当前 query/type”对应的结果
         if (searchRequestIdRef.current !== requestId) return;
-        if (queryRef.current.trim() !== trimmed) return;
+        if (parseDrivePrefix(queryRef.current).term !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
         setSelectedIndex(0);
@@ -463,13 +488,13 @@ export function useSearchController() {
       } finally {
         if (searchRequestIdRef.current === requestId) setIsSearching(false);
       }
-    }, 120);
+    }, delay);
 
     return () => clearTimeout(timer);
   }, [query, searchTypeId]);
 
   useEffect(() => {
-    const trimmed = query.trim();
+    const trimmed = parseDrivePrefix(query).term;
     if (!trimmed || trimmed.length < 2) return;
     if (!isIndexing) return;
     if (isSearching) return;
@@ -481,21 +506,22 @@ export function useSearchController() {
       if (!isIndexing) return;
       if (isSearching) return;
 
-      const currentQuery = queryRef.current.trim();
+      const currentQuery = parseDrivePrefix(queryRef.current).term;
       if (currentQuery !== trimmed) return;
 
       const currentTypeId = searchTypeIdRef.current;
       const currentSessionId = searchSessionIdRef.current;
       if (!currentSessionId) return;
+      const currentDrive = parseDrivePrefix(queryRef.current).drive;
       try {
         const resp = (await window.ipcRenderer.invoke(
           "search-files",
           trimmed,
-          { searchTypeId: currentTypeId, searchSessionId: currentSessionId },
+          { searchTypeId: currentTypeId, searchSessionId: currentSessionId, drive: currentDrive },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
 
         if (cancelled) return;
-        if (queryRef.current.trim() !== trimmed) return;
+        if (parseDrivePrefix(queryRef.current).term !== trimmed) return;
         if (searchTypeIdRef.current !== currentTypeId) return;
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
@@ -596,6 +622,7 @@ export function useSearchController() {
       const delta = e.shiftKey ? -1 : 1;
       const nextIdx = (idx + delta + searchTypeOptions.length) % searchTypeOptions.length;
       const next = searchTypeOptions[nextIdx];
+      typeSwitchRequestedRef.current = true;
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
       return;
@@ -640,7 +667,8 @@ export function useSearchController() {
   }, [searchTypeId, enabledSearchTypeOptions]);
 
   const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
-  const trimmedQuery = query.trim();
+  const parsedQuery = useMemo(() => parseDrivePrefix(query), [query]);
+  const trimmedQuery = parsedQuery.term;
   const showEmptyState =
     trimmedQuery.length >= 2 &&
     !isSearching &&
@@ -707,11 +735,15 @@ export function useSearchController() {
     if (scrollContainerRef.current && listRef.current) {
       listRef.current.scrollToRow({ index: 0, align: "auto", behavior: "smooth" });
       setSelectedIndex(0);
+      setShowBackToTop(false);
     }
   };
 
   const onItemsRendered = (visibleRows: { startIndex: number; stopIndex: number }) => {
-    return;
+    const startIndex = typeof visibleRows?.startIndex === "number" ? visibleRows.startIndex : 0;
+    lastVisibleStartIndexRef.current = startIndex;
+    const shouldShow = Math.max(startIndex, selectedIndex) > 8;
+    setShowBackToTop((prev) => (prev === shouldShow ? prev : shouldShow));
   };
 
   const statusText = isSearching
@@ -763,5 +795,8 @@ export function useSearchController() {
     scrollToTop,
     onItemsRendered,
     trimmedQuery,
+    showBackToTop,
+    hoveredKey,
+    setHoveredKey,
   };
 }

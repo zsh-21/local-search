@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { AppSettings } from "../../appTypes";
 import { getStoredTokenFromLocalStorage } from "../../membership";
 import { User } from "../../api";
@@ -7,6 +8,8 @@ export function AccountSection({
   user,
   isMember,
   draft,
+  setDraft,
+  setError,
   isRefreshingStatus,
   doRefreshStatus,
   isLoggingOut,
@@ -21,6 +24,8 @@ export function AccountSection({
   user: User | null;
   isMember: boolean;
   draft: AppSettings;
+  setDraft: (next: AppSettings) => void;
+  setError: (msg: string) => void;
   isRefreshingStatus: boolean;
   doRefreshStatus: () => void;
   isLoggingOut: boolean;
@@ -32,6 +37,45 @@ export function AccountSection({
   handleLogin: (e: React.FormEvent) => void | Promise<void>;
   formatDateTime: (v: unknown) => string;
 }) {
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarDataUrl, setAvatarDataUrl] = useState("");
+  const requestIdRef = useRef(0);
+  const avatarRootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // 头像展示使用 dataUrl：避免直接使用 file:// 导致渲染侧加载失败或跨域限制
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
+    const p = typeof draft.customAvatarPath === "string" ? draft.customAvatarPath.trim() : "";
+    if (!p) {
+      setAvatarDataUrl("");
+      return;
+    }
+    window.ipcRenderer
+      ?.invoke("get-image-data-url", p)
+      .then((resp: any) => {
+        if (requestIdRef.current !== requestId) return;
+        if (resp?.ok && typeof resp.dataUrl === "string") setAvatarDataUrl(resp.dataUrl);
+      })
+      .catch(() => {});
+  }, [draft.customAvatarPath]);
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return;
+    // 点击头像以外区域关闭弹层：符合“点击空白处关闭”的交互预期
+    const onMouseDown = (e: MouseEvent) => {
+      const el = avatarRootRef.current;
+      if (!el) return;
+      if (el.contains(e.target as Node)) return;
+      setAvatarMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      window.removeEventListener("mousedown", onMouseDown, true);
+    };
+  }, [avatarMenuOpen]);
+
   return (
     <div className="settings-content">
       <div className="settings-group">
@@ -39,8 +83,67 @@ export function AccountSection({
         {user ? (
           <div className="account-profile">
             <div className="profile-header">
-              <div className="avatar-placeholder">
-                {user.avatarText || user.nickname?.slice(0, 1).toUpperCase()}
+              <div ref={avatarRootRef} style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className="avatar-placeholder"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // 点击头像弹出“自定义头像”操作框：选择本地图片/取消自定义
+                    setAvatarMenuOpen((v) => !v);
+                  }}
+                  aria-label="头像设置"
+                  title="自定义头像"
+                >
+                  {avatarDataUrl ? (
+                    <img className="avatar-img" src={avatarDataUrl} alt="" />
+                  ) : (
+                    user.avatarText || user.nickname?.slice(0, 1).toUpperCase()
+                  )}
+                </button>
+                {avatarMenuOpen ? (
+                  <div className="avatar-menu" onMouseDown={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="small-btn"
+                      onClick={async () => {
+                        // 通过主进程弹出文件选择：与“背景图片选择”保持一致
+                        setError("");
+                        const resp = (await window.ipcRenderer?.invoke("select-avatar-image")) as
+                          | { ok: boolean; path?: string; message?: string }
+                          | undefined;
+                        if (!resp?.ok) {
+                          setError(resp?.message || "选择图片失败");
+                          return;
+                        }
+                        const p = typeof resp.path === "string" ? resp.path : "";
+                        if (!p) {
+                          setAvatarMenuOpen(false);
+                          return;
+                        }
+                        setDraft({ ...draft, customAvatarPath: p });
+                        setAvatarMenuOpen(false);
+                      }}
+                    >
+                      选择本地图片
+                    </button>
+                    <button
+                      type="button"
+                      className="small-btn ghost"
+                      disabled={!draft.customAvatarPath}
+                      onClick={() => {
+                        // 取消自定义头像：回落到原有“文字头像/默认逻辑”
+                        setDraft({ ...draft, customAvatarPath: "" });
+                        setAvatarMenuOpen(false);
+                        setError("");
+                      }}
+                    >
+                      取消自定义
+                    </button>
+                    <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} />
+                  </div>
+                ) : null}
               </div>
               <div className="profile-info">
                 <div className="profile-name">{user.nickname || user.phone || user.email}</div>

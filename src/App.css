@@ -963,6 +963,12 @@ html[data-theme="light"] .results li.selected {
   border-color: var(--fs-border);
 }
 
+/* 受控 hover：列表在增量更新/去重时保持鼠标悬浮高亮不闪烁 */
+.results li.hovered:not(.selected) {
+  background-color: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+
 .results li.selected:hover {
   background-color: var(--fs-accent-soft);
 }
@@ -1111,6 +1117,7 @@ html[data-theme="light"] .results li.selected {
 }
 
 .results li:hover .action-group,
+.results li.hovered .action-group,
 .results li.selected .action-group {
   opacity: 1;
 }
@@ -1755,6 +1762,13 @@ html[data-theme="light"] .results li.selected .action-btn {
   /* 增加跟随主题色的边框 */
   box-shadow: 0 0 0 2px var(--fs-accent-soft), 0 0 0 4px var(--fs-surface);
   border: 2px solid var(--fs-surface);
+}
+
+.settings-nav-account-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .vip-badge {
@@ -2582,6 +2596,33 @@ html[data-theme="light"] .settings-confirm {
   font-size: 20px;
   font-weight: 700;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 自定义头像图片：与 avatar-placeholder 同尺寸，使用 cover 保证裁剪自然 */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* 头像自定义弹层：复用现有主题变量，保持与设置面板风格一致 */
+.avatar-menu {
+  position: absolute;
+  left: 0;
+  top: 56px;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  box-shadow: var(--fs-shadow);
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 20;
 }
 
 .profile-info {

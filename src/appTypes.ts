@@ -37,6 +37,8 @@ export interface AppSettings {
   effectType: "particles" | "warp" | "waves";
   backgroundImagePath: string;
   backgroundImageOpacity: number;
+  // 自定义头像：存储本地图片路径（通过主进程转换为 dataUrl 显示），空字符串表示未自定义
+  customAvatarPath: string;
   // 右侧按钮显示顺序：最多三项，由设置面板控制
   resultActionButtons: ResultActionButtonId[];
 }
@@ -52,7 +54,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyLimit: 5,
   defaultSearchTypeId: "all",
   customSearchTypes: [],
-  searchTypeOrder: ["all", "file", "folder", "image", "video", "settings"],
+  // 默认类型顺序：包含“应用”类型，便于 Tab/Shift+Tab 快速切换
+  searchTypeOrder: ["all", "app", "file", "folder", "image", "video", "settings"],
   disabledSearchTypeIds: [],
   ignoredPaths: [],
   keepStateOnClose: false,
@@ -63,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   effectType: "particles",
   backgroundImagePath: "",
   backgroundImageOpacity: 0.25,
+  customAvatarPath: "",
   resultActionButtons: ["openFolder", "copyPath", "deleteHistory"],
 };
 

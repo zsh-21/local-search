@@ -299,7 +299,8 @@ export function SearchViewImpl() {
           ) : null}
 
           <div className="result-count">
-            {c.query.trim().length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : "0条结果"}
+            {/* 计数展示使用“去掉盘符前缀后的真实搜索词”，避免输入 `C:` 这类前缀影响 UI 文案逻辑 */}
+            {c.trimmedQuery.length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : ""}
           </div>
 
           <div className="type-select" ref={c.typeSelectRef}>
@@ -388,7 +389,9 @@ export function SearchViewImpl() {
                 style={{ maxHeight: c.MAX_LIST_HEIGHT, overflowY: "auto" }}
                 onWheel={() => c.setLastSelectedBy("mouse")}
                 onMouseDown={() => c.setLastSelectedBy("mouse")}
+                onMouseLeave={() => c.setHoveredKey("")}
               >
+                {/* 结果列表增量刷新时保持 hover 稳定：鼠标离开才清空 hoveredKey，避免 hover 视觉闪烁 */}
                 <List<any>
                   listRef={c.listRef}
                   style={{ height: c.listHeight, width: "100%", overflow: "visible" }}
@@ -401,7 +404,8 @@ export function SearchViewImpl() {
                 />
               </div>
               <BottomInfo />
-              {c.selectedIndex > 8 && (
+              {/* “回到顶部”按钮同时跟随滚动位置与键盘选中项，保证鼠标滚动到底部也会出现 */}
+              {c.showBackToTop && (
                 <button
                   className="back-to-top-btn"
                   onClick={c.scrollToTop}

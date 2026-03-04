@@ -26,6 +26,7 @@ const SCHEMA = {
 	isDirectory: 'boolean',
 	kind: 'enum',
 	ext: 'enum',
+	drive: 'enum',
 } as const;
 
 type FileDB = Orama<typeof SCHEMA>;
@@ -86,12 +87,25 @@ const tokenizer = {
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
+const SHORTCUT_EXTENSIONS = new Set(['.lnk', '.url']);
 
 function classifyKind(isDirectory: boolean, ext: string) {
 	if (isDirectory) return 'folder';
 	if (IMAGE_EXTENSIONS.has(ext)) return 'image';
 	if (VIDEO_EXTENSIONS.has(ext)) return 'video';
 	return 'file';
+}
+
+function shouldIndexFile(isDirectory: boolean, ext: string) {
+	// 快捷方式不参与索引与搜索结果：避免出现 .lnk/.url，且避免“快捷方式与真实文件”重复指向同一路径
+	if (isDirectory) return true;
+	return !SHORTCUT_EXTENSIONS.has(ext);
+}
+
+function normalizeDrive(p: string) {
+	const raw = typeof p === 'string' ? p.trim() : '';
+	const m = raw.match(/^([a-zA-Z]):/);
+	return m ? m[1].toLowerCase() : '';
 }
 
 function shouldSkipDirName(name: string) {
@@ -147,8 +161,15 @@ export class FileIndex {
 	}
 
 	reset() {
+		// clear:cache 等“强制清理”场景必须彻底复位索引状态：
+		// 否则 isIndexing 可能保持为 true，导致后续 buildIfEmpty()/rebuild() 直接 return，表现为“面板一直没有结果”
 		this.db = null;
 		this.pathToId.clear();
+		this.isIndexing = false;
+		this.pauseUntil = 0;
+		this.rebuildStartedAt = 0;
+		this.partialPublished = false;
+		this.lastYieldAt = 0;
 	}
 
 	async getStatus(): Promise<FileIndexStatus> {
@@ -159,8 +180,9 @@ export class FileIndex {
 	}
 
 	setSearchWindowVisible(visible: boolean) {
-		this.lowPriority = !visible;
-		if (!visible) this.pauseUntil = 0;
+		// 搜索窗口可见时降低索引优先级：让索引构建“默默”在后台进行，避免用户操作时感知卡顿
+		this.lowPriority = visible;
+		if (visible) this.pauseUntil = 0;
 	}
 
 	setIgnoredPaths(paths: string[]) {
@@ -264,13 +286,16 @@ export class FileIndex {
 
 		const name = path.basename(entryPath);
 		const ext = path.extname(name).toLowerCase();
+		if (!shouldIndexFile(isDirectory, ext)) return;
 		const kind = classifyKind(isDirectory, ext);
+		const drive = normalizeDrive(entryPath);
 		const id = await insert(db, {
 			path: entryPath,
 			name,
 			isDirectory,
 			kind,
 			ext,
+			drive,
 		});
 		if (typeof id === 'string' && id) this.pathToId.set(entryPath, id);
 	}
@@ -290,6 +315,11 @@ export class FileIndex {
 		if (!existsSync(this.cachePath)) return false;
 
 		// Initialize DB
+		// 读取缓存期间也视为“索引进行中”：这样搜索时的 pauseIndexingFor() 能让加载任务让出时间片
+		this.isIndexing = true;
+		this.rebuildStartedAt = Date.now();
+		this.partialPublished = false;
+		this.lastYieldAt = Date.now();
 		this.db = await create({ schema: SCHEMA, components: { tokenizer } as any });
 		this.pathToId.clear();
 
@@ -297,7 +327,7 @@ export class FileIndex {
 			const stream = createReadStream(this.cachePath, { encoding: 'utf-8' });
 			const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 			
-			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string }> = [];
+			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string; drive: string }> = [];
 			const BATCH_SIZE = 5000;
 
 			const processBatch = async () => {
@@ -340,6 +370,11 @@ export class FileIndex {
 				p = typeof p === 'string' ? p.trim() : '';
 				if (!p) continue;
 				if (this.pathToId.has(p)) continue;
+				// 快捷方式不参与索引与搜索：加载历史缓存时也过滤掉，避免旧缓存导致仍出现 .lnk/.url
+				if (!isDirectory) {
+					const ext = path.extname(p).toLowerCase();
+					if (!shouldIndexFile(false, ext)) continue;
+				}
 
 				batch.push({
 					path: p,
@@ -347,20 +382,26 @@ export class FileIndex {
 					isDirectory,
 					ext: path.extname(p).toLowerCase(),
 					kind: classifyKind(isDirectory, path.extname(p).toLowerCase()),
+					drive: normalizeDrive(p),
 				});
 				count++;
 
 				if (batch.length >= BATCH_SIZE) {
 					await processBatch();
+					await this.cooperativeYield(() => {});
 				}
 			}
 			await processBatch();
+			await this.cooperativeYield(() => {});
 			
 			return count > 0;
 		} catch {
 			// If load fails, ensure we have a valid empty db
 			if (!this.db) this.db = await create({ schema: SCHEMA });
 			return false;
+		} finally {
+			this.isIndexing = false;
+			this.pauseUntil = 0;
 		}
 	}
 
@@ -401,6 +442,7 @@ export class FileIndex {
 					isDirectory: e.isDirectory,
 					kind: classifyKind(e.isDirectory, ext),
 					ext,
+					drive: normalizeDrive(e.path),
 				};
 			});
 			const ids = await insertMultiple(nextDb, docs);
@@ -435,6 +477,11 @@ export class FileIndex {
 			if (entryCount >= this.maxEntries) return;
 			if (this.isIgnoredPath(entry.path)) return;
 			if (nextPathToId.has(entry.path)) return;
+			// 快捷方式不参与索引：避免 .lnk/.url 出现在搜索结果里
+			if (!entry.isDirectory) {
+				const ext = path.extname(entry.name).toLowerCase();
+				if (!shouldIndexFile(false, ext)) return;
+			}
 			
 			batch.push(entry);
 			entryCount++;

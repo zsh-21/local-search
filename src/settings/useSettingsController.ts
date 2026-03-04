@@ -12,7 +12,7 @@ export function useSettingsController() {
 
   // draft 用于承载“未保存的设置修改”，避免直接改动全局 settings 导致其他窗口立即变化
   const [draft, setDraft] = useState<AppSettings>(settings);
-  const [error, setError] = useState("");
+  const [error, setErrorState] = useState("");
   const [maximized, setMaximized] = useState(false);
   const [activeKey, setActiveKey] = useState<SettingsTabKey>("account");
   const [newTypeExt, setNewTypeExt] = useState("");
@@ -133,12 +133,12 @@ export function useSettingsController() {
       | undefined;
     if (resp?.ok === false) {
       setError(resp.message || "设置保存失败");
+      showToast(resp.message || "设置保存失败", "error");
       return;
     }
     applyThemePreview(nextDraft.theme, nextDraft.accentColor);
-    setActiveKey("account");
-    setNewTypeExt("");
-    window.ipcRenderer?.invoke("hide-window");
+    // 保存后不自动关闭设置窗口：仅提示成功，关闭由用户主动点击右上角完成
+    showToast("保存成功", "success");
   };
 
   const typeOptions = useMemo(
@@ -212,7 +212,7 @@ export function useSettingsController() {
   const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  const showToast = (message: string, kind: "success" | "error" | "info" = "info") => {
+  function showToast(message: string, kind: "success" | "error" | "info" = "info") {
     // toast 只保留一个：重复触发时先清理旧定时器，避免叠加闪烁
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ kind, message });
@@ -220,6 +220,12 @@ export function useSettingsController() {
       setToast(null);
       toastTimerRef.current = null;
     }, 2000);
+  }
+
+  const setError = (msg: string) => {
+    // 所有异常/非法操作需要有即时反馈：除了页面内错误文案外，同时弹一个“警告提示”
+    setErrorState(msg);
+    if (msg) showToast(msg, "info");
   };
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { ParticleBackground } from "../components/ParticleBackground";
 import { useSettingsController, SettingsTabKey } from "./useSettingsController";
@@ -62,6 +62,26 @@ const SECTION_META: Record<SettingsTabKey, { title: string; desc: string }> = {
 
 export function SettingsViewImpl() {
   const c = useSettingsController();
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string>("");
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    // 头像展示使用 dataUrl：由主进程读取本地图片并转为 dataUrl，避免 file:// 跨域/权限问题
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
+    const p = typeof c.draft.customAvatarPath === "string" ? c.draft.customAvatarPath.trim() : "";
+    if (!p) {
+      setAvatarDataUrl("");
+      return;
+    }
+    window.ipcRenderer
+      ?.invoke("get-image-data-url", p)
+      .then((resp: any) => {
+        if (requestIdRef.current !== requestId) return;
+        if (resp?.ok && typeof resp.dataUrl === "string") setAvatarDataUrl(resp.dataUrl);
+      })
+      .catch(() => {});
+  }, [c.draft.customAvatarPath]);
   const membershipBadge = !c.isMember ? <span className="membership-badge">订阅可用</span> : null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -148,7 +168,9 @@ export function SettingsViewImpl() {
               >
                 <div className="settings-account-avatar-box">
                   <span className="settings-nav-account-avatar" aria-hidden="true">
-                    {c.user ? (
+                    {avatarDataUrl ? (
+                      <img className="settings-nav-account-avatar-img" src={avatarDataUrl} alt="" />
+                    ) : c.user ? (
                       <span className="settings-nav-account-avatar-text">
                         {c.user.avatarText || c.user.nickname?.slice(0, 1).toUpperCase()}
                       </span>
@@ -220,6 +242,8 @@ export function SettingsViewImpl() {
                     user={c.user}
                     isMember={c.isMember}
                     draft={c.draft}
+                    setDraft={c.setDraft}
+                    setError={c.setError}
                     isRefreshingStatus={c.isRefreshingStatus}
                     doRefreshStatus={c.doRefreshStatus}
                     isLoggingOut={c.isLoggingOut}

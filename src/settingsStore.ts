@@ -31,6 +31,7 @@ export function normalizeSettings(s: any): AppSettings {
       : "all";
   const defaultSearchTypeId =
     defaultSearchTypeIdRaw === "all" ||
+    defaultSearchTypeIdRaw === "app" ||
     defaultSearchTypeIdRaw === "file" ||
     defaultSearchTypeIdRaw === "folder" ||
     defaultSearchTypeIdRaw === "image" ||
@@ -44,7 +45,8 @@ export function normalizeSettings(s: any): AppSettings {
 
   // 规范化搜索类型顺序：过滤非法值并补齐内置/自定义类型
   const normalizeSearchTypeOrder = (order: any) => {
-    const baseIds = ["all", "file", "folder", "image", "video", "settings"];
+    // 基础类型顺序：新增“应用”类型后需要同步进来，保证排序/禁用逻辑一致
+    const baseIds = ["all", "app", "file", "folder", "image", "video", "settings"];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
     const allowed = new Set<string>([...baseIds, ...customIds]);
     const raw: string[] = Array.isArray(order)
@@ -65,7 +67,7 @@ export function normalizeSettings(s: any): AppSettings {
   };
 
   const allowedTypeIdsForDisable = (() => {
-    const baseIds = ["all", "file", "folder", "image", "video", "settings"];
+    const baseIds = ["all", "app", "file", "folder", "image", "video", "settings"];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
     return new Set<string>([...baseIds, ...customIds]);
   })();
@@ -87,6 +89,8 @@ export function normalizeSettings(s: any): AppSettings {
   const effectType = s?.effectType === "warp" ? "warp" : s?.effectType === "waves" ? "waves" : "particles";
   const backgroundImagePath =
     typeof s?.backgroundImagePath === "string" ? s.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
+  const customAvatarPath =
+    typeof s?.customAvatarPath === "string" ? s.customAvatarPath.trim() : DEFAULT_SETTINGS.customAvatarPath;
   const backgroundImageOpacityRaw =
     typeof s?.backgroundImageOpacity === "number" ? s.backgroundImageOpacity : DEFAULT_SETTINGS.backgroundImageOpacity;
   const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
@@ -150,6 +154,7 @@ export function normalizeSettings(s: any): AppSettings {
     effectType,
     backgroundImagePath,
     backgroundImageOpacity,
+    customAvatarPath,
     resultActionButtons,
   };
 }
@@ -198,6 +203,8 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
 export function getSearchTypeOptions(customTypes: string[], order: string[] | undefined): SearchTypeOption[] {
   const base: SearchTypeOption[] = [
     { id: "all", label: "所有类型" },
+    // “应用”类型：仅展示已安装应用（不混入文件/文件夹），用于快速找程序
+    { id: "app", label: "应用" },
     { id: "file", label: "文件" },
     { id: "folder", label: "文件夹" },
     { id: "image", label: "图片" },

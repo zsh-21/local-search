@@ -29,6 +29,8 @@ interface AppSettings {
 	effectType: 'particles' | 'warp' | 'waves';
 	backgroundImagePath: string;
 	backgroundImageOpacity: number;
+	// 自定义头像：本地图片路径；渲染侧通过 get-image-data-url 转为可展示的 dataUrl
+	customAvatarPath: string;
 	resultActionButtons: ResultActionButtonId[];
 }
 
@@ -62,7 +64,8 @@ let settingsWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
 const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
-const userDirWatchers: Array<ReturnType<typeof watch>> = [];
+// 运行期可能插拔U盘，watcher 需要按 root 动态增删
+const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 // Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
 let windowsFileSystemRootsCache: string[] = [];
 // 图标预取 token：每次新搜索自增，旧的异步图标任务会自动中止
@@ -112,6 +115,9 @@ function buildStartMenuShortcutIndex() {
 	const roots = [
 		process.env.ProgramData ? path.join(process.env.ProgramData, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
 		process.env.APPDATA ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
+		// 桌面快捷方式也是很多传统软件的入口：补齐“Get-StartApps 覆盖不到”的应用
+		app.getPath('desktop'),
+		process.env.PUBLIC ? path.join(process.env.PUBLIC, 'Desktop') : '',
 	].filter((p) => p && existsSync(p));
 
 	const walk = (dir: string) => {
@@ -146,6 +152,24 @@ function findStartMenuShortcutByName(name: string) {
 		if (k.includes(n) || n.includes(k)) return v;
 	}
 	return '';
+}
+
+function normalizeAppGroupKey(name: string) {
+	// 将“主应用/卸载/升级/服务/修复”等条目归为同一组：用于把周边应用一起展示出来
+	// 例如：搜索“QQ音乐”时，也能补齐“卸载 QQ音乐”“QQ音乐升级服务”等关联项
+	const raw = typeof name === 'string' ? name.trim().toLowerCase() : '';
+	if (!raw) return '';
+	let s = raw;
+	s = s.replace(/（.*?）|\(.*?\)|【.*?】|\[.*?\]/g, ' ');
+	s = s.replace(/\s+/g, ' ').trim();
+	s = s.replace(/^(卸载|uninstall)\s+/g, '');
+	s = s.replace(/\s+(卸载|uninstall)$/g, '');
+	s = s.replace(
+		/(升级|更新|update|updater|upgrade|installer|setup|repair|service|服务|助手|helper|daemon|后台|background)\b/g,
+		' '
+	);
+	s = s.replace(/\s+/g, ' ').trim();
+	return s;
 }
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
@@ -271,6 +295,8 @@ function loadSettings(): AppSettings {
 			const theme = raw?.theme === 'light' ? 'light' : 'dark';
 			const effectType = raw?.effectType === 'warp' ? 'warp' : raw?.effectType === 'waves' ? 'waves' : 'particles';
 			const backgroundImagePath = typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : '';
+			// 自定义头像：本地图片路径（由渲染侧通过 get-image-data-url 转成可展示的 dataUrl）
+			const customAvatarPath = typeof raw?.customAvatarPath === 'string' ? raw.customAvatarPath.trim() : '';
 			const backgroundImageOpacityRaw = typeof raw?.backgroundImageOpacity === 'number' ? raw.backgroundImageOpacity : 0.25;
 			const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
 				? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
@@ -291,6 +317,7 @@ function loadSettings(): AppSettings {
 			const defaultSearchTypeIdRaw = typeof raw?.defaultSearchTypeId === 'string' ? raw.defaultSearchTypeId.trim() : '';
 			const defaultSearchTypeId =
 				defaultSearchTypeIdRaw === 'all' ||
+				defaultSearchTypeIdRaw === 'app' ||
 				defaultSearchTypeIdRaw === 'file' ||
 				defaultSearchTypeIdRaw === 'folder' ||
 				defaultSearchTypeIdRaw === 'image' ||
@@ -302,7 +329,7 @@ function loadSettings(): AppSettings {
 					? defaultSearchTypeIdRaw
 					: DEFAULT_SEARCH_TYPE_ID;
 
-			const baseTypeIds = ['all', 'file', 'folder', 'image', 'video', 'settings'];
+			const baseTypeIds = ['all', 'app', 'file', 'folder', 'image', 'video', 'settings'];
 			const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 			const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
 			const rawOrder: string[] = Array.isArray(raw?.searchTypeOrder)
@@ -389,6 +416,7 @@ function loadSettings(): AppSettings {
 				effectType,
 				backgroundImagePath,
 				backgroundImageOpacity,
+				customAvatarPath,
 				resultActionButtons,
 			};
 		}
@@ -401,7 +429,7 @@ function loadSettings(): AppSettings {
 		historyLimit: DEFAULT_HISTORY_LIMIT,
 		defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
 		customSearchTypes: [],
-		searchTypeOrder: ['all', 'file', 'folder', 'image', 'video', 'settings'],
+		searchTypeOrder: ['all', 'app', 'file', 'folder', 'image', 'video', 'settings'],
 		disabledSearchTypeIds: [],
 		ignoredPaths: [],
 		keepStateOnClose: false,
@@ -412,6 +440,7 @@ function loadSettings(): AppSettings {
 		effectType: 'particles',
 		backgroundImagePath: '',
 		backgroundImageOpacity: 0.25,
+		customAvatarPath: '',
 		resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
 	};
 }
@@ -419,6 +448,27 @@ function loadSettings(): AppSettings {
 function saveSettings(settings: AppSettings) {
 	try {
 		writeFileSync(SETTINGS_PATH, JSON.stringify(settings));
+	} catch {}
+}
+
+async function clearLocalCacheButKeepAccountAndSettings() {
+	// 清理“缓存与索引”，但保留：登录账户（渲染进程 localStorage）与设置/窗口布局（settings.json/window-config.json）
+	// 目标：用户执行 clear:cache 后，下次呼出面板会自动重建索引，并且不会丢失登录态与配置
+	try {
+		recentIndex.clear();
+		iconDataCache.clear();
+		fileIndex.reset();
+
+		await fs.rm(FILE_INDEX_PATH, { force: true }).catch(() => {});
+		await fs.rm(`${FILE_INDEX_PATH}.tmp`, { force: true }).catch(() => {});
+		await fs.rm(FILE_INDEX_META_PATH, { force: true }).catch(() => {});
+		await fs.rm(HISTORY_PATH, { force: true }).catch(() => {});
+		await fs.rm(HISTORY_STATS_PATH, { force: true }).catch(() => {});
+
+		try {
+			win?.webContents.send('reset-search');
+			settingsWin?.webContents.send('reset-search');
+		} catch {}
 	} catch {}
 }
 
@@ -636,19 +686,47 @@ function saveSettingsWindowConfig(bounds: Electron.Rectangle) {
 }
 
 function loadInstalledApps() {
+	// 初始化开始菜单快捷方式索引：仅用于“图标兜底查找”，不作为“应用列表来源”
+	// 应用列表不包含 .lnk/.url：避免快捷方式出现在搜索结果里
+	try {
+		buildStartMenuShortcutIndex();
+	} catch {}
+
+	// Get-StartApps 能覆盖 UWP/部分注册程序，但输出编码在不同系统下可能不是 UTF-8，这里强制 UTF-8 避免中文乱码
 	const ps = spawn('powershell', [
 		'-NoProfile',
+		'-NoLogo',
 		'-Command',
-		'Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress',
+		'[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress',
 	]);
+	ps.stdout.setEncoding('utf8');
+	ps.stderr.setEncoding('utf8');
 	let data = '';
-	ps.stdout.on('data', (chunk) => (data += chunk.toString()));
+	let err = '';
+	ps.stdout.on('data', (chunk) => (data += String(chunk)));
+	ps.stderr.on('data', (chunk) => (err += String(chunk)));
 	ps.on('close', (code) => {
-		if (code !== 0) return;
+		if (code !== 0) {
+			if (err) console.warn('loadInstalledApps failed:', err);
+			return;
+		}
 		try {
 			const apps = JSON.parse(data);
-			installedAppsCache = Array.isArray(apps) ? apps : [apps];
-		} catch {}
+			const list: InstalledApp[] = Array.isArray(apps) ? apps : apps ? [apps] : [];
+			const merged = new Map<string, InstalledApp>();
+			// 去重：优先保留 Get-StartApps 的结果（通常更“官方”），再补齐快捷方式
+			for (const it of list) {
+				const name = typeof (it as any)?.Name === 'string' ? (it as any).Name.trim() : '';
+				const appId = typeof (it as any)?.AppID === 'string' ? (it as any).AppID.trim() : '';
+				if (!name || !appId) continue;
+				merged.set(appId.toLowerCase(), { Name: name, AppID: appId });
+			}
+			installedAppsCache = Array.from(merged.values());
+		} catch (e: any) {
+			// JSON 解析失败时保持原缓存：避免“应用全部搜不到”
+			if (err) console.warn('loadInstalledApps parse failed:', err);
+			else console.warn('loadInstalledApps parse failed:', e?.message || 'unknown');
+		}
 	});
 }
 
@@ -990,39 +1068,28 @@ function shouldSkipWatchPath(fullPath: string) {
 }
 
 async function startUserDirectoryWatchers() {
-	if (process.platform === 'win32' && (!windowsFileSystemRootsCache || windowsFileSystemRootsCache.length === 0)) {
-		try {
-			windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
-		} catch {}
-	}
-	const roots = (() => {
-		// 监听新增/改动文件：Windows 下递归监听盘符根目录可能失败或丢事件，这里额外监听用户目录与常用目录兜底
-		if (process.platform === 'win32') {
-			const home = app.getPath('home');
-			const desktop = app.getPath('desktop');
-			const documents = app.getPath('documents');
-			const downloads = app.getPath('downloads');
-			return [...windowsFileSystemRootsCache, home, desktop, documents, downloads]
-				.filter((p): p is string => typeof p === 'string' && Boolean(p.trim()))
-				.map((p) => (p.endsWith('\\') ? p : `${p}\\`));
-		}
-		return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
-	})();
-	const uniqueRoots = Array.from(new Set(roots));
+	const normalizeWatchRoot = (p: string) => {
+		const raw = typeof p === 'string' ? p.trim() : '';
+		if (!raw) return '';
+		const s = raw.replace(/\//g, '\\');
+		return s.endsWith('\\') ? s : `${s}\\`;
+	};
 
-	for (const root of uniqueRoots) {
-		if (!root || typeof root !== 'string') continue;
-		if (!existsSync(root)) continue;
+	const ensureWatchRoot = (root: string) => {
+		const normalized = normalizeWatchRoot(root);
+		if (!normalized) return;
+		const key = normalized.toLowerCase();
+		if (userDirWatchers.has(key)) return;
+		if (!existsSync(normalized)) return;
 		try {
-			const w = watch(root, { recursive: true }, (_eventType, filename) => {
+			const w = watch(normalized, { recursive: true }, (_eventType, filename) => {
 				if (!filename) return;
 				const raw = filename.toString();
-				const fullPath = path.isAbsolute(raw) ? raw : path.join(root, raw);
+				const fullPath = path.isAbsolute(raw) ? raw : path.join(normalized, raw);
 				if (shouldSkipWatchPath(fullPath)) return;
 				setTimeout(() => {
 					try {
 						if (!existsSync(fullPath)) {
-							// 删除事件不保证可靠：这里至少从最近变更索引里清理，避免结果残留
 							recentIndex.delete(normalizeRecentKey(fullPath));
 							void fileIndex.removePath(fullPath);
 							return;
@@ -1035,8 +1102,48 @@ async function startUserDirectoryWatchers() {
 					} catch {}
 				}, 80);
 			});
-			userDirWatchers.push(w);
+			userDirWatchers.set(key, w);
 		} catch {}
+	};
+
+	const refreshRootsAndWatch = async () => {
+		// Windows 盘符可能运行期变化（U盘/移动硬盘），这里定时刷新并增删 watcher
+		if (process.platform === 'win32') {
+			try {
+				windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
+			} catch {}
+		}
+		const roots = (() => {
+			if (process.platform === 'win32') {
+				const home = app.getPath('home');
+				const desktop = app.getPath('desktop');
+				const documents = app.getPath('documents');
+				const downloads = app.getPath('downloads');
+				return [...windowsFileSystemRootsCache, home, desktop, documents, downloads].filter(
+					(p): p is string => typeof p === 'string' && Boolean(p.trim())
+				);
+			}
+			return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+		})();
+
+		const uniqueRoots = Array.from(new Set(roots.map(normalizeWatchRoot).filter(Boolean)));
+		const keep = new Set(uniqueRoots.map((r) => r.toLowerCase()));
+
+		for (const root of uniqueRoots) ensureWatchRoot(root);
+		for (const [k, w] of userDirWatchers.entries()) {
+			if (keep.has(k)) continue;
+			try {
+				w.close();
+			} catch {}
+			userDirWatchers.delete(k);
+		}
+	};
+
+	await refreshRootsAndWatch();
+	if (process.platform === 'win32') {
+		setInterval(() => {
+			void refreshRootsAndWatch();
+		}, 12_000);
 	}
 }
 
@@ -1124,6 +1231,8 @@ function openSearchWindow() {
 		}
 
 		fileIndex.setSearchWindowVisible(true);
+		// 清空缓存后需要在下次呼出面板时自动重建索引：这里确保索引为空时会触发 rebuild
+		void fileIndex.buildIfEmpty();
 		searchWasFocusedSinceShow = false;
 		searchAllowBlurHide = false;
 		if (searchHideTimer) {
@@ -1145,6 +1254,8 @@ function openSearchWindow() {
 	win = null;
 	createWindow();
 	fileIndex.setSearchWindowVisible(true);
+	// 新窗口显示前触发一次“索引为空则重建”，避免用户首次呼出后看到空结果
+	void fileIndex.buildIfEmpty();
 	setTimeout(() => {
 		if (!win || win.isDestroyed()) return;
 		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
@@ -1364,7 +1475,7 @@ if (!gotTheLock) {
 
 app.on('will-quit', () => {
 	globalShortcut.unregisterAll();
-	for (const w of userDirWatchers) {
+	for (const w of userDirWatchers.values()) {
 		try {
 			w.close();
 		} catch {}
@@ -1446,6 +1557,23 @@ ipcMain.handle('select-background-image', async () => {
 	}
 });
 
+ipcMain.handle('select-avatar-image', async () => {
+	try {
+		// 头像选择：仅返回本地图片路径，渲染侧通过 get-image-data-url 转为可用的 dataUrl 展示
+		const result = await dialog.showOpenDialog({
+			title: '选择头像图片',
+			buttonLabel: '选择',
+			properties: ['openFile'],
+			filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+		});
+		if (result.canceled) return { ok: true, path: '' };
+		const targetPath = result.filePaths?.[0] || '';
+		return { ok: true, path: targetPath };
+	} catch (e: any) {
+		return { ok: false, message: e?.message || '选择图片失败', path: '' };
+	}
+});
+
 ipcMain.handle('get-image-data-url', (_event, targetPath: string) => {
 	try {
 		if (typeof targetPath !== 'string' || !targetPath.trim()) return { ok: false, dataUrl: '' };
@@ -1496,6 +1624,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		typeof settings?.defaultSearchTypeId === 'string' ? settings.defaultSearchTypeId.trim() : DEFAULT_SEARCH_TYPE_ID;
 	const defaultSearchTypeId =
 		defaultSearchTypeIdRaw === 'all' ||
+		defaultSearchTypeIdRaw === 'app' ||
 		defaultSearchTypeIdRaw === 'file' ||
 		defaultSearchTypeIdRaw === 'folder' ||
 		defaultSearchTypeIdRaw === 'image' ||
@@ -1507,7 +1636,8 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 			? defaultSearchTypeIdRaw
 			: DEFAULT_SEARCH_TYPE_ID;
 
-	const baseTypeIds = ['all', 'file', 'folder', 'image', 'video', 'settings'];
+	// 基础搜索类型：需要与渲染侧保持一致（包含“应用”类型）
+	const baseTypeIds = ['all', 'app', 'file', 'folder', 'image', 'video', 'settings'];
 	const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
 	const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
 	const rawDisabledTypeIds: string[] = Array.isArray(settings?.disabledSearchTypeIds)
@@ -1540,6 +1670,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 
 	const effectType = settings?.effectType === 'warp' ? 'warp' : settings?.effectType === 'waves' ? 'waves' : 'particles';
 	const backgroundImagePath = typeof settings?.backgroundImagePath === 'string' ? settings.backgroundImagePath.trim() : '';
+	const customAvatarPath = typeof settings?.customAvatarPath === 'string' ? settings.customAvatarPath.trim() : '';
 	const backgroundImageOpacityRaw = typeof settings?.backgroundImageOpacity === 'number' ? settings.backgroundImageOpacity : 0.25;
 	const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
 		? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
@@ -1599,6 +1730,7 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		effectType,
 		backgroundImagePath,
 		backgroundImageOpacity,
+		customAvatarPath,
 		resultActionButtons,
 	};
 
@@ -1704,8 +1836,19 @@ ipcMain.handle('delete-history-item', (_event, targetPath: string) => {
 	return { ok: true };
 });
 
+ipcMain.handle('clear-cache', async () => {
+	// 供“clear:cache”命令调用：清空索引与缓存，但保留登录态与用户设置
+	await clearLocalCacheButKeepAccountAndSettings();
+	return { ok: true };
+});
+
 ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
 	try {
+		if (item?.type === 'command' && typeof item?.path === 'string' && item.path.trim().toLowerCase() === 'clear:cache') {
+			// 命令：清空缓存与索引。保持窗口不强制关闭，用户可继续操作。
+			await clearLocalCacheButKeepAccountAndSettings();
+			return true;
+		}
 		if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
 			await shell.openExternal(item.path);
 			if (item?.name && item?.path) recordHistoryItem(item);
@@ -1769,14 +1912,23 @@ ipcMain.handle('open-external', async (_event, url: string) => {
 	}
 });
 
-ipcMain.handle('rebuild-file-index', async () => {
+ipcMain.handle('rebuild-file-index', async (_event, options?: { ignoredPaths?: string[] }) => {
+	// 全盘索引需要尊重用户配置的限制（例如路径黑名单）：这里允许设置页把“当前配置”传进来生效
+	if (Array.isArray(options?.ignoredPaths)) {
+		fileIndex.setIgnoredPaths(options.ignoredPaths);
+	}
 	await fileIndex.rebuild();
+	return await fileIndex.getStatus();
+});
+
+ipcMain.handle('get-file-index-status', async () => {
+	// 提供给设置页查询索引状态：用于“全盘建立索引”按钮跨切换保持文案
 	return await fileIndex.getStatus();
 });
 
 ipcMain.handle(
 	'search-files',
-	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string }) => {
+	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
 	if (!query || query.trim().length < 2) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
@@ -1799,7 +1951,27 @@ ipcMain.handle(
 		typeof options?.searchSessionId === 'string' && options.searchSessionId.trim()
 			? options.searchSessionId.trim()
 			: `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+	// 内置命令：通过搜索框触发“清空缓存与索引”，保留登录态与设置
+	if (lowerQuery === 'clear:cache') {
+		return {
+			results: [
+				{
+					name: '清空缓存并重新建立索引',
+					path: 'clear:cache',
+					type: 'command',
+					description: '保留登录账户与设置；下次呼出面板会自动重建索引',
+				},
+			],
+			isIndexing: false,
+			hasMore: false,
+			searchSessionId,
+			totalCount: 1,
+		};
+	}
 	const currentIconPrefetchToken = ++iconPrefetchToken;
+	const driveFilterRaw = typeof options?.drive === 'string' ? options.drive.trim() : '';
+	const driveFilter = /^[a-z]$/i.test(driveFilterRaw) ? driveFilterRaw.toLowerCase() : '';
 	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
 	// 综合排序权重：①名称匹配度 > ④访问频次 > ③常用类型 > ②时间（新建/改动更近）
 	const now = Date.now();
@@ -1943,25 +2115,87 @@ ipcMain.handle(
 			: [];
 
 	const appResults = await (async () => {
-		// 如果指定了搜索类型且不是 'all' 或 'file'，则不显示应用结果
-		if (searchTypeId !== 'all' && searchTypeId !== 'file') return [];
+		// 应用结果只出现在：所有类型 / 文件（历史兼容：文件里也允许搜应用）/ 应用
+		if (searchTypeId !== 'all' && searchTypeId !== 'file' && searchTypeId !== 'app') return [];
 		
+		// “动作类关键词”会显著影响相关性：例如搜索“卸载”时，不应该把正常应用当成相关项返回
+		const actionTokens = ['卸载', 'uninstall', 'remove', '删除', '移除'];
+		const isActionQuery = actionTokens.some((t) => lowerQuery.includes(t));
+
+		// 记录“主命中应用”的分组：用于补齐卸载/升级/服务等周边应用
+		const matchedGroupKeys = new Set<string>();
+		const matchedAppIds = new Set<string>();
 		const results: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [];
 		for (const appItem of installedAppsCache) {
 			const nameLower = appItem.Name.toLowerCase();
-			if (!keywords.some((k) => nameLower.includes(k))) continue;
-			const iconData = iconDataCache.get(`app:${appItem.AppID}`) || '';
+			// 应用匹配按“分词 + 模糊子序列”计算相关性：避免仅靠 includes 导致弱相关项混入
+			const nameMatchScore = scoreRecentName(appItem.Name);
+			if (nameMatchScore <= 0) continue;
+			// 应用图标优先用缓存：避免 search-files 里同步提取图标导致卡顿
+			const cacheKey = `app:${appItem.AppID}`;
+			const iconData = iconDataCache.get(cacheKey) || '';
+
+			const groupKey = normalizeAppGroupKey(appItem.Name);
+			if (groupKey) matchedGroupKeys.add(groupKey);
+			matchedAppIds.add(String(appItem.AppID || '').toLowerCase());
 
 			results.push({
 				name: appItem.Name,
 				path: appItem.AppID,
 				type: 'app',
 				icon: iconData,
-				score: computeCombinedScore(10_000, 'app', appItem.AppID, now),
+				score: computeCombinedScore(10_000 + nameMatchScore, 'app', appItem.AppID, now),
 			});
+
+			// 未命中缓存时异步预取：主进程会分批回填 icon，避免影响输入/切换类型
+			if (!iconData) void getAppIconData(appItem.Name, appItem.AppID);
+		}
+
+		// 周边应用补齐：当主应用命中时，将同组的“卸载/升级/服务/修复”等入口一起加入结果
+		// 这些条目可能不直接包含用户输入（例如只有“卸载”或“升级服务”），但与主应用强相关
+		if (matchedGroupKeys.size > 0) {
+			let added = 0;
+			const MAX_RELATED = 80;
+			for (const appItem of installedAppsCache) {
+				if (added >= MAX_RELATED) break;
+				const appIdLower = String(appItem.AppID || '').toLowerCase();
+				if (!appIdLower) continue;
+				if (matchedAppIds.has(appIdLower)) continue;
+
+				const groupKey = normalizeAppGroupKey(appItem.Name);
+				if (!groupKey || !matchedGroupKeys.has(groupKey)) continue;
+
+				const nameLower = appItem.Name.toLowerCase();
+				// 动作查询（如“卸载”）时，只补齐同组的“卸载/移除”等入口，避免混入正常应用
+				if (isActionQuery && !actionTokens.some((t) => nameLower.includes(t))) continue;
+
+				const cacheKey = `app:${appItem.AppID}`;
+				const iconData = iconDataCache.get(cacheKey) || '';
+				const relatedMatchScore = scoreRecentName(appItem.Name);
+				const baseScore = relatedMatchScore > 0 ? 9_500 : 7_000;
+				results.push({
+					name: appItem.Name,
+					path: appItem.AppID,
+					type: 'app',
+					icon: iconData,
+					score: computeCombinedScore(baseScore + Math.max(0, relatedMatchScore), 'app', appItem.AppID, now),
+				});
+				matchedAppIds.add(appIdLower);
+				added += 1;
+				if (!iconData) void getAppIconData(appItem.Name, appItem.AppID);
+			}
 		}
 		return results;
 	})();
+
+	if (searchTypeId === 'app') {
+		// “应用”类型：只返回应用，避免与文件/文件夹混在一起影响定位效率
+		const merged = appResults
+			.sort((a, b) => (b.score || 0) - (a.score || 0))
+			.slice(0, 100)
+			.map(({ score, ...rest }) => rest);
+		return { results: merged, isIndexing: false, hasMore: false, searchSessionId, totalCount: appResults.length };
+	}
 
 	// 文件索引搜索的候选上限：当用户指定“文件夹/图片/视频/扩展名”等更窄的类型时，提高候选数量，
 	// 避免同名文件过多导致目录/特定类型结果在 topN 之外被截断，从而出现“所有类型能搜到，但对应类型搜不到”
@@ -1971,15 +2205,20 @@ ipcMain.handle(
 		? currentSettings.customSearchTypes.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')).filter(Boolean)
 		: [];
 	const where = (() => {
-		if (searchTypeId === 'folder') return { kind: { eq: 'folder' } };
-		if (searchTypeId === 'image') return { kind: { eq: 'image' } };
-		if (searchTypeId === 'video') return { kind: { eq: 'video' } };
-		if (searchTypeId === 'file') {
-			if (customExts.length > 0) return { and: [{ kind: { eq: 'file' } }, { ext: { nin: customExts } }] };
-			return { kind: { eq: 'file' } };
+		const and: any[] = [];
+		if (driveFilter) and.push({ drive: { eq: driveFilter } });
+		if (searchTypeId === 'folder') and.push({ kind: { eq: 'folder' } });
+		else if (searchTypeId === 'image') and.push({ kind: { eq: 'image' } });
+		else if (searchTypeId === 'video') and.push({ kind: { eq: 'video' } });
+		else if (searchTypeId === 'file') {
+			and.push({ kind: { eq: 'file' } });
+			if (customExts.length > 0) and.push({ ext: { nin: customExts } });
+		} else if (extFilter) {
+			and.push({ ext: { eq: extFilter } });
 		}
-		if (extFilter) return { ext: { eq: extFilter } };
-		return undefined;
+		if (and.length <= 0) return undefined;
+		if (and.length === 1) return and[0];
+		return { and };
 	})();
 	const fileSearch = await fileIndex.search(query, fileSearchLimit, where ? { where } : undefined);
 	const totalCount =
@@ -2037,6 +2276,7 @@ ipcMain.handle(
 		for (let i = start; i < items.length; i++) {
 			const it = items[i];
 			if (!it?.path) continue;
+			if (driveFilter && !it.path.toLowerCase().startsWith(`${driveFilter}:`)) continue;
 			const key = normalizeRecentKey(it.path);
 			if (!key) continue;
 			if (seen.has(key)) continue;
@@ -2208,9 +2448,121 @@ ipcMain.handle(
 		}
 	};
 
+	const scanDriveRootForNameMatches = async (drive: string, budgetMs: number) => {
+		if (process.platform !== 'win32') return;
+		const d = (drive || '').trim().toLowerCase();
+		if (!/^[a-z]$/.test(d)) return;
+		const driveRoot = `${d.toUpperCase()}:\\`;
+		if (!existsSync(driveRoot)) return;
+
+		const startAt = Date.now();
+		const MAX_DEPTH = 8;
+		const MAX_VISIT = 18_000;
+		let visited = 0;
+		const queue: Array<{ dir: string; depth: number }> = [{ dir: driveRoot, depth: 0 }];
+		const seen = new Set(filteredFiles.map((x) => normalizeRecentKey(x.path)));
+
+		while (queue.length > 0) {
+			if (Date.now() - startAt > Math.max(80, budgetMs)) break;
+			if (visited >= MAX_VISIT) break;
+			const cur = queue.shift();
+			if (!cur) break;
+			const dir = cur.dir;
+			const depth = cur.depth;
+			if (!dir) continue;
+			if (!existsSync(dir)) continue;
+			if (shouldSkipWatchPath(dir)) continue;
+
+			let dh: any = null;
+			try {
+				dh = await fs.opendir(dir);
+			} catch {
+				continue;
+			}
+
+			try {
+				for await (const ent of dh) {
+					visited += 1;
+					if (visited % 450 === 0) {
+						await new Promise<void>((resolve) => setTimeout(resolve, 0));
+					}
+					if (Date.now() - startAt > Math.max(80, budgetMs)) break;
+					if (!ent?.name) continue;
+
+					const fullPath = path.join(dir, ent.name);
+					if (shouldSkipWatchPath(fullPath)) continue;
+
+					const baseScore = scoreRecentName(ent.name);
+					const likelyMatch = baseScore > 0;
+
+					if (ent.isDirectory && typeof ent.isDirectory === 'function' && ent.isDirectory()) {
+						if (depth < MAX_DEPTH && (likelyMatch || depth < 2)) {
+							queue.push({ dir: fullPath, depth: depth + 1 });
+						}
+					}
+					if (!likelyMatch) continue;
+
+					const key = normalizeRecentKey(fullPath);
+					if (!key) continue;
+					if (seen.has(key)) continue;
+					if (fileIndex.isIgnoredPath(fullPath)) continue;
+					if (!existsSync(fullPath)) continue;
+
+					// 盘符兜底扫描：只把“命中的条目”写入 recentIndex 与主索引，避免全盘扫描带来卡顿
+					try {
+						const st = statSync(fullPath);
+						const isDirectory = st.isDirectory();
+						// 快捷方式不参与索引与结果：避免出现 .lnk/.url，且避免与真实文件重复指向
+						if (!isDirectory) {
+							const ext = path.extname(fullPath).toLowerCase();
+							if (ext === '.lnk' || ext === '.url') continue;
+						}
+						const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+						upsertRecentIndex(fullPath, isDirectory, timeMs);
+						await fileIndex.ingestPath(fullPath, isDirectory);
+
+						if (searchTypeId === 'file') {
+							if (isDirectory) continue;
+							const ext = path.extname(fullPath).toLowerCase();
+							if (imageExts.has(ext)) continue;
+							if (videoExts.has(ext)) continue;
+						}
+						if (searchTypeId === 'folder') {
+							if (!isDirectory) continue;
+						}
+						if (searchTypeId === 'image') {
+							if (isDirectory) continue;
+							if (!imageExts.has(path.extname(fullPath).toLowerCase())) continue;
+						}
+						if (searchTypeId === 'video') {
+							if (isDirectory) continue;
+							if (!videoExts.has(path.extname(fullPath).toLowerCase())) continue;
+						}
+						if (extFilter) {
+							if (isDirectory) continue;
+							if (path.extname(fullPath).toLowerCase() !== extFilter) continue;
+						}
+
+						const type = isDirectory ? 'folder' : 'file';
+						const score = computeCombinedScore(baseScore, type, fullPath, timeMs);
+						filteredFiles.push({ path: fullPath, name: ent.name, isDirectory, score });
+						seen.add(key);
+					} catch {}
+				}
+			} finally {
+				try {
+					await dh.close();
+				} catch {}
+			}
+		}
+	};
+
 	// 当结果过少时启用兜底扫描，优先保障用户目录内的新建/小众文件可被检索到
-	if (filteredFiles.length === 0 || (filteredFiles.length < 8 && (searchTypeId === 'all' || searchTypeId === 'folder'))) {
+	if (!driveFilter && (filteredFiles.length === 0 || (filteredFiles.length < 8 && (searchTypeId === 'all' || searchTypeId === 'folder')))) {
 		await scanUserRootsForNameMatches(900);
+	}
+	if (driveFilter && filteredFiles.length < 12) {
+		await scanDriveRootForNameMatches(driveFilter, 520);
 	}
 
 	// 应用综合权重后的排序：保证“匹配度/访问频次/常用类型/时间”共同影响最终展示顺序
@@ -2236,7 +2588,9 @@ ipcMain.handle(
 	const remainingBatch = top500.slice(initialLimit);
 
 	const firstResults = firstBatch.filter(Boolean).map((r) => {
-		if (r.type === 'file' || r.type === 'folder') {
+		// 文件图标优先从缓存读取：首屏尽量不出现“空白占位”
+		// 文件夹在渲染侧用 📂 展示，不需要走系统图标提取（系统图标会拖慢整体首屏速度）
+		if (r.type === 'file') {
 			const cached = iconDataCache.get(`file:${r.path}`) || '';
 			return cached ? { ...r, icon: cached } : r;
 		}
@@ -2251,7 +2605,8 @@ ipcMain.handle(
 
 	const prefetchIconsInBackground = (items: Array<{ name: string; path: string; type: string }>) => {
 		(async () => {
-			const batchSize = 20;
+			// 图标提取是性能敏感操作：首屏要更积极，后续批次适当让出事件循环避免卡输入
+			const batchSize = 32;
 			for (let i = 0; i < items.length; i += batchSize) {
 				if (currentIconPrefetchToken !== iconPrefetchToken) return;
 				const batch = items.slice(i, i + batchSize);
@@ -2260,7 +2615,8 @@ ipcMain.handle(
 				for (const it of batch) {
 					if (currentIconPrefetchToken !== iconPrefetchToken) return;
 					if (!it?.path) continue;
-					if (it.type === 'file' || it.type === 'folder') {
+					// 文件夹图标由渲染侧直接展示（📂），跳过系统图标提取以提升整体速度
+					if (it.type === 'file') {
 						const key = `file:${it.path}`;
 						if (iconDataCache.has(key)) continue;
 						const icon = await getFileIconData(it.path);
@@ -2284,10 +2640,18 @@ ipcMain.handle(
 						results: updates,
 					});
 				}
-				await new Promise((resolve) => setTimeout(resolve, 16));
+				// 首批尽量不等待：让首屏图标更快回填；后续轻微让出时间片避免长任务占用
+				const sleepMs = i === 0 ? 0 : 8;
+				if (sleepMs > 0) await new Promise((resolve) => setTimeout(resolve, sleepMs));
+				else await new Promise((resolve) => setImmediate(resolve));
 			}
 		})();
 	};
+
+	// “应用”类型的结果同样需要异步补齐图标：这里也走同一套增量回填逻辑
+	if (searchTypeId === 'app') {
+		prefetchIconsInBackground(appResults.map(({ score, ...rest }) => rest));
+	}
 
 	prefetchIconsInBackground(top500.map(({ score, ...rest }) => rest));
 
