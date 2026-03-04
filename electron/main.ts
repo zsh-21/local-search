@@ -65,6 +65,8 @@ const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_
 const userDirWatchers: Array<ReturnType<typeof watch>> = [];
 // Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
 let windowsFileSystemRootsCache: string[] = [];
+// 图标预取 token：每次新搜索自增，旧的异步图标任务会自动中止
+let iconPrefetchToken = 0;
 // 最近变更索引：用于弥补 fs.watch 丢事件/全量索引未覆盖导致的“新建文件搜不到”
 const RECENT_INDEX_MAX = 30_000;
 const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
@@ -1332,31 +1334,31 @@ if (!gotTheLock) {
 	app.whenReady().then(async () => {
 		const initialSettings = loadSettings();
 		fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
-		loadInstalledApps();
-		await fileIndex.loadCache();
-		const meta = loadFileIndexMeta();
-		if (!meta || meta.version !== FILE_INDEX_VERSION) {
-			void (async () => {
-				try {
-					fileIndex.reset();
-					await fileIndex.rebuild();
-					saveFileIndexMeta({ version: FILE_INDEX_VERSION });
-				} catch {}
-			})();
-		}
-		buildStartMenuShortcutIndex();
-
 		createWindow();
+		ensureTray();
+		registerShortcuts();
+		loadInstalledApps();
 		void ensureWindowsAppContextMenu();
 		try {
 			handleAddToQuickListArgv(process.argv);
 		} catch {}
 		void startUserDirectoryWatchers();
-		ensureTray();
 		app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
-		registerShortcuts();
 
-		void fileIndex.buildIfEmpty();
+		setTimeout(() => buildStartMenuShortcutIndex(), 0);
+		void (async () => {
+			try {
+				await fileIndex.loadCache();
+				const meta = loadFileIndexMeta();
+				if (!meta || meta.version !== FILE_INDEX_VERSION) {
+					fileIndex.reset();
+					await fileIndex.rebuild();
+					saveFileIndexMeta({ version: FILE_INDEX_VERSION });
+				} else {
+					await fileIndex.buildIfEmpty();
+				}
+			} catch {}
+		})();
 	});
 }
 
@@ -1797,6 +1799,7 @@ ipcMain.handle(
 		typeof options?.searchSessionId === 'string' && options.searchSessionId.trim()
 			? options.searchSessionId.trim()
 			: `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	const currentIconPrefetchToken = ++iconPrefetchToken;
 	const extFilter = searchTypeId.startsWith('ext:') ? searchTypeId.slice(4).toLowerCase() : '';
 	// 综合排序权重：①名称匹配度 > ④访问频次 > ③常用类型 > ②时间（新建/改动更近）
 	const now = Date.now();
@@ -1947,8 +1950,7 @@ ipcMain.handle(
 		for (const appItem of installedAppsCache) {
 			const nameLower = appItem.Name.toLowerCase();
 			if (!keywords.some((k) => nameLower.includes(k))) continue;
-
-			const iconData = await getAppIconData(appItem.Name, appItem.AppID);
+			const iconData = iconDataCache.get(`app:${appItem.AppID}`) || '';
 
 			results.push({
 				name: appItem.Name,
@@ -1987,24 +1989,12 @@ ipcMain.handle(
 				? appResults.length + fileSearch.totalCount
 				: fileSearch.totalCount;
 
-	// 目录标识需要可靠：索引缓存可能导致 isDirectory 丢失，从而出现“文件夹搜不到、反而在文件里出现”的错位
-	// 这里通过 statSync 兜底校验，并顺便获取时间信息用于综合排序
-	const safeStat = (p: string) => {
-		try {
-			return statSync(p);
-		} catch {
-			return null;
-		}
-	};
-
-	// 预过滤文件，避免为不需要的文件提取图标
+	// 预过滤文件：避免为不需要的文件提取图标
 	const filteredFiles: Array<{ path: string; name: string; isDirectory: boolean; score: number }> = [];
 	for (const r of fileSearch.results) {
 		if (fileIndex.isIgnoredPath(r.path)) continue;
-		const st = safeStat(r.path);
-		if (!st) continue;
-		const isDirectory = st.isDirectory();
-		const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+		const isDirectory = Boolean(r.isDirectory);
+		const timeMs = 0;
 
 		if (searchTypeId === 'file') {
 			// “文件”类型：不包含文件夹，也不包含图片/视频（它们归属到“图片/视频”类型，且仍可在“所有类型”中搜到）
@@ -2052,18 +2042,15 @@ ipcMain.handle(
 			if (seen.has(key)) continue;
 			if (fileIndex.isIgnoredPath(it.path)) continue;
 
-			const st = safeStat(it.path);
-			if (!st) {
+			const baseScore = scoreRecentName(it.name);
+			if (baseScore <= 0) continue;
+			if (!existsSync(it.path)) {
 				recentIndex.delete(key);
-				void fileIndex.removePath(it.path);
 				continue;
 			}
 
-			const isDirectory = st.isDirectory();
-			const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
-
-			const baseScore = scoreRecentName(it.name);
-			if (baseScore <= 0) continue;
+			const isDirectory = Boolean(it.isDirectory);
+			const timeMs = 0;
 
 			if (searchTypeId === 'file') {
 				if (isDirectory) continue;
@@ -2102,6 +2089,13 @@ ipcMain.handle(
 
 	const scanUserRootsForNameMatches = async (budgetMs: number) => {
 		// 兜底：当索引/监听都漏掉时，对用户常用目录做一次“按名称”小范围扫描，尽量补齐可检索性
+		const safeStat = (p: string) => {
+			try {
+				return statSync(p);
+			} catch {
+				return null;
+			}
+		};
 		const roots = (() => {
 			if (process.platform === 'win32') {
 				const home = app.getPath('home');
@@ -2241,36 +2235,84 @@ ipcMain.handle(
 	const firstBatch = top500.slice(0, initialLimit);
 	const remainingBatch = top500.slice(initialLimit);
 
-	const firstResults = (await Promise.all(
-		firstBatch.map(async (r) => {
-			if (r.type === 'file' || r.type === 'folder') {
-				if (!existsSync(r.path)) return null;
-				const iconData = await getFileIconData(r.path);
-				return { ...r, icon: iconData };
-			}
-			return r;
-		})
-	)).filter((x): x is { name: string; path: string; type: string; icon?: string; score: number } => x !== null);
+	const firstResults = firstBatch.filter(Boolean).map((r) => {
+		if (r.type === 'file' || r.type === 'folder') {
+			const cached = iconDataCache.get(`file:${r.path}`) || '';
+			return cached ? { ...r, icon: cached } : r;
+		}
+		if (r.type === 'app') {
+			const cached = iconDataCache.get(`app:${r.path}`) || '';
+			return cached ? { ...r, icon: cached } : r;
+		}
+		return r;
+	});
 
 	const merged = firstResults.map(({ score, ...rest }) => rest);
+
+	const prefetchIconsInBackground = (items: Array<{ name: string; path: string; type: string }>) => {
+		(async () => {
+			const batchSize = 20;
+			for (let i = 0; i < items.length; i += batchSize) {
+				if (currentIconPrefetchToken !== iconPrefetchToken) return;
+				const batch = items.slice(i, i + batchSize);
+				const updates: Array<{ name: string; path: string; type: string; icon: string }> = [];
+
+				for (const it of batch) {
+					if (currentIconPrefetchToken !== iconPrefetchToken) return;
+					if (!it?.path) continue;
+					if (it.type === 'file' || it.type === 'folder') {
+						const key = `file:${it.path}`;
+						if (iconDataCache.has(key)) continue;
+						const icon = await getFileIconData(it.path);
+						if (typeof icon === 'string' && icon) updates.push({ ...it, icon });
+						continue;
+					}
+					if (it.type === 'app') {
+						const key = `app:${it.path}`;
+						if (iconDataCache.has(key)) continue;
+						const icon = await getAppIconData(it.name, it.path);
+						if (typeof icon === 'string' && icon) updates.push({ ...it, icon });
+						continue;
+					}
+				}
+
+				if (updates.length > 0) {
+					event.sender.send('more-results', {
+						query,
+						searchTypeId,
+						searchSessionId,
+						results: updates,
+					});
+				}
+				await new Promise((resolve) => setTimeout(resolve, 16));
+			}
+		})();
+	};
+
+	prefetchIconsInBackground(top500.map(({ score, ...rest }) => rest));
 
 	if (remainingBatch.length > 0) {
 		(async () => {
 			const batchSize = 50;
 			for (let i = 0; i < remainingBatch.length; i += batchSize) {
+				if (currentIconPrefetchToken !== iconPrefetchToken) return;
 				const batch = remainingBatch.slice(i, i + batchSize);
-				const backgroundResults = (await Promise.all(
-					batch.map(async (r) => {
+				const backgroundResults = batch
+					.filter(Boolean)
+					.map((r) => {
 						if (r.type === 'file' || r.type === 'folder') {
-							if (!existsSync(r.path)) return null;
-							const iconData = await getFileIconData(r.path);
-							const { score, ...rest } = { ...r, icon: iconData };
+							const cached = iconDataCache.get(`file:${r.path}`) || '';
+							const { score, ...rest } = cached ? { ...r, icon: cached } : r;
+							return rest;
+						}
+						if (r.type === 'app') {
+							const cached = iconDataCache.get(`app:${r.path}`) || '';
+							const { score, ...rest } = cached ? { ...r, icon: cached } : r;
 							return rest;
 						}
 						const { score, ...rest } = r;
 						return rest;
-					})
-				)).filter((x): x is { name: string; path: string; type: string; icon?: string } => x !== null);
+					});
 
 				if (backgroundResults.length > 0) {
 					event.sender.send('more-results', {
@@ -2280,7 +2322,7 @@ ipcMain.handle(
 						results: backgroundResults,
 					});
 				}
-				await new Promise((resolve) => setTimeout(resolve, 50));
+				await new Promise((resolve) => setTimeout(resolve, 16));
 			}
 		})();
 	}

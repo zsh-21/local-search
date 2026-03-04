@@ -233,7 +233,7 @@ export function useSearchController() {
     pendingAppendRef.current = [];
     startTransition(() => {
       setResults((prev) => {
-        const next = limitResults(dedupeResults([...prev, ...batch]));
+         const next = limitResults(mergeResultsStable(prev, batch));
         setTotalCount((c) => Math.max(c, next.length));
         return next;
       });
