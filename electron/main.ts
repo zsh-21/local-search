@@ -230,7 +230,7 @@ async function getAppIconData(appName: string, appId: string) {
 	return iconData;
 }
 
-const FILE_INDEX_VERSION = 2;
+const FILE_INDEX_VERSION = 3;
 
 function loadFileIndexMeta(): { version: number } | null {
 	try {
@@ -1022,6 +1022,7 @@ async function startUserDirectoryWatchers() {
 						if (!existsSync(fullPath)) {
 							// 删除事件不保证可靠：这里至少从最近变更索引里清理，避免结果残留
 							recentIndex.delete(normalizeRecentKey(fullPath));
+							void fileIndex.removePath(fullPath);
 							return;
 						}
 						const st = statSync(fullPath);
@@ -1337,6 +1338,7 @@ if (!gotTheLock) {
 		if (!meta || meta.version !== FILE_INDEX_VERSION) {
 			void (async () => {
 				try {
+					fileIndex.reset();
 					await fileIndex.rebuild();
 					saveFileIndexMeta({ version: FILE_INDEX_VERSION });
 				} catch {}
@@ -1958,7 +1960,22 @@ ipcMain.handle(
 	// 文件索引搜索的候选上限：当用户指定“文件夹/图片/视频/扩展名”等更窄的类型时，提高候选数量，
 	// 避免同名文件过多导致目录/特定类型结果在 topN 之外被截断，从而出现“所有类型能搜到，但对应类型搜不到”
 	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 5000;
-	const fileSearch = await fileIndex.search(query, fileSearchLimit);
+	const currentSettings = loadSettings();
+	const customExts = Array.isArray(currentSettings.customSearchTypes)
+		? currentSettings.customSearchTypes.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')).filter(Boolean)
+		: [];
+	const where = (() => {
+		if (searchTypeId === 'folder') return { kind: { eq: 'folder' } };
+		if (searchTypeId === 'image') return { kind: { eq: 'image' } };
+		if (searchTypeId === 'video') return { kind: { eq: 'video' } };
+		if (searchTypeId === 'file') {
+			if (customExts.length > 0) return { and: [{ kind: { eq: 'file' } }, { ext: { nin: customExts } }] };
+			return { kind: { eq: 'file' } };
+		}
+		if (extFilter) return { ext: { eq: extFilter } };
+		return undefined;
+	})();
+	const fileSearch = await fileIndex.search(query, fileSearchLimit, where ? { where } : undefined);
 	const totalCount =
 		searchTypeId === 'all'
 			? settingsResults.length + appResults.length + fileSearch.totalCount
@@ -2034,6 +2051,7 @@ ipcMain.handle(
 			const st = safeStat(it.path);
 			if (!st) {
 				recentIndex.delete(key);
+				void fileIndex.removePath(it.path);
 				continue;
 			}
 

@@ -146,6 +146,42 @@ export function useSearchController() {
     return out;
   };
 
+  const mergeResultsStable = (prev: AppItem[], next: AppItem[]) => {
+    const nextByKey = new Map<string, AppItem>();
+    for (const it of next) {
+      const k = normalizeResultKey(it);
+      if (!k) continue;
+      nextByKey.set(k, it);
+    }
+
+    const seen = new Set<string>();
+    const merged: AppItem[] = [];
+    for (const it of prev) {
+      const k = normalizeResultKey(it);
+      if (!k || seen.has(k)) continue;
+      const newer = nextByKey.get(k);
+      if (newer) {
+        merged.push({
+          ...it,
+          ...newer,
+          icon: typeof newer.icon === "string" && newer.icon ? newer.icon : it.icon,
+        });
+      } else {
+        merged.push(it);
+      }
+      seen.add(k);
+    }
+
+    for (const it of next) {
+      const k = normalizeResultKey(it);
+      if (!k || seen.has(k)) continue;
+      merged.push(it);
+      seen.add(k);
+    }
+
+    return merged;
+  };
+
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {
       window.clearTimeout(flushAppendTimerRef.current);
@@ -155,7 +191,11 @@ export function useSearchController() {
     if (!batch || batch.length === 0) return;
     pendingAppendRef.current = [];
     startTransition(() => {
-      setResults((prev) => dedupeResults([...prev, ...batch]));
+      setResults((prev) => {
+        const next = dedupeResults([...prev, ...batch]);
+        setTotalCount((c) => Math.max(c, next.length));
+        return next;
+      });
     });
   };
 
@@ -403,19 +443,13 @@ export function useSearchController() {
       if (currentQuery !== trimmed) return;
 
       const currentTypeId = searchTypeIdRef.current;
-      const refreshSessionId = `${Date.now()}-refresh-${searchRequestIdRef.current}`;
-      searchSessionIdRef.current = refreshSessionId;
-      setTotalCount(0);
-      pendingAppendRef.current = [];
-      if (flushAppendTimerRef.current != null) {
-        window.clearTimeout(flushAppendTimerRef.current);
-        flushAppendTimerRef.current = null;
-      }
+      const currentSessionId = searchSessionIdRef.current;
+      if (!currentSessionId) return;
       try {
         const resp = (await window.ipcRenderer.invoke(
           "search-files",
           trimmed,
-          { searchTypeId: currentTypeId, searchSessionId: refreshSessionId },
+          { searchTypeId: currentTypeId, searchSessionId: currentSessionId },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
 
         if (cancelled) return;
@@ -423,18 +457,15 @@ export function useSearchController() {
         if (searchTypeIdRef.current !== currentTypeId) return;
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
-        const preservePath = selectedPathRef.current;
-        if (preservePath) {
-          const idx = nextResults.findIndex((x) => x.path === preservePath);
-          setSelectedIndex(idx >= 0 ? idx : 0);
-        } else {
-          setSelectedIndex(0);
-        }
+        const respTotal = typeof resp?.totalCount === "number" ? resp.totalCount : 0;
         startTransition(() => {
-          setResults(dedupeResults(nextResults));
-          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
+          setResults((prev) => {
+            const merged = dedupeResults(mergeResultsStable(prev, dedupeResults(nextResults)));
+            setTotalCount((c) => Math.max(c, respTotal, merged.length));
+            return merged;
+          });
           setIsIndexing(Boolean(resp?.isIndexing));
-          setHasMore(Boolean(resp?.hasMore));
+          setHasMore((v) => v || Boolean(resp?.hasMore));
         });
       } catch {}
     };

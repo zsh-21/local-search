@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { create, insert, insertMultiple, search, count, type Orama, type Results } from '@orama/orama';
+import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
 
 export interface FileIndexEntry {
 	path: string;
@@ -24,10 +24,21 @@ const SCHEMA = {
 	name: 'string',
 	path: 'string',
 	isDirectory: 'boolean',
-	ext: 'string',
+	kind: 'enum',
+	ext: 'enum',
 } as const;
 
 type FileDB = Orama<typeof SCHEMA>;
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
+
+function classifyKind(isDirectory: boolean, ext: string) {
+	if (isDirectory) return 'folder';
+	if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+	if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+	return 'file';
+}
 
 function shouldSkipDirName(name: string) {
 	const lower = name.toLowerCase();
@@ -64,7 +75,7 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 
 export class FileIndex {
 	private db: FileDB | null = null;
-	private pathSet = new Set<string>();
+	private pathToId = new Map<string, string>();
 	private readonly cachePath: string;
 	private readonly maxEntries: number;
 	private isIndexing = false;
@@ -79,6 +90,11 @@ export class FileIndex {
 	constructor(options: { cachePath: string; maxEntries?: number }) {
 		this.cachePath = options.cachePath;
 		this.maxEntries = options.maxEntries ?? 750_000;
+	}
+
+	reset() {
+		this.db = null;
+		this.pathToId.clear();
 	}
 
 	async getStatus(): Promise<FileIndexStatus> {
@@ -188,19 +204,32 @@ export class FileIndex {
 	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
 		const db = await this.ensureDB();
-		if (this.pathSet.has(entryPath)) return;
+		if (this.pathToId.has(entryPath)) return;
 		// Check ignore path
 		if (this.isIgnoredPath(entryPath)) return;
 
-		this.pathSet.add(entryPath);
 		const name = path.basename(entryPath);
 		const ext = path.extname(name).toLowerCase();
-		await insert(db, {
+		const kind = classifyKind(isDirectory, ext);
+		const id = await insert(db, {
 			path: entryPath,
 			name,
 			isDirectory,
+			kind,
 			ext,
 		});
+		if (typeof id === 'string' && id) this.pathToId.set(entryPath, id);
+	}
+
+	async removePath(entryPath: string) {
+		if (!entryPath) return;
+		const id = this.pathToId.get(entryPath);
+		if (!id) return;
+		const db = await this.ensureDB();
+		try {
+			await remove(db, id);
+		} catch {}
+		this.pathToId.delete(entryPath);
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -208,43 +237,62 @@ export class FileIndex {
 
 		// Initialize DB
 		this.db = await create({ schema: SCHEMA });
-		this.pathSet.clear();
+		this.pathToId.clear();
 
 		try {
 			const stream = createReadStream(this.cachePath, { encoding: 'utf-8' });
 			const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 			
-			const batch: FileIndexEntry[] = [];
+			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string }> = [];
 			const BATCH_SIZE = 5000;
 
 			const processBatch = async () => {
 				if (batch.length === 0) return;
 				if (!this.db) return;
-				await insertMultiple(this.db, batch.map(e => ({
+				const docs = batch.map((e) => ({
 					path: e.path,
 					name: e.name,
 					isDirectory: e.isDirectory,
-					ext: path.extname(e.name).toLowerCase()
-				})));
+					kind: e.kind,
+					ext: e.ext,
+				}));
+				const ids = await insertMultiple(this.db, docs);
+				for (let i = 0; i < docs.length; i++) {
+					const p = docs[i]?.path;
+					const id = (ids as any)[i];
+					if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p, id);
+				}
 				batch.length = 0;
 			};
 
 			let count = 0;
 			for await (const line of rl) {
-				const p = line.trim();
-				if (!p) continue;
+				const raw = line.trim();
+				if (!raw) continue;
 				
-				// Optimization: Don't check ignore path on loadCache, assume cache is clean or will be filtered on search
-				// But we should check maxEntries
 				if (count >= this.maxEntries) break;
 
-				this.pathSet.add(p);
+				let p = '';
+				let isDirectory = false;
+				if (raw.startsWith('{')) {
+					try {
+						const obj = JSON.parse(raw);
+						p = typeof obj?.p === 'string' ? obj.p : '';
+						isDirectory = obj?.d === 1 || obj?.d === true;
+					} catch {}
+				} else {
+					p = raw;
+				}
+				p = typeof p === 'string' ? p.trim() : '';
+				if (!p) continue;
+				if (this.pathToId.has(p)) continue;
+
 				batch.push({
 					path: p,
 					name: path.basename(p),
-					isDirectory: false, // Cache currently doesn't store isDirectory, default to false. 
-                    // Wait, old code defaulted to false too. 
-                    // "isDirectory: false" in old loadCache (line 258)
+					isDirectory,
+					ext: path.extname(p).toLowerCase(),
+					kind: classifyKind(isDirectory, path.extname(p).toLowerCase()),
 				});
 				count++;
 
@@ -276,8 +324,13 @@ export class FileIndex {
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
 
+		const existingCount = this.db ? await count(this.db) : 0;
+		const publishIncrementally = existingCount <= 0;
 		const nextDb = await create({ schema: SCHEMA });
-		const nextPathSet = new Set<string>();
+		const nextPathToId = new Map<string, string>();
+		const tmpPath = `${this.cachePath}.tmp`;
+		await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
+		const cacheWs = createWriteStream(tmpPath, { encoding: 'utf-8' });
 		
 		let entryCount = 0;
 		const batch: FileIndexEntry[] = [];
@@ -285,37 +338,49 @@ export class FileIndex {
 
 		const flushBatch = async () => {
 			if (batch.length === 0) return;
-			await insertMultiple(nextDb, batch.map(e => ({
-				path: e.path,
-				name: e.name,
-				isDirectory: e.isDirectory,
-				ext: path.extname(e.name).toLowerCase()
-			})));
+			const toWrite = batch.slice();
+			const docs = batch.map((e) => {
+				const ext = path.extname(e.name).toLowerCase();
+				return {
+					path: e.path,
+					name: e.name,
+					isDirectory: e.isDirectory,
+					kind: classifyKind(e.isDirectory, ext),
+					ext,
+				};
+			});
+			const ids = await insertMultiple(nextDb, docs);
+			for (let i = 0; i < docs.length; i++) {
+				const p = docs[i]?.path;
+				const id = (ids as any)[i];
+				if (typeof p === 'string' && p && typeof id === 'string' && id) nextPathToId.set(p, id);
+			}
+			for (const e of toWrite) {
+				cacheWs.write(`${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`);
+			}
 			batch.length = 0;
 		};
 
 		const maybePublishPartial = () => {
-			// We can't easily publish partial results with Orama by swapping DBs mid-stream without losing data or complexity.
-			// So we skip partial publishing for now, or we could just update the live DB if we were doing incremental.
-			// But rebuild implies fresh start. 
-			// Users will see old results until rebuild finishes.
-			// If this is acceptable, we just ignore partial publishing logic.
-			// If we want partial updates, we could insert into `this.db` if it exists, but we are building `nextDb`.
-			
-			// If we want to support "search while indexing", we could potentially expose nextDb?
-			// For simplicity and performance, let's just wait until finish or maybe swap in chunks?
-			// Swapping in chunks is hard because Orama is a single instance.
-			
-			// Let's stick to "swap at the end" for atomic update.
-			// But the UI shows "Indexing..." status.
+			if (!publishIncrementally) return;
+			if (this.partialPublished) return;
+			if (Date.now() - this.rebuildStartedAt < 2500) return;
+			if (nextPathToId.size <= 0) return;
+			this.db = nextDb;
+			this.pathToId = nextPathToId;
 			this.partialPublished = true;
 		};
+
+		if (publishIncrementally) {
+			this.db = nextDb;
+			this.pathToId = nextPathToId;
+			this.partialPublished = true;
+		}
 
 		const addNext = (entry: FileIndexEntry) => {
 			if (entryCount >= this.maxEntries) return;
 			if (this.isIgnoredPath(entry.path)) return;
-			if (nextPathSet.has(entry.path)) return;
-			nextPathSet.add(entry.path);
+			if (nextPathToId.has(entry.path)) return;
 			
 			batch.push(entry);
 			entryCount++;
@@ -367,24 +432,9 @@ export class FileIndex {
 			}
 
 			await flushBatch();
-
-			// Save cache to disk
-			const tmpPath = `${this.cachePath}.tmp`;
-			await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
-			
-            // To save cache, we need to iterate all docs.
-            // Orama search with limit: 0 doesn't return all docs easily without pagination.
-            // But we have `nextPathSet`. We can just write that!
-            // `nextPathSet` contains all paths we indexed.
-            
-			await new Promise<void>((resolve, reject) => {
-				const ws = createWriteStream(tmpPath, { encoding: 'utf-8' });
-				ws.on('error', reject);
-				ws.on('finish', () => resolve());
-				for (const p of nextPathSet) {
-					ws.write(`${p}\n`);
-				}
-				ws.end();
+			await new Promise<void>((resolve) => {
+				cacheWs.on('finish', () => resolve());
+				cacheWs.end();
 			});
 			await fs.rename(tmpPath, this.cachePath).catch(async () => {
 				await fs.copyFile(tmpPath, this.cachePath);
@@ -392,8 +442,11 @@ export class FileIndex {
 			});
 
 			this.db = nextDb;
-			this.pathSet = nextPathSet;
+			this.pathToId = nextPathToId;
 		} finally {
+			try {
+				cacheWs.end();
+			} catch {}
 			this.isIndexing = false;
 			this.pauseUntil = 0;
 		}
@@ -401,43 +454,51 @@ export class FileIndex {
 
 	async search(
 		query: string,
-		limit = 100
+		limit = 100,
+		options?: { where?: any }
 	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number }> {
 		const db = await this.ensureDB();
 		const queryLower = query.trim().toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0 };
 
-        // Orama search
-        // We use 'name' property for search
-        const searchResult = await search(db, {
-            term: queryLower,
-            properties: ['name'], // Boost name matches
-            limit: limit * 2, // Request more to allow for post-filtering
-            threshold: 0.2, // Fuzzy threshold
-            boost: {
-                name: 2, // Boost name matches
-            }
-        });
+		const searchResult = await search(db, {
+			term: queryLower,
+			properties: ['name'],
+			limit: limit * 2,
+			threshold: 0.2,
+			boost: { name: 2 },
+			where: options?.where,
+		});
 
-        // Map results
-        const results: FileIndexSearchResult[] = [];
-        
-        for (const hit of searchResult.hits) {
-            const doc = hit.document;
-            const score = hit.score;
-            // Filter ignored paths
-            if (this.isIgnoredPath(doc.path as string)) continue;
+		const results: FileIndexSearchResult[] = [];
+		for (const hit of (searchResult as any).hits || []) {
+			const doc = hit.document;
+			const score = hit.score;
+			const p = doc?.path as string;
+			if (!p || this.isIgnoredPath(p)) continue;
 
-            results.push({
-                path: doc.path as string,
-                name: doc.name as string,
-                isDirectory: doc.isDirectory as boolean,
-                score: score * 1000 // Scale up score to match old range roughly (0-10 -> 0-10000)
-            });
-            
-            if (results.length >= limit) break;
-        }
+			results.push({
+				path: p,
+				name: (doc?.name as string) || '',
+				isDirectory: Boolean(doc?.isDirectory),
+				score: (typeof score === 'number' ? score : 0) * 1000,
+			});
+			if (results.length >= limit) break;
+		}
 
-		return { results, isIndexing: this.isIndexing, totalCount: searchResult.count };
+		return { results, isIndexing: this.isIndexing, totalCount: (searchResult as any).count || 0 };
+	}
+
+	async countMatches(query: string, options?: { where?: any }) {
+		const db = await this.ensureDB();
+		const queryLower = query.trim().toLowerCase();
+		if (!queryLower) return { totalCount: 0, isIndexing: this.isIndexing };
+		const resp = await search(db, {
+			term: queryLower,
+			properties: ['name'],
+			where: options?.where,
+			preflight: true,
+		});
+		return { totalCount: (resp as any).count || 0, isIndexing: this.isIndexing };
 	}
 }
