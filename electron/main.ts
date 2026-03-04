@@ -230,7 +230,7 @@ async function getAppIconData(appName: string, appId: string) {
 	return iconData;
 }
 
-const FILE_INDEX_VERSION = 3;
+const FILE_INDEX_VERSION = 5;
 
 function loadFileIndexMeta(): { version: number } | null {
 	try {
@@ -1834,7 +1834,11 @@ ipcMain.handle(
 		return 0;
 	};
 	const computeCombinedScore = (baseScore: number, type: string, rawPath: string, timeMs: number) => {
-		return baseScore + getAccessBoost(rawPath) + getTypeBoost(type, rawPath) + getTimeBoost(timeMs);
+		const nameScore = baseScore;
+		const accessBoost = getAccessBoost(rawPath);
+		const typeBoost = getTypeBoost(type, rawPath);
+		const timeBoost = getTimeBoost(timeMs);
+		return nameScore * 1_000_000 + accessBoost * 1_000 + typeBoost * 10 + timeBoost;
 	};
 
 	const normalizeForMatchName = (name: string) => name.replace(/\.(exe|lnk)$/i, '').toLowerCase();
@@ -2219,52 +2223,54 @@ ipcMain.handle(
 	filteredFiles.sort((a, b) => (b.score || 0) - (a.score || 0));
 
 	const DISPLAY_LIMIT = 500;
-	// 当命中数量过多时仅展示最匹配的前 500：避免渲染/图标提取过重导致卡顿
 	const limitedFiles = filteredFiles.slice(0, DISPLAY_LIMIT);
+	const candidates: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [
+		...settingsResults,
+		...appResults,
+		...limitedFiles.map((r) => ({
+			name: r.name,
+			path: r.path,
+			type: r.isDirectory ? 'folder' : 'file',
+			score: r.score,
+		})),
+	];
+	candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
+	const top500 = candidates.slice(0, DISPLAY_LIMIT);
 
-	// 取前 100 个立即返回（提高初始展示数量）
-	const first100Files = limitedFiles.slice(0, 100);
-	const remainingFiles = limitedFiles.slice(100); // 后续结果通过后台发送（最多补齐到 500）
+	const initialLimit = 100;
+	const firstBatch = top500.slice(0, initialLimit);
+	const remainingBatch = top500.slice(initialLimit);
 
-	const first100Results = (await Promise.all(
-		first100Files.map(async (r) => {
-			const iconData = await getFileIconData(r.path);
-			return {
-				name: r.name,
-				path: r.path,
-				type: r.isDirectory ? 'folder' : 'file',
-				icon: iconData,
-				score: r.score,
-			};
+	const firstResults = (await Promise.all(
+		firstBatch.map(async (r) => {
+			if (r.type === 'file' || r.type === 'folder') {
+				if (!existsSync(r.path)) return null;
+				const iconData = await getFileIconData(r.path);
+				return { ...r, icon: iconData };
+			}
+			return r;
 		})
-	)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
+	)).filter((x): x is { name: string; path: string; type: string; icon?: string; score: number } => x !== null);
 
-	let combined = [...settingsResults, ...appResults, ...first100Results];
-	const merged = combined
-		.sort((a, b) => (b.score || 0) - (a.score || 0))
-		.slice(0, 100) // 初始返回 100 条
-		.map(({ score, ...rest }) => rest);
+	const merged = firstResults.map(({ score, ...rest }) => rest);
 
-	// 如果有更多结果，在后台继续搜索并发送
-	if (remainingFiles.length > 0) {
+	if (remainingBatch.length > 0) {
 		(async () => {
-			// 分批处理图标提取，避免一次性 Promise.all 太多导致卡顿
 			const batchSize = 50;
-			for (let i = 0; i < remainingFiles.length; i += batchSize) {
-				const batch = remainingFiles.slice(i, i + batchSize);
+			for (let i = 0; i < remainingBatch.length; i += batchSize) {
+				const batch = remainingBatch.slice(i, i + batchSize);
 				const backgroundResults = (await Promise.all(
 					batch.map(async (r) => {
-						if (!existsSync(r.path)) return null;
-						const iconData = await getFileIconData(r.path);
-						return {
-							name: r.name,
-							path: r.path,
-							type: r.isDirectory ? 'folder' : 'file',
-							icon: iconData,
-							score: r.score,
-						};
+						if (r.type === 'file' || r.type === 'folder') {
+							if (!existsSync(r.path)) return null;
+							const iconData = await getFileIconData(r.path);
+							const { score, ...rest } = { ...r, icon: iconData };
+							return rest;
+						}
+						const { score, ...rest } = r;
+						return rest;
 					})
-				)).filter((x): x is { name: string; path: string; type: string; icon: string; score: number } => x !== null);
+				)).filter((x): x is { name: string; path: string; type: string; icon?: string } => x !== null);
 
 				if (backgroundResults.length > 0) {
 					event.sender.send('more-results', {
@@ -2274,8 +2280,7 @@ ipcMain.handle(
 						results: backgroundResults,
 					});
 				}
-				// 给一点喘息时间
-				await new Promise(resolve => setTimeout(resolve, 50));
+				await new Promise((resolve) => setTimeout(resolve, 50));
 			}
 		})();
 	}
@@ -2283,7 +2288,7 @@ ipcMain.handle(
 	return { 
 		results: merged, 
 		isIndexing: fileSearch.isIndexing,
-		hasMore: remainingFiles.length > 0,
+		hasMore: remainingBatch.length > 0,
 		searchSessionId,
 		totalCount,
 	};

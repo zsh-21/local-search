@@ -46,6 +46,7 @@ export function useSearchController() {
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
   const TYPE_MENU_MIN_LIST_SPACE = 240;
+  const DISPLAY_LIMIT = 500;
 
   useEffect(() => {
     void refreshUserStatusSilently();
@@ -146,6 +147,8 @@ export function useSearchController() {
     return out;
   };
 
+  const limitResults = (items: AppItem[]) => items.slice(0, DISPLAY_LIMIT);
+
   const mergeResultsStable = (prev: AppItem[], next: AppItem[]) => {
     const nextByKey = new Map<string, AppItem>();
     for (const it of next) {
@@ -182,6 +185,44 @@ export function useSearchController() {
     return merged;
   };
 
+  const mergeByServerOrder = (prev: AppItem[], serverOrdered: AppItem[]) => {
+    const prevByKey = new Map<string, AppItem>();
+    for (const it of prev) {
+      const k = normalizeResultKey(it);
+      if (!k) continue;
+      prevByKey.set(k, it);
+    }
+
+    const seen = new Set<string>();
+    const out: AppItem[] = [];
+
+    for (const it of serverOrdered) {
+      const k = normalizeResultKey(it);
+      if (!k || seen.has(k)) continue;
+      const p = prevByKey.get(k);
+      if (p) {
+        out.push({
+          ...it,
+          icon: typeof it.icon === "string" && it.icon ? it.icon : p.icon,
+        });
+      } else {
+        out.push(it);
+      }
+      seen.add(k);
+      if (out.length >= DISPLAY_LIMIT) return out;
+    }
+
+    for (const it of prev) {
+      const k = normalizeResultKey(it);
+      if (!k || seen.has(k)) continue;
+      out.push(it);
+      seen.add(k);
+      if (out.length >= DISPLAY_LIMIT) break;
+    }
+
+    return out;
+  };
+
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {
       window.clearTimeout(flushAppendTimerRef.current);
@@ -192,7 +233,7 @@ export function useSearchController() {
     pendingAppendRef.current = [];
     startTransition(() => {
       setResults((prev) => {
-        const next = dedupeResults([...prev, ...batch]);
+        const next = limitResults(dedupeResults([...prev, ...batch]));
         setTotalCount((c) => Math.max(c, next.length));
         return next;
       });
@@ -258,7 +299,7 @@ export function useSearchController() {
     const historyItems = resp?.results ?? [];
     const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
     const filtered = filterItemsBySearchType(historyItems, typeId);
-    const deduped = dedupeResults(filtered);
+    const deduped = limitResults(dedupeResults(filtered));
     setResults(deduped);
     setTotalCount(deduped.length);
     const preservePath = typeof opts?.preserveSelectedPath === "string" ? opts.preserveSelectedPath : "";
@@ -299,7 +340,7 @@ export function useSearchController() {
           | { results: AppItem[] }
           | undefined;
         const historyItems = resp?.results ?? [];
-        setResults(filterItemsBySearchType(historyItems, nextTypeId));
+        setResults(limitResults(dedupeResults(filterItemsBySearchType(historyItems, nextTypeId))));
         setIsSearching(false);
         setTimeout(() => {
           inputRef.current?.focus();
@@ -413,8 +454,9 @@ export function useSearchController() {
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
         setSelectedIndex(0);
         startTransition(() => {
-          setResults(dedupeResults(nextResults));
-          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : nextResults.length);
+          const limited = limitResults(dedupeResults(nextResults));
+          setResults(limited);
+          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : limited.length);
           setIsIndexing(Boolean(resp?.isIndexing));
           setHasMore(Boolean(resp?.hasMore));
         });
@@ -458,9 +500,10 @@ export function useSearchController() {
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
         const respTotal = typeof resp?.totalCount === "number" ? resp.totalCount : 0;
+        const serverOrdered = limitResults(dedupeResults(nextResults));
         startTransition(() => {
           setResults((prev) => {
-            const merged = dedupeResults(mergeResultsStable(prev, dedupeResults(nextResults)));
+            const merged = mergeByServerOrder(prev, serverOrdered);
             setTotalCount((c) => Math.max(c, respTotal, merged.length));
             return merged;
           });
@@ -494,7 +537,7 @@ export function useSearchController() {
         listRef.current.scrollToRow({ index: selectedIndex, align: "auto" });
       }
     }
-  }, [selectedIndex, lastSelectedBy, results.length]);
+  }, [selectedIndex, lastSelectedBy]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {

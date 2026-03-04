@@ -30,6 +30,60 @@ const SCHEMA = {
 
 type FileDB = Orama<typeof SCHEMA>;
 
+const tokenizer = {
+	language: 'custom',
+	normalizationCache: new Map<string, string>(),
+	tokenize: (raw: string) => {
+		const s = (raw || '').toLowerCase();
+		if (!s) return [];
+
+		const out: string[] = [];
+		const MAX_TOKENS = 12;
+		let seen: Set<string> | null = null;
+		const push = (t: string) => {
+			if (!t) return;
+			if (out.length >= MAX_TOKENS) return;
+			if (seen) {
+				if (seen.has(t)) return;
+				seen.add(t);
+			} else if (out.length >= 4) {
+				seen = new Set(out);
+				if (seen.has(t)) return;
+				seen.add(t);
+			}
+			out.push(t);
+		};
+
+		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
+		for (const seg of segs) {
+			if (!seg) continue;
+			const isAscii = /^[a-z0-9]+$/.test(seg);
+			if (isAscii) {
+				push(seg);
+				const maxPrefix = Math.min(4, seg.length);
+				for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
+				if (seg.length >= 4 && seg.length <= 16 && out.length < MAX_TOKENS) {
+					let added = 0;
+					const maxNgrams = 4;
+					for (let i = 0; i <= seg.length - 3; i++) {
+						push(seg.slice(i, i + 3));
+						added += 1;
+						if (added >= maxNgrams || out.length >= MAX_TOKENS) break;
+					}
+				}
+				continue;
+			}
+
+			push(seg);
+			if (seg.length <= 4) {
+				for (let i = 0; i < seg.length; i++) push(seg[i]);
+			}
+		}
+
+		return out;
+	},
+};
+
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
 
@@ -196,7 +250,7 @@ export class FileIndex {
 
 	private async ensureDB() {
 		if (!this.db) {
-			this.db = await create({ schema: SCHEMA });
+			this.db = await create({ schema: SCHEMA, components: { tokenizer } as any });
 		}
 		return this.db;
 	}
@@ -236,7 +290,7 @@ export class FileIndex {
 		if (!existsSync(this.cachePath)) return false;
 
 		// Initialize DB
-		this.db = await create({ schema: SCHEMA });
+		this.db = await create({ schema: SCHEMA, components: { tokenizer } as any });
 		this.pathToId.clear();
 
 		try {
@@ -326,7 +380,7 @@ export class FileIndex {
 
 		const existingCount = this.db ? await count(this.db) : 0;
 		const publishIncrementally = existingCount <= 0;
-		const nextDb = await create({ schema: SCHEMA });
+		const nextDb = await create({ schema: SCHEMA, components: { tokenizer } as any });
 		const nextPathToId = new Map<string, string>();
 		const tmpPath = `${this.cachePath}.tmp`;
 		await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
@@ -465,7 +519,7 @@ export class FileIndex {
 			term: queryLower,
 			properties: ['name'],
 			limit: limit * 2,
-			threshold: 0.2,
+			threshold: 1,
 			boost: { name: 2 },
 			where: options?.where,
 		});

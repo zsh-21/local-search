@@ -299,7 +299,7 @@ export function SearchViewImpl() {
           ) : null}
 
           <div className="result-count">
-            {c.query.trim().length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : ""}
+            {c.query.trim().length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : "0条结果"}
           </div>
 
           <div className="type-select" ref={c.typeSelectRef}>
@@ -386,6 +386,8 @@ export function SearchViewImpl() {
                 ref={c.scrollContainerRef}
                 className="results-scroll-container"
                 style={{ maxHeight: c.MAX_LIST_HEIGHT, overflowY: "auto" }}
+                onWheel={() => c.setLastSelectedBy("mouse")}
+                onMouseDown={() => c.setLastSelectedBy("mouse")}
               >
                 <List<any>
                   listRef={c.listRef}
