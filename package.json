@@ -30,6 +30,9 @@
   "build": {
     "appId": "com.localsearch.app",
     "productName": "File Search",
+    "asar": true,
+    "compression": "maximum",
+    "afterPack": "scripts/afterPack.cjs",
     "directories": {
       "buildResources": "build",
       "output": "release-build"
