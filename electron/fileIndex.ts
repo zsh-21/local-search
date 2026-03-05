@@ -4,6 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
+import { toPinyinFull, toPinyinInitials } from './pinyin';
 
 export interface FileIndexEntry {
 	path: string;
@@ -22,6 +23,8 @@ export interface FileIndexStatus {
 
 const SCHEMA = {
 	name: 'string',
+	pinyin: 'string',
+	initials: 'string',
 	path: 'string',
 	isDirectory: 'boolean',
 	kind: 'enum',
@@ -289,9 +292,13 @@ export class FileIndex {
 		if (!shouldIndexFile(isDirectory, ext)) return;
 		const kind = classifyKind(isDirectory, ext);
 		const drive = normalizeDrive(entryPath);
+		const pinyinFull = toPinyinFull(name);
+		const initials = toPinyinInitials(name);
 		const id = await insert(db, {
 			path: entryPath,
 			name,
+			pinyin: pinyinFull,
+			initials,
 			isDirectory,
 			kind,
 			ext,
@@ -336,6 +343,8 @@ export class FileIndex {
 				const docs = batch.map((e) => ({
 					path: e.path,
 					name: e.name,
+					pinyin: toPinyinFull(e.name),
+					initials: toPinyinInitials(e.name),
 					isDirectory: e.isDirectory,
 					kind: e.kind,
 					ext: e.ext,
@@ -439,6 +448,8 @@ export class FileIndex {
 				return {
 					path: e.path,
 					name: e.name,
+					pinyin: toPinyinFull(e.name),
+					initials: toPinyinInitials(e.name),
 					isDirectory: e.isDirectory,
 					kind: classifyKind(e.isDirectory, ext),
 					ext,
@@ -564,10 +575,10 @@ export class FileIndex {
 
 		const searchResult = await search(db, {
 			term: queryLower,
-			properties: ['name'],
+			properties: ['name', 'pinyin', 'initials'],
 			limit: limit * 2,
 			threshold: 1,
-			boost: { name: 2 },
+			boost: { name: 2, pinyin: 1.4, initials: 1.2 },
 			where: options?.where,
 		});
 

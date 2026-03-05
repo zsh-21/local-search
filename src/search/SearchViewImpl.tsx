@@ -270,14 +270,14 @@ export function SearchViewImpl() {
         <input
           ref={c.inputRef}
           type="text"
-          value={c.query}
+          value={c.inputValue}
           onChange={(e) => c.setQuery(e.target.value)}
           placeholder={c.placeholder}
           autoFocus
         />
 
         <div className="search-box-right">
-          {c.query.trim().length > 0 ? (
+          {c.inputValue.trim().length > 0 ? (
             <button
               type="button"
               className="clear-btn"

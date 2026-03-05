@@ -22,6 +22,7 @@ export function useSearchController() {
 
   // 搜索输入与类型选择：驱动查询与结果过滤
   const [query, setQuery] = useState("");
+  const [inputValue, setInputValue] = useState("");
   const [searchTypeId, setSearchTypeId] = useState<string>(settings.defaultSearchTypeId || "all");
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -56,6 +57,13 @@ export function useSearchController() {
   const flushAppendTimerRef = useRef<number | null>(null);
   // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
   const typeSwitchRequestedRef = useRef(false);
+  const shouldEchoSelectedOnceRef = useRef(false);
+
+  const setQueryAndInputValue = (next: string) => {
+    setQuery(next);
+    setInputValue(next);
+    shouldEchoSelectedOnceRef.current = false;
+  };
 
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
@@ -77,6 +85,13 @@ export function useSearchController() {
 
   useEffect(() => {
     selectedPathRef.current = results[selectedIndex]?.path || "";
+  }, [results, selectedIndex]);
+
+  useEffect(() => {
+    if (!shouldEchoSelectedOnceRef.current) return;
+    const it = results[selectedIndex];
+    if (it?.name) setInputValue(it.name);
+    shouldEchoSelectedOnceRef.current = false;
   }, [results, selectedIndex]);
 
   useEffect(() => {
@@ -355,7 +370,7 @@ export function useSearchController() {
         }
         const nextTypeId = s.defaultSearchTypeId || "all";
         setSearchTypeId(nextTypeId);
-        setQuery("");
+        setQueryAndInputValue("");
         const resp = (await window.ipcRenderer?.invoke("get-history")) as
           | { results: AppItem[] }
           | undefined;
@@ -632,26 +647,32 @@ export function useSearchController() {
 
     if (e.key === "ArrowDown") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex((prev) => (prev + 1) % results.length);
       e.preventDefault();
     } else if (e.key === "ArrowUp") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
       e.preventDefault();
     } else if (e.key === "Home") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex(0);
       e.preventDefault();
     } else if (e.key === "End") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex(results.length - 1);
       e.preventDefault();
     } else if (e.key === "PageDown") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex((prev) => Math.min(results.length - 1, prev + 10));
       e.preventDefault();
     } else if (e.key === "PageUp") {
       setLastSelectedBy("keyboard");
+      shouldEchoSelectedOnceRef.current = true;
       setSelectedIndex((prev) => Math.max(0, prev - 10));
       e.preventDefault();
     } else if (e.key === "Enter") {
@@ -755,7 +776,8 @@ export function useSearchController() {
   return {
     settings,
     query,
-    setQuery,
+    setQuery: setQueryAndInputValue,
+    inputValue,
     searchTypeId,
     setSearchTypeId,
     typeMenuOpen,

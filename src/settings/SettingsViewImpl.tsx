@@ -104,7 +104,7 @@ export function SettingsViewImpl() {
           }}
           title="双击全屏/取消全屏"
         >
-          <img src="/tray.svg" className="settings-logo" alt="logo" />
+          <img src="tray.svg" className="settings-logo" alt="logo" />
           <span className="settings-title">设置</span>
           <button
             type="button"

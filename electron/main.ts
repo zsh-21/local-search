@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync }
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { FileIndex } from './fileIndex';
+import { hasChineseChar, toPinyinFull, toPinyinInitials } from './pinyin';
 
 interface InstalledApp {
 	Name: string;
@@ -2017,6 +2018,70 @@ ipcMain.handle(
 	};
 
 	const normalizeForMatchName = (name: string) => name.replace(/\.(exe|lnk)$/i, '').toLowerCase();
+	const tokenizeForScore = (q: string) => q.split(/[\s._\-+\\/]+/).filter(Boolean);
+	const scoreTokens = tokenizeForScore(lowerQuery);
+	const countOccurrences = (hay: string, needle: string) => {
+		if (!needle) return 0;
+		let idx = 0;
+		let count = 0;
+		while (idx < hay.length) {
+			const i = hay.indexOf(needle, idx);
+			if (i < 0) break;
+			count += 1;
+			idx = i + Math.max(1, needle.length);
+		}
+		return count;
+	};
+	const computeWeightedNameMatch = (rawName: string) => {
+		const nameLower = normalizeForMatchName(rawName);
+		if (!nameLower) return { weightedScore: 0, matchIndex: 1_000_000, nameLen: 0 };
+		const noExt = nameLower.replace(/\.[^./\\]+$/, '');
+		const candidates = noExt && noExt !== nameLower ? [nameLower, noExt] : [nameLower];
+		const isAsciiQuery = /^[a-z0-9\s._\-+\\/]+$/.test(lowerQuery);
+		if (isAsciiQuery && hasChineseChar(rawName)) {
+			const py = toPinyinFull(rawName);
+			const ini = toPinyinInitials(rawName);
+			if (py) candidates.push(py);
+			if (ini) candidates.push(ini);
+		}
+
+		const scoreOne = (target: string) => {
+			let score = 0;
+			if (target === lowerQuery) score += 100;
+			if (target.startsWith(lowerQuery)) score += 80;
+			if (target.endsWith(lowerQuery)) score += 60;
+			if (target.includes(lowerQuery)) score += 40;
+
+			const matchedTokens = scoreTokens.filter((t) => t && target.includes(t));
+			if (scoreTokens.length > 0 && matchedTokens.length === scoreTokens.length) score += 20;
+			else if (matchedTokens.length > 0) score += 10;
+
+			const occFull = countOccurrences(target, lowerQuery);
+			let occTokens = 0;
+			for (const t of matchedTokens) occTokens += countOccurrences(target, t);
+			score += Math.min(40, (occFull + occTokens) * 2);
+
+			const idxFull = target.indexOf(lowerQuery);
+			let bestIdx = idxFull >= 0 ? idxFull : 1_000_000;
+			for (const t of matchedTokens) {
+				const i = target.indexOf(t);
+				if (i >= 0 && i < bestIdx) bestIdx = i;
+			}
+
+			return { weightedScore: score, matchIndex: bestIdx, nameLen: target.length };
+		};
+
+		let best = scoreOne(candidates[0]);
+		for (let i = 1; i < candidates.length; i++) {
+			const cur = scoreOne(candidates[i]);
+			if (cur.weightedScore > best.weightedScore) best = cur;
+			else if (cur.weightedScore === best.weightedScore) {
+				if (cur.matchIndex < best.matchIndex) best = cur;
+				else if (cur.matchIndex === best.matchIndex && cur.nameLen < best.nameLen) best = cur;
+			}
+		}
+		return best;
+	};
 	const fuzzySubsequenceScore = (target: string, q: string) => {
 		let t = 0;
 		let i = 0;
@@ -2129,7 +2194,10 @@ ipcMain.handle(
 		for (const appItem of installedAppsCache) {
 			const nameLower = appItem.Name.toLowerCase();
 			// 应用匹配按“分词 + 模糊子序列”计算相关性：避免仅靠 includes 导致弱相关项混入
-			const nameMatchScore = scoreRecentName(appItem.Name);
+			const legacyScore = scoreRecentName(appItem.Name);
+			const weighted = computeWeightedNameMatch(appItem.Name);
+			const nameMatchScore =
+				legacyScore > 0 ? legacyScore : weighted.weightedScore > 0 ? Math.round(weighted.weightedScore * 25) : 0;
 			if (nameMatchScore <= 0) continue;
 			// 应用图标优先用缓存：避免 search-files 里同步提取图标导致卡顿
 			const cacheKey = `app:${appItem.AppID}`;
@@ -2171,7 +2239,10 @@ ipcMain.handle(
 
 				const cacheKey = `app:${appItem.AppID}`;
 				const iconData = iconDataCache.get(cacheKey) || '';
-				const relatedMatchScore = scoreRecentName(appItem.Name);
+				const legacyScore = scoreRecentName(appItem.Name);
+				const weighted = computeWeightedNameMatch(appItem.Name);
+				const relatedMatchScore =
+					legacyScore > 0 ? legacyScore : weighted.weightedScore > 0 ? Math.round(weighted.weightedScore * 25) : 0;
 				const baseScore = relatedMatchScore > 0 ? 9_500 : 7_000;
 				results.push({
 					name: appItem.Name,
@@ -2229,11 +2300,22 @@ ipcMain.handle(
 				: fileSearch.totalCount;
 
 	// 预过滤文件：避免为不需要的文件提取图标
-	const filteredFiles: Array<{ path: string; name: string; isDirectory: boolean; score: number }> = [];
+	const filteredFiles: Array<{
+		path: string;
+		name: string;
+		isDirectory: boolean;
+		score: number;
+		weightedScore: number;
+		matchIndex: number;
+		nameLen: number;
+		timeMs: number;
+		size: number;
+	}> = [];
 	for (const r of fileSearch.results) {
 		if (fileIndex.isIgnoredPath(r.path)) continue;
 		const isDirectory = Boolean(r.isDirectory);
 		const timeMs = 0;
+		const size = 0;
 
 		if (searchTypeId === 'file') {
 			// “文件”类型：不包含文件夹，也不包含图片/视频（它们归属到“图片/视频”类型，且仍可在“所有类型”中搜到）
@@ -2264,9 +2346,22 @@ ipcMain.handle(
 			if (path.extname(r.path).toLowerCase() !== extFilter) continue;
 		}
 
+		const { weightedScore, matchIndex, nameLen } = computeWeightedNameMatch(r.name);
+		const oramaTie = Math.min(99, Math.round(Math.max(0, r.score || 0) / 100));
+		const baseScore = weightedScore * 100 + oramaTie;
 		const type = isDirectory ? 'folder' : 'file';
-		const score = computeCombinedScore(r.score, type, r.path, timeMs);
-		filteredFiles.push({ path: r.path, name: r.name, isDirectory, score });
+		const score = computeCombinedScore(baseScore, type, r.path, timeMs);
+		filteredFiles.push({
+			path: r.path,
+			name: r.name,
+			isDirectory,
+			score,
+			weightedScore,
+			matchIndex,
+			nameLen,
+			timeMs,
+			size,
+		});
 	}
 
 	const appendRecentMatches = () => {
@@ -2282,8 +2377,10 @@ ipcMain.handle(
 			if (seen.has(key)) continue;
 			if (fileIndex.isIgnoredPath(it.path)) continue;
 
-			const baseScore = scoreRecentName(it.name);
-			if (baseScore <= 0) continue;
+			const weighted = computeWeightedNameMatch(it.name);
+			const legacy = scoreRecentName(it.name);
+			const baseWeighted = weighted.weightedScore > 0 ? weighted.weightedScore : legacy > 0 ? 10 : 0;
+			if (baseWeighted <= 0) continue;
 			if (!existsSync(it.path)) {
 				recentIndex.delete(key);
 				continue;
@@ -2315,8 +2412,18 @@ ipcMain.handle(
 			}
 
 			const type = isDirectory ? 'folder' : 'file';
-			const score = computeCombinedScore(baseScore, type, it.path, timeMs);
-			filteredFiles.push({ path: it.path, name: it.name, isDirectory, score });
+			const score = computeCombinedScore(baseWeighted * 100, type, it.path, timeMs);
+			filteredFiles.push({
+				path: it.path,
+				name: it.name,
+				isDirectory,
+				score,
+				weightedScore: baseWeighted,
+				matchIndex: weighted.matchIndex,
+				nameLen: weighted.nameLen,
+				timeMs,
+				size: 0,
+			});
 			seen.add(key);
 		}
 	};
@@ -2388,8 +2495,10 @@ ipcMain.handle(
 					const fullPath = path.join(dir, ent.name);
 					if (shouldSkipWatchPath(fullPath)) continue;
 
-					const baseScore = scoreRecentName(ent.name);
-					const likelyMatch = baseScore > 0;
+					const weighted = computeWeightedNameMatch(ent.name);
+					const legacy = scoreRecentName(ent.name);
+					const baseWeighted = weighted.weightedScore > 0 ? weighted.weightedScore : legacy > 0 ? 10 : 0;
+					const likelyMatch = baseWeighted > 0;
 
 					// 优先把“名称命中”的目录继续向下扫，以更快找到同名/相近命名的子目录
 					if (ent.isDirectory && typeof ent.isDirectory === 'function' && ent.isDirectory()) {
@@ -2436,8 +2545,18 @@ ipcMain.handle(
 					}
 
 					const type = isDirectory ? 'folder' : 'file';
-					const score = computeCombinedScore(baseScore, type, fullPath, timeMs);
-					filteredFiles.push({ path: fullPath, name: ent.name, isDirectory, score });
+					const score = computeCombinedScore(baseWeighted * 100, type, fullPath, timeMs);
+					filteredFiles.push({
+						path: fullPath,
+						name: ent.name,
+						isDirectory,
+						score,
+						weightedScore: baseWeighted,
+						matchIndex: weighted.matchIndex,
+						nameLen: weighted.nameLen,
+						timeMs,
+						size: typeof (st as any)?.size === 'number' ? (st as any).size : 0,
+					});
 					seen.add(key);
 				}
 			} finally {
@@ -2492,8 +2611,10 @@ ipcMain.handle(
 					const fullPath = path.join(dir, ent.name);
 					if (shouldSkipWatchPath(fullPath)) continue;
 
-					const baseScore = scoreRecentName(ent.name);
-					const likelyMatch = baseScore > 0;
+					const weighted = computeWeightedNameMatch(ent.name);
+					const legacy = scoreRecentName(ent.name);
+					const baseWeighted = weighted.weightedScore > 0 ? weighted.weightedScore : legacy > 0 ? 10 : 0;
+					const likelyMatch = baseWeighted > 0;
 
 					if (ent.isDirectory && typeof ent.isDirectory === 'function' && ent.isDirectory()) {
 						if (depth < MAX_DEPTH && (likelyMatch || depth < 2)) {
@@ -2544,8 +2665,18 @@ ipcMain.handle(
 						}
 
 						const type = isDirectory ? 'folder' : 'file';
-						const score = computeCombinedScore(baseScore, type, fullPath, timeMs);
-						filteredFiles.push({ path: fullPath, name: ent.name, isDirectory, score });
+						const score = computeCombinedScore(baseWeighted * 100, type, fullPath, timeMs);
+						filteredFiles.push({
+							path: fullPath,
+							name: ent.name,
+							isDirectory,
+							score,
+							weightedScore: baseWeighted,
+							matchIndex: weighted.matchIndex,
+							nameLen: weighted.nameLen,
+							timeMs,
+							size: typeof (st as any)?.size === 'number' ? (st as any).size : 0,
+						});
 						seen.add(key);
 					} catch {}
 				}
@@ -2565,12 +2696,61 @@ ipcMain.handle(
 		await scanDriveRootForNameMatches(driveFilter, 520);
 	}
 
-	// 应用综合权重后的排序：保证“匹配度/访问频次/常用类型/时间”共同影响最终展示顺序
-	filteredFiles.sort((a, b) => (b.score || 0) - (a.score || 0));
+	const compareFilesByWeighted = (
+		a: {
+			weightedScore: number;
+			nameLen: number;
+			matchIndex: number;
+			timeMs: number;
+			size: number;
+			score: number;
+		},
+		b: {
+			weightedScore: number;
+			nameLen: number;
+			matchIndex: number;
+			timeMs: number;
+			size: number;
+			score: number;
+		}
+	) => {
+		if ((b.weightedScore || 0) !== (a.weightedScore || 0)) return (b.weightedScore || 0) - (a.weightedScore || 0);
+		if ((a.nameLen || 0) !== (b.nameLen || 0)) return (a.nameLen || 0) - (b.nameLen || 0);
+		if ((a.matchIndex || 0) !== (b.matchIndex || 0)) return (a.matchIndex || 0) - (b.matchIndex || 0);
+		if ((b.timeMs || 0) !== (a.timeMs || 0)) return (b.timeMs || 0) - (a.timeMs || 0);
+		if ((b.size || 0) !== (a.size || 0)) return (b.size || 0) - (a.size || 0);
+		return (b.score || 0) - (a.score || 0);
+	};
+
+	filteredFiles.sort(compareFilesByWeighted);
 
 	const DISPLAY_LIMIT = 500;
+	const statBudget = Math.min(filteredFiles.length, DISPLAY_LIMIT * 2);
+	for (let i = 0; i < statBudget; i++) {
+		const it = filteredFiles[i];
+		if (!it) continue;
+		if (it.timeMs > 0) continue;
+		try {
+			const st = statSync(it.path);
+			it.timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+			it.size = typeof (st as any).size === 'number' ? (st as any).size : 0;
+		} catch {}
+	}
+	filteredFiles.sort(compareFilesByWeighted);
+
 	const limitedFiles = filteredFiles.slice(0, DISPLAY_LIMIT);
-	const candidates: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [
+	const candidates: Array<{
+		name: string;
+		path: string;
+		type: string;
+		icon?: string;
+		score: number;
+		weightedScore?: number;
+		matchIndex?: number;
+		nameLen?: number;
+		timeMs?: number;
+		size?: number;
+	}> = [
 		...settingsResults,
 		...appResults,
 		...limitedFiles.map((r) => ({
@@ -2578,9 +2758,42 @@ ipcMain.handle(
 			path: r.path,
 			type: r.isDirectory ? 'folder' : 'file',
 			score: r.score,
+			weightedScore: r.weightedScore,
+			matchIndex: r.matchIndex,
+			nameLen: r.nameLen,
+			timeMs: r.timeMs,
+			size: r.size,
 		})),
 	];
-	candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
+	const compareCandidates = (
+		a: { type: string; score: number; weightedScore?: number; nameLen?: number; matchIndex?: number; timeMs?: number; size?: number },
+		b: { type: string; score: number; weightedScore?: number; nameLen?: number; matchIndex?: number; timeMs?: number; size?: number }
+	) => {
+		const aIsFs = a.type === 'file' || a.type === 'folder';
+		const bIsFs = b.type === 'file' || b.type === 'folder';
+		if (aIsFs && bIsFs) {
+			return compareFilesByWeighted(
+				{
+					weightedScore: a.weightedScore || 0,
+					nameLen: a.nameLen || 0,
+					matchIndex: a.matchIndex || 0,
+					timeMs: a.timeMs || 0,
+					size: a.size || 0,
+					score: a.score || 0,
+				},
+				{
+					weightedScore: b.weightedScore || 0,
+					nameLen: b.nameLen || 0,
+					matchIndex: b.matchIndex || 0,
+					timeMs: b.timeMs || 0,
+					size: b.size || 0,
+					score: b.score || 0,
+				}
+			);
+		}
+		return (b.score || 0) - (a.score || 0);
+	};
+	candidates.sort(compareCandidates);
 	const top500 = candidates.slice(0, DISPLAY_LIMIT);
 
 	const initialLimit = 100;
@@ -2601,7 +2814,7 @@ ipcMain.handle(
 		return r;
 	});
 
-	const merged = firstResults.map(({ score, ...rest }) => rest);
+	const merged = firstResults.map(({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }) => rest);
 
 	const prefetchIconsInBackground = (items: Array<{ name: string; path: string; type: string }>) => {
 		(async () => {
@@ -2653,7 +2866,7 @@ ipcMain.handle(
 		prefetchIconsInBackground(appResults.map(({ score, ...rest }) => rest));
 	}
 
-	prefetchIconsInBackground(top500.map(({ score, ...rest }) => rest));
+	prefetchIconsInBackground(top500.map(({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }) => rest));
 
 	if (remainingBatch.length > 0) {
 		(async () => {
@@ -2666,15 +2879,15 @@ ipcMain.handle(
 					.map((r) => {
 						if (r.type === 'file' || r.type === 'folder') {
 							const cached = iconDataCache.get(`file:${r.path}`) || '';
-							const { score, ...rest } = cached ? { ...r, icon: cached } : r;
+							const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = cached ? { ...r, icon: cached } : r;
 							return rest;
 						}
 						if (r.type === 'app') {
 							const cached = iconDataCache.get(`app:${r.path}`) || '';
-							const { score, ...rest } = cached ? { ...r, icon: cached } : r;
+							const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = cached ? { ...r, icon: cached } : r;
 							return rest;
 						}
-						const { score, ...rest } = r;
+						const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = r;
 						return rest;
 					});
 
