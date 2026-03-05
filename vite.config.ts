@@ -15,6 +15,10 @@ export default defineConfig(({ command }) => {
 						if (isServe) startup();
 					},
 				},
+				// FileIndex Worker：把索引构建/搜索等长任务放到 Worker 线程，避免主线程卡顿
+				{
+					entry: 'electron/fileIndex.worker.ts',
+				},
 				{
 					entry: 'electron/preload.ts',
 					onstart({ reload }) {

@@ -7,6 +7,10 @@ export function useWindowResizeHandles() {
   const startWidthRef = useRef(0);
   const startXPosRef = useRef(0);
   const resizeDirRef = useRef<"left" | "right" | null>(null);
+  const rafIdRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
+  const pendingBoundsRef = useRef<{ width: number; x: number } | null>(null);
+  const lastSentRef = useRef<{ width: number; x: number } | null>(null);
 
   const startResizing = async (e: React.MouseEvent, dir: "left" | "right") => {
     // 开始拖拽：读取窗口当前 bounds 作为基准，后续根据鼠标移动计算宽度与位置
@@ -25,6 +29,36 @@ export function useWindowResizeHandles() {
   };
 
   useEffect(() => {
+    const flush = () => {
+      // 拖拽过程中 mousemove 频率很高：这里用 rAF + “单次在途”把 IPC 频率压到可控范围，避免拖拽卡顿
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (inFlightRef.current) return;
+      const next = pendingBoundsRef.current;
+      if (!next) return;
+
+      const last = lastSentRef.current;
+      if (last && last.width === next.width && last.x === next.x) {
+        pendingBoundsRef.current = null;
+        return;
+      }
+
+      inFlightRef.current = true;
+      pendingBoundsRef.current = null;
+      lastSentRef.current = next;
+      void window.ipcRenderer
+        ?.invoke("set-window-bounds", next)
+        .catch(() => {})
+        .finally(() => {
+          inFlightRef.current = false;
+          if (pendingBoundsRef.current) {
+            rafIdRef.current = requestAnimationFrame(flush);
+          }
+        });
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current) return;
 
@@ -53,10 +87,8 @@ export function useWindowResizeHandles() {
         newWidth = 1000;
       }
 
-      window.ipcRenderer?.invoke("set-window-bounds", {
-        width: Math.round(newWidth),
-        x: Math.round(newX),
-      });
+      pendingBoundsRef.current = { width: Math.round(newWidth), x: Math.round(newX) };
+      if (rafIdRef.current == null) rafIdRef.current = requestAnimationFrame(flush);
     };
 
     const handleMouseUp = () => {
@@ -66,6 +98,9 @@ export function useWindowResizeHandles() {
         resizeDirRef.current = null;
         document.body.style.cursor = "";
       }
+      pendingBoundsRef.current = null;
+      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
     };
 
     window.addEventListener("mousemove", handleMouseMove);

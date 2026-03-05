@@ -544,7 +544,8 @@ export function useSearchController() {
         const serverOrdered = limitResults(dedupeResults(nextResults));
         startTransition(() => {
           setResults((prev) => {
-            const merged = mergeByServerOrder(prev, serverOrdered);
+            // 增量回填/索引刷新时只“补齐/更新”数据，不重排已加载的列表顺序，避免拖拽/操作时出现跳动
+            const merged = limitResults(mergeResultsStable(prev, serverOrdered));
             setTotalCount((c) => Math.max(c, respTotal, merged.length));
             return merged;
           });

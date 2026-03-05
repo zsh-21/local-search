@@ -3,7 +3,7 @@ import path from 'node:path';
 import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
-import { FileIndex } from './fileIndex';
+import { Worker } from 'node:worker_threads';
 import { hasChineseChar, toPinyinFull, toPinyinInitials } from './pinyin';
 
 interface InstalledApp {
@@ -60,11 +60,151 @@ const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'co
 const WIN_CONTEXT_MENU_VERB_KEY = 'FileSearchAddToQuickList';
 const WIN_CONTEXT_MENU_LABEL = '添加到FileSearch的快捷列表';
 
+type FileIndexWorkerOp =
+	| 'init'
+	| 'reset'
+	| 'getStatus'
+	| 'setSearchWindowVisible'
+	| 'setIgnoredPaths'
+	| 'pauseIndexingFor'
+	| 'loadCache'
+	| 'buildIfEmpty'
+	| 'rebuild'
+	| 'ingestPath'
+	| 'removePath'
+	| 'search';
+
+// 主进程的“忽略路径”判断做本地缓存：避免 watcher 事件里频繁跨线程调用
+let ignoredPrefixesCache: Array<{ prefix: string; prefixWithSep: string }> = [];
+let ignoredAnyDirNamesCache = new Set<string>();
+
+function setIgnoredPathsCache(paths: string[]) {
+	const raw: string[] = Array.isArray(paths) ? paths : [];
+	const next: Array<{ prefix: string; prefixWithSep: string }> = [];
+	const seen = new Set<string>();
+	const anyDirNames = new Set<string>();
+	for (const v of raw) {
+		if (typeof v !== 'string') continue;
+		let s = v.replace(/\//g, '\\').trim();
+		if (!s) continue;
+		s = s.replace(/\\+/g, '\\');
+		const anyDirMatch = s.match(/^\*\*\\([^\\\/]+)$/) || s.match(/^\*\*\/([^\\\/]+)$/);
+		if (anyDirMatch) {
+			const name = (anyDirMatch[1] || '').trim().toLowerCase();
+			if (name) anyDirNames.add(name);
+			continue;
+		}
+		if (/^[a-zA-Z]:$/.test(s)) s += '\\';
+		if (/^[a-zA-Z]:\\$/.test(s)) {
+			const p = s.toLowerCase();
+			if (seen.has(p)) continue;
+			seen.add(p);
+			next.push({ prefix: p, prefixWithSep: p });
+			continue;
+		}
+		s = s.replace(/\\$/g, '');
+		const p = s.toLowerCase();
+		if (!p) continue;
+		if (seen.has(p)) continue;
+		seen.add(p);
+		next.push({ prefix: p, prefixWithSep: `${p}\\` });
+	}
+	next.sort((a, b) => b.prefix.length - a.prefix.length);
+	ignoredPrefixesCache = next;
+	ignoredAnyDirNamesCache = anyDirNames;
+}
+
+function isIgnoredPathByCache(targetPath: string) {
+	if (!targetPath) return false;
+	const t = targetPath.replace(/\//g, '\\').replace(/\\+/g, '\\').toLowerCase();
+	if (ignoredAnyDirNamesCache.size > 0) {
+		for (const name of ignoredAnyDirNamesCache) {
+			if (!name) continue;
+			const seg = `\\${name}\\`;
+			if (t.includes(seg)) return true;
+			if (t.endsWith(`\\${name}`) || t === name) return true;
+		}
+	}
+	if (!ignoredPrefixesCache.length) return false;
+	for (const it of ignoredPrefixesCache) {
+		if (t === it.prefix) return true;
+		if (t.startsWith(it.prefixWithSep)) return true;
+	}
+	return false;
+}
+
+function createFileIndexWorkerClient(options: { cachePath: string; maxEntries?: number }) {
+	let worker: Worker | null = null;
+	let seq = 0;
+	const pending = new Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>();
+
+	const ensure = () => {
+		if (worker) return worker;
+		// Worker 脚本由 vite-plugin-electron 构建到 dist-electron，同目录下直接加载
+		const workerPath = path.join(__dirname, 'fileIndex.worker.js');
+		worker = new Worker(workerPath);
+		worker.on('message', (msg: any) => {
+			const id = typeof msg?.id === 'number' ? msg.id : -1;
+			const waiter = pending.get(id);
+			if (!waiter) return;
+			pending.delete(id);
+			if (msg?.ok) waiter.resolve(msg.result);
+			else waiter.reject(new Error(typeof msg?.error === 'string' ? msg.error : 'worker 调用失败'));
+		});
+		worker.on('error', (err) => {
+			// worker 崩溃时，清空挂起请求避免“永远不返回”导致 UI 卡死
+			for (const [, waiter] of pending) waiter.reject(err);
+			pending.clear();
+		});
+		worker.on('exit', () => {
+			worker = null;
+		});
+
+		void call('init', options);
+		return worker;
+	};
+
+	const call = <T>(op: FileIndexWorkerOp, payload?: any) => {
+		ensure();
+		seq += 1;
+		const id = seq;
+		return new Promise<T>((resolve, reject) => {
+			pending.set(id, { resolve, reject });
+			worker?.postMessage({ id, op, payload });
+		});
+	};
+
+	return {
+		reset: () => call<void>('reset'),
+		getStatus: () => call<any>('getStatus'),
+		setSearchWindowVisible: (visible: boolean) => {
+			// 该操作无需等待返回：仅用于调整索引“让出时间片”的策略
+			void call<void>('setSearchWindowVisible', { visible });
+		},
+		setIgnoredPaths: async (paths: string[]) => {
+			// 同步更新主进程本地缓存 + Worker 内部忽略规则，保证 watcher 与索引一致
+			setIgnoredPathsCache(paths);
+			await call<void>('setIgnoredPaths', { paths });
+		},
+		pauseIndexingFor: (ms: number) => {
+			// 该操作无需等待：用于在交互期快速提示 Worker“暂停索引让路”
+			void call<void>('pauseIndexingFor', { ms });
+		},
+		loadCache: () => call<boolean>('loadCache'),
+		buildIfEmpty: () => call<void>('buildIfEmpty'),
+		rebuild: () => call<void>('rebuild'),
+		ingestPath: (p: string, isDirectory: boolean) => call<void>('ingestPath', { path: p, isDirectory }),
+		removePath: (p: string) => call<void>('removePath', { path: p }),
+		search: (query: string, limit: number, options?: { where?: any }) =>
+			call<any>('search', { query, limit, options }),
+	};
+}
+
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let installedAppsCache: InstalledApp[] = [];
-const fileIndex = new FileIndex({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
+const fileIndex = createFileIndexWorkerClient({ cachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
 // 运行期可能插拔U盘，watcher 需要按 root 动态增删
 const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 // Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
@@ -458,7 +598,8 @@ async function clearLocalCacheButKeepAccountAndSettings() {
 	try {
 		recentIndex.clear();
 		iconDataCache.clear();
-		fileIndex.reset();
+		// 索引复位放到 Worker 线程执行：避免主线程残留状态影响后续重建
+		await fileIndex.reset();
 
 		await fs.rm(FILE_INDEX_PATH, { force: true }).catch(() => {});
 		await fs.rm(`${FILE_INDEX_PATH}.tmp`, { force: true }).catch(() => {});
@@ -1056,7 +1197,8 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 }
 
 function shouldSkipWatchPath(fullPath: string) {
-	if (fileIndex.isIgnoredPath(fullPath)) return true;
+	// watcher 的过滤必须快速：这里用主进程缓存的 ignore 规则避免跨线程往返
+	if (isIgnoredPathByCache(fullPath)) return true;
 	const lower = fullPath.toLowerCase();
 	return (
 		lower.includes('\\node_modules\\') ||
@@ -1445,7 +1587,8 @@ if (!gotTheLock) {
 
 	app.whenReady().then(async () => {
 		const initialSettings = loadSettings();
-		fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
+		// 初始化时同步设置忽略规则（主进程缓存 + Worker 内索引规则）
+		await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
 		createWindow();
 		ensureTray();
 		registerShortcuts();
@@ -1463,7 +1606,8 @@ if (!gotTheLock) {
 				await fileIndex.loadCache();
 				const meta = loadFileIndexMeta();
 				if (!meta || meta.version !== FILE_INDEX_VERSION) {
-					fileIndex.reset();
+					// 版本不一致时需要彻底复位再重建：避免旧索引残留影响结果
+					await fileIndex.reset();
 					await fileIndex.rebuild();
 					saveFileIndexMeta({ version: FILE_INDEX_VERSION });
 				} else {
@@ -1608,7 +1752,7 @@ ipcMain.handle('get-image-data-url', (_event, targetPath: string) => {
 	}
 });
 
-ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
+ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
 	const prevIgnoredPaths = loadSettings().ignoredPaths;
 	const customSearchTypes: string[] = Array.isArray(settings?.customSearchTypes)
 		? Array.from(
@@ -1756,7 +1900,8 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings) => {
 		openAsHidden: true,
 		path: app.getPath('exe'),
 	});
-	fileIndex.setIgnoredPaths(next.ignoredPaths);
+	// 保存设置后同步更新忽略规则（主进程缓存 + Worker 内索引规则）
+	await fileIndex.setIgnoredPaths(next.ignoredPaths);
 	saveSettings(next);
 	// historyLimit 变化时裁剪历史
 	const history = loadHistory();
@@ -1916,7 +2061,7 @@ ipcMain.handle('open-external', async (_event, url: string) => {
 ipcMain.handle('rebuild-file-index', async (_event, options?: { ignoredPaths?: string[] }) => {
 	// 全盘索引需要尊重用户配置的限制（例如路径黑名单）：这里允许设置页把“当前配置”传进来生效
 	if (Array.isArray(options?.ignoredPaths)) {
-		fileIndex.setIgnoredPaths(options.ignoredPaths);
+		await fileIndex.setIgnoredPaths(options.ignoredPaths);
 	}
 	await fileIndex.rebuild();
 	return await fileIndex.getStatus();
@@ -2312,7 +2457,7 @@ ipcMain.handle(
 		size: number;
 	}> = [];
 	for (const r of fileSearch.results) {
-		if (fileIndex.isIgnoredPath(r.path)) continue;
+		if (isIgnoredPathByCache(r.path)) continue;
 		const isDirectory = Boolean(r.isDirectory);
 		const timeMs = 0;
 		const size = 0;
@@ -2375,7 +2520,7 @@ ipcMain.handle(
 			const key = normalizeRecentKey(it.path);
 			if (!key) continue;
 			if (seen.has(key)) continue;
-			if (fileIndex.isIgnoredPath(it.path)) continue;
+			if (isIgnoredPathByCache(it.path)) continue;
 
 			const weighted = computeWeightedNameMatch(it.name);
 			const legacy = scoreRecentName(it.name);
@@ -2511,7 +2656,7 @@ ipcMain.handle(
 					const key = normalizeRecentKey(fullPath);
 					if (!key) continue;
 					if (seen.has(key)) continue;
-					if (fileIndex.isIgnoredPath(fullPath)) continue;
+					if (isIgnoredPathByCache(fullPath)) continue;
 
 					const st = safeStat(fullPath);
 					if (!st) continue;
@@ -2626,7 +2771,7 @@ ipcMain.handle(
 					const key = normalizeRecentKey(fullPath);
 					if (!key) continue;
 					if (seen.has(key)) continue;
-					if (fileIndex.isIgnoredPath(fullPath)) continue;
+					if (isIgnoredPathByCache(fullPath)) continue;
 					if (!existsSync(fullPath)) continue;
 
 					// 盘符兜底扫描：只把“命中的条目”写入 recentIndex 与主索引，避免全盘扫描带来卡顿
