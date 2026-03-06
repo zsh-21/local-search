@@ -2540,10 +2540,11 @@ ipcMain.handle(
 	if (searchTypeId === 'settings') {
 		const out: Array<{ name: string; path: string; type: string; score: number }> = [];
 		for (const it of settingsItems) {
-			const nameLower = it.name.toLowerCase();
-			if (!keywords.some((k) => nameLower.includes(k))) continue;
-			const baseScore = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
-			const score = computeCombinedScore(baseScore, 'settings', it.uri, now);
+			// 设置项也需要支持拼音/首字母：例如“设置”可用 “sz” 命中“系统设置”
+			const weighted = computeWeightedNameMatch(it.name);
+			if (weighted.weightedScore <= 0) continue;
+			const baseScore = weighted.weightedScore * 400 + (weighted.matchIndex <= 2 ? 1500 : 0);
+			const score = computeCombinedScore(baseScore, 'settings', it.uri, getLastUsedMs(it.uri));
 			out.push({ name: it.name, path: it.uri, type: 'settings', score });
 		}
 		const merged = out
@@ -2557,9 +2558,10 @@ ipcMain.handle(
 			? (() => {
 					const out: Array<{ name: string; path: string; type: string; score: number }> = [];
 					for (const it of settingsItems) {
-						const nameLower = it.name.toLowerCase();
-						if (!keywords.some((k) => nameLower.includes(k))) continue;
-						const baseScore = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
+						// 所有类型下的设置项同样支持拼音/首字母搜索
+						const weighted = computeWeightedNameMatch(it.name);
+						if (weighted.weightedScore <= 0) continue;
+						const baseScore = weighted.weightedScore * 400 + (weighted.matchIndex <= 2 ? 1500 : 0);
 						const score = computeCombinedScore(baseScore, 'settings', it.uri, getLastUsedMs(it.uri));
 						out.push({ name: it.name, path: it.uri, type: 'settings', score });
 					}
