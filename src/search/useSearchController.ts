@@ -533,6 +533,9 @@ export function useSearchController() {
 
   useEffect(() => {
     if (searchTypeId !== "app") return;
+    // 搜索进行中时结果会频繁变化：此时抢占式补齐图标会导致频繁 setState，引发列表短暂卡顿/闪动
+    // 这里等本轮搜索结束后再拉取首屏缺失图标，并批量合并到 results，减少渲染压力
+    if (isSearching) return;
     const token = iconFetchTokenRef.current;
     if (iconFetchStartedTokenRef.current === token) return;
     if (!window.ipcRenderer) return;
@@ -563,18 +566,20 @@ export function useSearchController() {
           })) as string | undefined;
           if (cancelled || iconFetchTokenRef.current !== token) return;
           if (typeof icon !== "string" || !icon) continue;
-          startTransition(() => {
-            setResults((prev) => limitResults(mergeResultsStable(prev, [{ ...it, icon }])));
-          });
+          // 将图标回填统一走“批量合并”队列：避免每个 icon 都触发一次列表重渲染导致卡顿
+          pendingAppendRef.current = [...pendingAppendRef.current, { ...it, icon }];
+          if (flushAppendTimerRef.current == null) {
+            flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 50);
+          }
         } catch {}
       }
     };
 
-    void Promise.all([run(), run(), run(), run()]);
+    void Promise.all([run(), run()]);
     return () => {
       cancelled = true;
     };
-  }, [results, searchTypeId]);
+  }, [results, searchTypeId, isSearching]);
 
   useEffect(() => {
     const trimmed = parseDrivePrefix(query).term;
