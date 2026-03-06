@@ -2212,6 +2212,13 @@ ipcMain.handle(
 	// 综合排序权重：①名称匹配度 > ④访问频次 > ③常用类型 > ②时间（新建/改动更近）
 	const now = Date.now();
 	const historyStats = loadHistoryStats();
+	const getLastUsedMs = (rawPath: string) => {
+		const key = normalizeHistoryKey(rawPath);
+		if (!key) return 0;
+		const it = historyStats.byPath[key];
+		const lastUsed = typeof it?.lastUsed === 'number' && it.lastUsed > 0 ? it.lastUsed : 0;
+		return lastUsed;
+	};
 	const getAccessBoost = (rawPath: string) => {
 		const key = normalizeHistoryKey(rawPath);
 		if (!key) return 0;
@@ -2407,7 +2414,7 @@ ipcMain.handle(
 						const nameLower = it.name.toLowerCase();
 						if (!keywords.some((k) => nameLower.includes(k))) continue;
 						const baseScore = nameLower.startsWith(lowerQuery) ? 50_000 : 30_000;
-						const score = computeCombinedScore(baseScore, 'settings', it.uri, now);
+						const score = computeCombinedScore(baseScore, 'settings', it.uri, getLastUsedMs(it.uri));
 						out.push({ name: it.name, path: it.uri, type: 'settings', score });
 					}
 					return out;
@@ -2447,7 +2454,7 @@ ipcMain.handle(
 				path: appItem.AppID,
 				type: 'app',
 				icon: iconData,
-				score: computeCombinedScore(10_000 + nameMatchScore, 'app', appItem.AppID, now),
+				score: computeCombinedScore(10_000 + nameMatchScore, 'app', appItem.AppID, getLastUsedMs(appItem.AppID)),
 			});
 
 			// 未命中缓存时异步预取：主进程会分批回填 icon，避免影响输入/切换类型
@@ -2484,7 +2491,7 @@ ipcMain.handle(
 					path: appItem.AppID,
 					type: 'app',
 					icon: iconData,
-					score: computeCombinedScore(baseScore + Math.max(0, relatedMatchScore), 'app', appItem.AppID, now),
+					score: computeCombinedScore(baseScore + Math.max(0, relatedMatchScore), 'app', appItem.AppID, getLastUsedMs(appItem.AppID)),
 				});
 				matchedAppIds.add(appIdLower);
 				added += 1;
@@ -2539,6 +2546,7 @@ ipcMain.handle(
 		path: string;
 		name: string;
 		isDirectory: boolean;
+		oramaTie: number;
 		score: number;
 		weightedScore: number;
 		matchIndex: number;
@@ -2590,6 +2598,7 @@ ipcMain.handle(
 			path: r.path,
 			name: r.name,
 			isDirectory,
+			oramaTie,
 			score,
 			weightedScore,
 			matchIndex,
@@ -2647,16 +2656,17 @@ ipcMain.handle(
 			}
 
 			const type = isDirectory ? 'folder' : 'file';
-			const score = computeCombinedScore(baseWeighted * 100, type, it.path, timeMs);
+			const score = computeCombinedScore(baseWeighted * 100, type, it.path, it.timeMs || 0);
 			filteredFiles.push({
 				path: it.path,
 				name: it.name,
 				isDirectory,
+				oramaTie: 0,
 				score,
 				weightedScore: baseWeighted,
 				matchIndex: weighted.matchIndex,
 				nameLen: weighted.nameLen,
-				timeMs,
+				timeMs: it.timeMs || 0,
 				size: 0,
 			});
 			seen.add(key);
@@ -2785,6 +2795,7 @@ ipcMain.handle(
 						path: fullPath,
 						name: ent.name,
 						isDirectory,
+						oramaTie: 0,
 						score,
 						weightedScore: baseWeighted,
 						matchIndex: weighted.matchIndex,
@@ -2905,6 +2916,7 @@ ipcMain.handle(
 							path: fullPath,
 							name: ent.name,
 							isDirectory,
+							oramaTie: 0,
 							score,
 							weightedScore: baseWeighted,
 							matchIndex: weighted.matchIndex,
@@ -2970,6 +2982,14 @@ ipcMain.handle(
 			it.timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
 			it.size = typeof (st as any).size === 'number' ? (st as any).size : 0;
 		} catch {}
+	}
+	for (let i = 0; i < statBudget; i++) {
+		const it = filteredFiles[i];
+		if (!it) continue;
+		if (!it.timeMs) continue;
+		const baseScore = (it.weightedScore || 0) * 100 + (it.oramaTie || 0);
+		const type = it.isDirectory ? 'folder' : 'file';
+		it.score = computeCombinedScore(baseScore, type, it.path, it.timeMs);
 	}
 	filteredFiles.sort(compareFilesByWeighted);
 
