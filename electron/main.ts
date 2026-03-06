@@ -217,11 +217,21 @@ const recentIndex = new Map<string, { path: string; name: string; isDirectory: b
 let recentReconcileInFlight = false;
 let recentReconcileLastAt = 0;
 const startMenuShortcutIndex = new Map<string, string>();
+let startMenuShortcutIndexReady = false;
+let startMenuShortcutIndexInitPromise: Promise<void> | null = null;
 const iconDataCache = new Map<string, string>();
 const ICON_CACHE_MAX = 1500;
 
 function setIconCache(key: string, value: string) {
 	if (!key) return;
+	// 只缓存“非空 icon”：避免首次提取失败把空字符串写进缓存，导致后续永远认为“已缓存”而无法再补齐图标
+	// 非空 icon 才能显著提升二次命中速度；空值则交由后续请求/回填重试
+	if (typeof value !== 'string' || !value) {
+		// 如果之前误写入了空值，这里顺手清掉，避免干扰后续补齐
+		const prev = iconDataCache.get(key) || '';
+		if (!prev) iconDataCache.delete(key);
+		return;
+	}
 	if (iconDataCache.size >= ICON_CACHE_MAX && !iconDataCache.has(key)) {
 		const firstKey = iconDataCache.keys().next().value;
 		if (firstKey) iconDataCache.delete(firstKey);
@@ -282,6 +292,21 @@ function buildStartMenuShortcutIndex() {
 	};
 
 	for (const r of roots) walk(r);
+	startMenuShortcutIndexReady = true;
+}
+
+function ensureStartMenuShortcutIndex() {
+	if (process.platform !== 'win32') return Promise.resolve();
+	if (startMenuShortcutIndexReady) return Promise.resolve();
+	if (startMenuShortcutIndexInitPromise) return startMenuShortcutIndexInitPromise;
+	startMenuShortcutIndexInitPromise = Promise.resolve()
+		.then(() => {
+			if (!startMenuShortcutIndexReady) buildStartMenuShortcutIndex();
+		})
+		.finally(() => {
+			startMenuShortcutIndexInitPromise = null;
+		});
+	return startMenuShortcutIndexInitPromise;
 }
 
 function findStartMenuShortcutByName(name: string) {
@@ -389,6 +414,7 @@ async function getAppIconData(appName: string, appId: string) {
 		if ((resolved.includes('\\') || resolved.includes('/')) && existsSync(resolved)) {
 			iconData = await getFileIconData(resolved);
 		} else {
+			if (!startMenuShortcutIndexReady && startMenuShortcutIndex.size <= 0) await ensureStartMenuShortcutIndex();
 			const shortcut = findStartMenuShortcutByName(appName);
 			if (shortcut && existsSync(shortcut)) iconData = await getFileIconData(shortcut);
 		}
@@ -1367,6 +1393,31 @@ async function reconcileRecentIndex(budgetMs = 1200) {
 
 function openSearchWindow() {
 	const settings = loadSettings();
+	const sendOpenEvent = () => {
+		// 首次呼出时渲染进程可能还在加载：这里统一在“实际 show 的时刻”发送事件，避免丢事件导致空白/状态不一致
+		if (!win || win.isDestroyed()) return;
+		try {
+			if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
+			else win.webContents.send('reset-search');
+		} catch {}
+	};
+	const showWhenReady = () => {
+		// dev 首次冷启动时 Vite 页面可能未完成首帧：如果此时 show，会只看到 backgroundColor 纯色底
+		// 这里等待 did-finish-load 后再 show，避免短时间“空白面板”体验；如果已加载则立即显示
+		if (!win || win.isDestroyed()) return;
+		const wc = win.webContents;
+		const doShow = () => {
+			if (!win || win.isDestroyed()) return;
+			win.show();
+			win.focus();
+			sendOpenEvent();
+		};
+		if (typeof wc?.isLoading === 'function' && wc.isLoading()) {
+			wc.once('did-finish-load', () => doShow());
+			return;
+		}
+		doShow();
+	};
 	if (win && !win.isDestroyed()) {
 		if (win.isVisible()) {
 			win.focus();
@@ -1383,15 +1434,12 @@ function openSearchWindow() {
 			searchHideTimer = null;
 		}
 		ignoreSearchBlurUntil = Date.now() + 900;
-		win.show();
-		win.focus();
+		showWhenReady();
 		void reconcileRecentIndex();
 		searchVisibleAt = Date.now();
 		setTimeout(() => {
 			if (win && !win.isDestroyed() && win.isVisible()) win.focus();
 		}, 80);
-		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
-		else win.webContents.send('reset-search');
 		return;
 	}
 	win = null;
@@ -1399,11 +1447,8 @@ function openSearchWindow() {
 	fileIndex.setSearchWindowVisible(true);
 	// 新窗口显示前触发一次“索引为空则重建”，避免用户首次呼出后看到空结果
 	void fileIndex.buildIfEmpty();
-	setTimeout(() => {
-		if (!win || win.isDestroyed()) return;
-		if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
-		else win.webContents.send('reset-search');
-	}, 60);
+	// 新建窗口时同样等页面首帧准备好再 show 与发事件，避免首次呼出空白
+	showWhenReady();
 }
 
 function toggleSearchWindow() {
@@ -1600,7 +1645,7 @@ if (!gotTheLock) {
 		void startUserDirectoryWatchers();
 		app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 
-		setTimeout(() => buildStartMenuShortcutIndex(), 0);
+		setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
 		void (async () => {
 			try {
 				await fileIndex.loadCache();
@@ -2036,14 +2081,39 @@ ipcMain.handle('open-app', async (event, target: string) => {
 	}
 });
 
-ipcMain.handle('open-folder', async (event, filePath: string) => {
+ipcMain.handle('open-folder', async (event, input: any) => {
 	try {
-		const resolved = resolveAppId(filePath);
+		// 兼容旧调用：open-folder(path)；新调用：open-folder({ type, path, name })
+		const p = typeof input === 'string' ? input : typeof input?.path === 'string' ? input.path : '';
+		const t = typeof input?.type === 'string' ? input.type : '';
+		const n = typeof input?.name === 'string' ? input.name : '';
+		const resolved = resolveAppId(p);
+
 		if (resolved.includes('\\') || resolved.includes('/')) {
-			shell.showItemInFolder(resolved);
+			// 文件系统路径：文件选中父目录；文件夹则直接打开该目录，符合“打开目录”直觉
+			try {
+				const st = statSync(resolved);
+				if (st.isDirectory()) {
+					await shell.openPath(resolved);
+				} else {
+					shell.showItemInFolder(resolved);
+				}
+			} catch {
+				// stat 失败时退化为 showItemInFolder，至少能定位到资源所在目录
+				shell.showItemInFolder(resolved);
+			}
 		} else {
-			// For AppIDs, just open the apps folder
-			await shell.openExternal(`shell:AppsFolder`);
+			// AppID 没有稳定“安装目录”可供打开：优先定位到开始菜单/桌面快捷方式（.lnk）所在目录，避免打开 AppsFolder 虚拟目录导致用户无法进一步操作
+			await ensureStartMenuShortcutIndex();
+			const shortcut = n ? findStartMenuShortcutByName(n) : '';
+			if (shortcut && existsSync(shortcut)) {
+				shell.showItemInFolder(shortcut);
+			} else if (t === 'app' && p) {
+				// 兜底：若找不到快捷方式，至少打开 AppsFolder 让用户看到应用列表
+				await shell.openExternal(`shell:AppsFolder`);
+			} else {
+				await shell.openExternal(`shell:AppsFolder`);
+			}
 		}
 		BrowserWindow.fromWebContents(event.sender)?.hide();
 		return true;
@@ -2055,6 +2125,25 @@ ipcMain.handle('open-folder', async (event, filePath: string) => {
 ipcMain.handle('open-external', async (_event, url: string) => {
 	if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
 		await shell.openExternal(url);
+	}
+});
+
+ipcMain.handle('get-result-icon', async (_event, item: { type: string; path: string; name?: string }) => {
+	try {
+		const t = typeof item?.type === 'string' ? item.type : '';
+		const p = typeof item?.path === 'string' ? item.path : '';
+		const n = typeof item?.name === 'string' ? item.name : '';
+		if (!t || !p) return '';
+		if (t === 'app') {
+			await ensureStartMenuShortcutIndex();
+			return await getAppIconData(n, p);
+		}
+		if (t === 'file') {
+			return await getFileIconData(p);
+		}
+		return '';
+	} catch {
+		return '';
 	}
 });
 
@@ -2075,7 +2164,8 @@ ipcMain.handle('get-file-index-status', async () => {
 ipcMain.handle(
 	'search-files',
 	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
-	if (!query || query.trim().length < 2) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
+	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
+	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
 	void reconcileRecentIndex();
@@ -2959,6 +3049,37 @@ ipcMain.handle(
 		return r;
 	});
 
+	// “应用”类型：用户更在意“名称+图标同时出现”。这里在返回首批结果前，给前若干个应用做一次“有限时长”的同步补齐。
+	// 兜底：若在预算内仍未取到图标，则依赖后续 more-results 增量回填补齐，保证不会长期缺失。
+	const syncPrefetchInitialAppIcons = async (items: Array<{ name: string; path: string; type: string; icon?: string }>) => {
+		if (searchTypeId !== 'app') return;
+		await ensureStartMenuShortcutIndex();
+		const targets = items.filter((x) => x?.type === 'app').slice(0, 18);
+		if (targets.length === 0) return;
+
+		const deadline = Date.now() + 650;
+		const queue = targets.slice();
+		const withDeadline = <T,>(p: Promise<T>, ms: number) =>
+			Promise.race([p, new Promise<T>((resolve) => setTimeout(() => resolve('' as any), ms))]);
+
+		const worker = async () => {
+			while (queue.length > 0) {
+				const left = deadline - Date.now();
+				if (left <= 0) return;
+				const it = queue.shift();
+				if (!it || !it.path) continue;
+				if (typeof it.icon === 'string' && it.icon) continue;
+				const icon = await withDeadline(getAppIconData(it.name, it.path), Math.min(180, left));
+				if (typeof icon === 'string' && icon) it.icon = icon;
+			}
+		};
+
+		// 并发数适中：避免一次性把主线程压满，同时提升命中速度
+		await Promise.all([worker(), worker(), worker(), worker()]);
+	};
+
+	await syncPrefetchInitialAppIcons(firstResults as any);
+
 	const merged = firstResults.map(({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }) => rest);
 
 	const prefetchIconsInBackground = (items: Array<{ name: string; path: string; type: string }>) => {
@@ -2976,14 +3097,26 @@ ipcMain.handle(
 					// 文件夹图标由渲染侧直接展示（📂），跳过系统图标提取以提升整体速度
 					if (it.type === 'file') {
 						const key = `file:${it.path}`;
-						if (iconDataCache.has(key)) continue;
+						// 首次搜索“图标缺失”的根因：图标可能已被其他异步路径写入缓存，但这里因 has(key) 直接跳过，导致未回填到渲染端
+						// 这里改为：只要缓存里已有非空 icon，就直接推送 updates；否则才去提取并推送
+						const cached = iconDataCache.get(key) || '';
+						if (cached) {
+							updates.push({ ...it, icon: cached });
+							continue;
+						}
 						const icon = await getFileIconData(it.path);
 						if (typeof icon === 'string' && icon) updates.push({ ...it, icon });
 						continue;
 					}
 					if (it.type === 'app') {
 						const key = `app:${it.path}`;
-						if (iconDataCache.has(key)) continue;
+						// 首次搜索“图标缺失”的根因：图标可能已被其他异步路径写入缓存，但这里因 has(key) 直接跳过，导致未回填到渲染端
+						// 这里改为：只要缓存里已有非空 icon，就直接推送 updates；否则才去提取并推送
+						const cached = iconDataCache.get(key) || '';
+						if (cached) {
+							updates.push({ ...it, icon: cached });
+							continue;
+						}
 						const icon = await getAppIconData(it.name, it.path);
 						if (typeof icon === 'string' && icon) updates.push({ ...it, icon });
 						continue;

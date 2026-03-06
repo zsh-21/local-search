@@ -237,6 +237,8 @@ export function SearchViewImpl() {
 
   const BottomInfo = () => {
     if (c.results.length === 0) return null;
+    const ignored = Array.isArray(c.settings.ignoredPaths) ? c.settings.ignoredPaths : [];
+    const hasIgnored = ignored.some((p) => typeof p === "string" && p.trim().length > 0);
     return (
       <div className="list-bottom-info">
         {isHistoryMode ? (
@@ -246,6 +248,11 @@ export function SearchViewImpl() {
         ) : (
           <div className="no-more-results">{`共 ${c.totalCount} 个结果`}</div>
         )}
+        {hasIgnored ? (
+          <div className="no-more-results ignore-tips">
+            您配置了黑名单路径，如果搜索不到您想要的文件，可以尝试在【设置-搜索-黑名单路径】移除对应的路径再试~
+          </div>
+        ) : null}
       </div>
     );
   };

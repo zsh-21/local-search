@@ -165,7 +165,7 @@ export function AppearanceSection({
                 setDraft({ ...draft, backgroundImageOpacity: next });
                 setError("");
               }}
-              style={{ flex: 1, minWidth: 180 }}
+              style={{ flex: 1, minWidth: 100 }}
             />
             <span style={{ color: "var(--fs-muted)", fontSize: 12, fontWeight: 750, width: 44, textAlign: "right" }}>
               {Math.round((draft.backgroundImageOpacity || 0) * 100)}%

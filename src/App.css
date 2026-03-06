@@ -831,12 +831,14 @@ input::placeholder {
 }
 
 .list-bottom-info {
-  padding: 12px 0;
+  padding: 12px 0 0 0;
   display: flex;
   justify-content: center;
   align-items: center;
   border-top: 1px solid var(--fs-border);
   margin-top: 4px;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .loading-more,
@@ -851,6 +853,14 @@ input::placeholder {
 
 .no-more-results {
   opacity: 0.7;
+}
+
+.ignore-tips{
+  font-size: 10px;
+  color: var(--fs-muted);
+  opacity: 0.5;
+  font-weight: 500;
+  font-weight: bold;
 }
 
 /* 搜索结果列表容器：虚拟列表与空态展示的外层 */

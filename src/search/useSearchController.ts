@@ -55,6 +55,9 @@ export function useSearchController() {
   const searchSessionIdRef = useRef("");
   const pendingAppendRef = useRef<AppItem[]>([]);
   const flushAppendTimerRef = useRef<number | null>(null);
+  const iconFetchTokenRef = useRef(0);
+  const iconFetchStartedTokenRef = useRef(0);
+  const requestedIconKeysRef = useRef<Set<string>>(new Set());
   // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
   const typeSwitchRequestedRef = useRef(false);
   const shouldEchoSelectedOnceRef = useRef(false);
@@ -450,8 +453,8 @@ export function useSearchController() {
 
   useEffect(() => {
     const { term: trimmed, drive } = parseDrivePrefix(query);
-    if (!trimmed || trimmed.length < 2) {
-      // 少于 2 个字符时不触发搜索：空输入显示历史，其余清空结果并收起状态
+    if (!trimmed || trimmed.length < 1) {
+      // 空输入不触发搜索：显示历史；其余交由后续流程处理（支持单字符搜索）
       searchRequestIdRef.current += 1;
       if (trimmed.length === 0) {
         refreshHistory();
@@ -468,6 +471,9 @@ export function useSearchController() {
     const requestId = searchRequestIdRef.current;
     const searchSessionId = `${Date.now()}-${requestId}`;
     searchSessionIdRef.current = searchSessionId;
+    iconFetchTokenRef.current += 1;
+    iconFetchStartedTokenRef.current = 0;
+    requestedIconKeysRef.current.clear();
     setIsSearching(true);
     setHasMore(false);
     setTotalCount(0);
@@ -509,8 +515,53 @@ export function useSearchController() {
   }, [query, searchTypeId]);
 
   useEffect(() => {
+    if (searchTypeId !== "app") return;
+    const token = iconFetchTokenRef.current;
+    if (iconFetchStartedTokenRef.current === token) return;
+    if (!window.ipcRenderer) return;
+    if (!queryRef.current || queryRef.current.trim().length < 1) return;
+
+    const candidates = results
+      .filter((x) => x?.type === "app" && (!x.icon || !String(x.icon).trim()))
+      .slice(0, 24);
+    if (candidates.length === 0) return;
+
+    iconFetchStartedTokenRef.current = token;
+    const queue = candidates.slice();
+    let cancelled = false;
+
+    const run = async () => {
+      while (!cancelled && iconFetchTokenRef.current === token) {
+        const it = queue.shift();
+        if (!it) return;
+        const key = normalizeResultKey(it);
+        if (!key) continue;
+        if (requestedIconKeysRef.current.has(key)) continue;
+        requestedIconKeysRef.current.add(key);
+        try {
+          const icon = (await window.ipcRenderer.invoke("get-result-icon", {
+            type: it.type,
+            path: it.path,
+            name: it.name,
+          })) as string | undefined;
+          if (cancelled || iconFetchTokenRef.current !== token) return;
+          if (typeof icon !== "string" || !icon) continue;
+          startTransition(() => {
+            setResults((prev) => limitResults(mergeResultsStable(prev, [{ ...it, icon }])));
+          });
+        } catch {}
+      }
+    };
+
+    void Promise.all([run(), run(), run(), run()]);
+    return () => {
+      cancelled = true;
+    };
+  }, [results, searchTypeId]);
+
+  useEffect(() => {
     const trimmed = parseDrivePrefix(query).term;
-    if (!trimmed || trimmed.length < 2) return;
+    if (!trimmed || trimmed.length < 1) return;
     if (!isIndexing) return;
     if (isSearching) return;
 
@@ -604,7 +655,8 @@ export function useSearchController() {
       });
       return;
     }
-    window.ipcRenderer?.invoke("open-folder", app.path);
+    // “打开目录”需要在主进程区分 app/file/folder：应用优先定位到开始菜单快捷方式所在目录，而不是打开 AppsFolder 虚拟目录
+    window.ipcRenderer?.invoke("open-folder", { type: app.type, path: app.path, name: app.name });
   };
 
   const launchApp = (app: AppItem) => {
@@ -692,13 +744,13 @@ export function useSearchController() {
   const parsedQuery = useMemo(() => parseDrivePrefix(query), [query]);
   const trimmedQuery = parsedQuery.term;
   const showEmptyState =
-    trimmedQuery.length >= 2 &&
+    trimmedQuery.length >= 1 &&
     !isSearching &&
     !isIndexing &&
     results.length === 0;
   const showInputHint =
     trimmedQuery.length > 0 &&
-    trimmedQuery.length < 2 &&
+    trimmedQuery.length < 1 &&
     !isSearching &&
     !isIndexing &&
     results.length === 0;
