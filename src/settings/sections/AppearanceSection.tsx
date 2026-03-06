@@ -127,6 +127,7 @@ export function AppearanceSection({
                   return;
                 }
                 const p = typeof resp.path === "string" ? resp.path : "";
+                if (!p) return;
                 setDraft({ ...draft, backgroundImagePath: p });
               }}
             >
