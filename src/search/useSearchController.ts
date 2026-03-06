@@ -536,8 +536,9 @@ export function useSearchController() {
     // 搜索进行中时结果会频繁变化：此时抢占式补齐图标会导致频繁 setState，引发列表短暂卡顿/闪动
     // 这里等本轮搜索结束后再拉取首屏缺失图标，并批量合并到 results，减少渲染压力
     if (isSearching) return;
+    const now = Date.now();
+    if (iconFetchStartedTokenRef.current > 0 && now - iconFetchStartedTokenRef.current < 120) return;
     const token = iconFetchTokenRef.current;
-    if (iconFetchStartedTokenRef.current === token) return;
     if (!window.ipcRenderer) return;
     if (!queryRef.current || queryRef.current.trim().length < 1) return;
 
@@ -546,8 +547,9 @@ export function useSearchController() {
       .slice(0, 24);
     if (candidates.length === 0) return;
 
-    iconFetchStartedTokenRef.current = token;
+    iconFetchStartedTokenRef.current = now;
     const queue = candidates.slice();
+    const retryCounts = new Map<string, number>();
     let cancelled = false;
 
     const run = async () => {
@@ -565,13 +567,23 @@ export function useSearchController() {
             name: it.name,
           })) as string | undefined;
           if (cancelled || iconFetchTokenRef.current !== token) return;
-          if (typeof icon !== "string" || !icon) continue;
+          if (typeof icon !== "string" || !icon) {
+            const retried = retryCounts.get(key) || 0;
+            requestedIconKeysRef.current.delete(key);
+            if (retried < 2) {
+              retryCounts.set(key, retried + 1);
+              queue.push(it);
+            }
+            continue;
+          }
           // 将图标回填统一走“批量合并”队列：避免每个 icon 都触发一次列表重渲染导致卡顿
           pendingAppendRef.current = [...pendingAppendRef.current, { ...it, icon }];
           if (flushAppendTimerRef.current == null) {
             flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 50);
           }
-        } catch {}
+        } catch {
+          requestedIconKeysRef.current.delete(key);
+        }
       }
     };
 
