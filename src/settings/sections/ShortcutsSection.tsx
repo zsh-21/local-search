@@ -52,6 +52,44 @@ export function ShortcutsSection({
           </div>
         </div>
       </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">面板内快捷键（固定）</div>
+        <div className="shortcut-grid">
+          <div className="shortcut-row">
+            <div className="shortcut-label">隐藏面板</div>
+            <input className="shortcut-input" readOnly value="Esc" />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">切换类型</div>
+            <input className="shortcut-input" readOnly value="Tab / Shift+Tab" />
+          </div>
+          {/* <div className="shortcut-row">
+            <div className="shortcut-label">聚焦输入</div>
+            <input className="shortcut-input" readOnly value="Ctrl/Cmd+L 或 Ctrl/Cmd+K" />
+          </div> */}
+          <div className="shortcut-row">
+            <div className="shortcut-label">打开/运行</div>
+            <input className="shortcut-input" readOnly value="Enter" />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">打开目录</div>
+            <input className="shortcut-input" readOnly value="Ctrl/Cmd+Enter" />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">上下选择</div>
+            <input className="shortcut-input" readOnly value="↑ / ↓" />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">跳到首尾</div>
+            <input className="shortcut-input" readOnly value="Home / End" />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">翻页选择</div>
+            <input className="shortcut-input" readOnly value="PageUp / PageDown" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -34,6 +34,17 @@ export function useSearchController() {
   const [totalCount, setTotalCount] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [hoveredKey, setHoveredKey] = useState("");
+  const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (message: string, kind: "success" | "error" | "info" = "info") => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setToast({ kind, message });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 1600);
+  };
 
   // 关键元素引用：输入框聚焦、列表滚动、下拉菜单点击外部关闭等
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,6 +87,12 @@ export function useSearchController() {
 
   useEffect(() => {
     void refreshUserStatusSilently();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -873,5 +890,7 @@ export function useSearchController() {
     showBackToTop,
     hoveredKey,
     setHoveredKey,
+    toast,
+    showToast,
   };
 }

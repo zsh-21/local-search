@@ -187,7 +187,10 @@ export function SearchViewImpl() {
                     className="action-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigator.clipboard.writeText(item.path);
+                      navigator.clipboard
+                        .writeText(item.path)
+                        .then(() => c.showToast("已复制路径", "success"))
+                        .catch(() => c.showToast("复制失败", "error"));
                     }}
                     title="复制路径"
                     aria-label="复制路径"
@@ -265,6 +268,14 @@ export function SearchViewImpl() {
     >
       <BackgroundImage path={c.settings.backgroundImagePath} opacity={c.settings.backgroundImageOpacity} />
       <ParticleBackground enabled={c.settings.enableEffect} type={c.settings.effectType} />
+      {c.toast ? (
+        <div className={`settings-toast ${c.toast.kind}`} role="status" aria-live="polite">
+          <span className="settings-toast-icon" aria-hidden="true">
+            {c.toast.kind === "success" ? "✓" : c.toast.kind === "error" ? "✕" : "i"}
+          </span>
+          <span className="settings-toast-text">{c.toast.message}</span>
+        </div>
+      ) : null}
       <div className="resize-handle left" onMouseDown={(e) => c.startResizing(e, "left")} />
       <div className="resize-handle right" onMouseDown={(e) => c.startResizing(e, "right")} />
 
@@ -307,7 +318,7 @@ export function SearchViewImpl() {
 
           <div className="result-count">
             {/* 计数展示使用“去掉盘符前缀后的真实搜索词”，避免输入 `C:` 这类前缀影响 UI 文案逻辑 */}
-            {c.trimmedQuery.length >= 2 && c.totalCount > 0 ? `${c.totalCount} 条结果` : ""}
+            {c.trimmedQuery.length >= 1 && c.totalCount > 0 ? `${c.totalCount} 条结果` : ""}
           </div>
 
           <div className="type-select" ref={c.typeSelectRef}>

@@ -112,7 +112,7 @@ export function SettingsViewImpl() {
             title="访问官网"
             onClick={(e) => {
               e.stopPropagation();
-              window.ipcRenderer?.invoke("open-external", "http://www.yitong.xin/");
+              window.ipcRenderer?.invoke("open-external", "https://www.yitong.xin/");
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
