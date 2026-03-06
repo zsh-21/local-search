@@ -900,18 +900,21 @@ function loadInstalledApps() {
 
 function resolveAppId(appId: string): string {
 	if (!appId) return '';
-	const guidMap: Record<string, string> = {
-		'{6D809377-6AF0-444B-8957-A3773F02200E}': process.env.ProgramFiles || 'C:\\Program Files',
-		'{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}': process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
-		'{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}': process.env.SystemRoot
-			? path.join(process.env.SystemRoot, 'System32')
-			: 'C:\\Windows\\System32',
-	};
+	// 处理 Windows 快捷方式里常见的“已知目录 GUID”占位符：例如 {1AC14E77-...}\osk.exe
+	// 部分系统/来源会把末尾的 '}' 误写成 ')'，这里一并容错，避免打开应用时报“找不到文件”
+	let resolved = String(appId);
+	resolved = resolved.replace(/\{([0-9a-fA-F-]{36})\)\s*/g, '{$1}');
 
-	let resolved = appId;
-	for (const [guid, pathVal] of Object.entries(guidMap)) {
-		if (resolved.includes(guid)) resolved = resolved.replace(guid, pathVal);
-	}
+	const sys32 = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : 'C:\\Windows\\System32';
+	const replacements: Array<{ re: RegExp; val: string }> = [
+		{ re: /\{6D809377-6AF0-444B-8957-A3773F02200E\}/gi, val: process.env.ProgramFiles || 'C:\\Program Files' },
+		{ re: /\{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E\}/gi, val: process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)' },
+		{ re: /\{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27\}/gi, val: sys32 },
+		// Windows System32 已知目录（常见于系统组件快捷方式）
+		{ re: /\{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7\}/gi, val: sys32 },
+	];
+
+	for (const r of replacements) resolved = resolved.replace(r.re, r.val);
 	return resolved;
 }
 
@@ -985,9 +988,14 @@ async function openLnkShortcut(lnkPath: string) {
 	if (!info?.targetPath) return false;
 	return await new Promise<boolean>((resolve) => {
 		try {
-			const fp = info.targetPath.replace(/'/g, "''");
+			// 快捷方式目标路径可能包含“已知目录 GUID”占位符：这里先做一次解析，避免 Start-Process 报“找不到文件”
+			const resolvedTarget = resolveAppId(info.targetPath);
+			if (!resolvedTarget) return resolve(false);
+			if ((resolvedTarget.includes('\\') || resolvedTarget.includes('/')) && !existsSync(resolvedTarget)) return resolve(false);
+			const fp = resolvedTarget.replace(/'/g, "''");
 			const al = (info.arguments || '').replace(/'/g, "''");
-			const wd = (info.workingDirectory || '').replace(/'/g, "''");
+			const wdResolved = resolveAppId(info.workingDirectory || '');
+			const wd = (wdResolved || '').replace(/'/g, "''");
 			const cmd =
 				`$fp='${fp}';` +
 				`$al='${al}';` +
