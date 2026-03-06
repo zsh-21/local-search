@@ -1058,12 +1058,40 @@ function resolveAppId(appId: string): string {
 
 async function openResolvedTarget(resolved: string) {
 	if (!resolved) return false;
-	if (resolved.includes('\\') || resolved.includes('/')) {
-		const msg = await shell.openPath(resolved);
+	const raw = String(resolved || '').trim();
+	if (!raw) return false;
+	const lower = raw.toLowerCase();
+	if (lower.startsWith('shell:') || lower.startsWith('ms-settings:')) {
+		try {
+			await shell.openExternal(raw);
+			return true;
+		} catch {}
+		try {
+			const p = spawn('explorer.exe', [raw], { windowsHide: true, detached: true });
+			p.unref();
+			return true;
+		} catch {}
+		return false;
+	}
+	const isFsPath =
+		process.platform === 'win32'
+			? /^[a-zA-Z]:[\\/]/.test(raw) || /^\\\\/.test(raw)
+			: raw.startsWith('/');
+	if (isFsPath) {
+		const msg = await shell.openPath(raw);
 		return !msg;
 	}
-	await shell.openExternal(`shell:AppsFolder\\${resolved}`);
-	return true;
+	const url = `shell:AppsFolder\\${raw}`;
+	try {
+		await shell.openExternal(url);
+		return true;
+	} catch {}
+	try {
+		const p = spawn('explorer.exe', [url], { windowsHide: true, detached: true });
+		p.unref();
+		return true;
+	} catch {}
+	return false;
 }
 
 function readUrlShortcut(filePath: string) {
