@@ -3,6 +3,14 @@ import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getSearchTypeOptions, normalizeSettings, useSettings } from "../settingsStore";
 import { useWindowResizeHandles } from "./useWindowResizeHandles";
+import {
+  dedupeResults,
+  filterItemsBySearchType as filterItemsBySearchTypeUtil,
+  limitResults as limitResultsUtil,
+  mergeByServerOrder as mergeByServerOrderUtil,
+  mergeResultsStable,
+  normalizeResultKey,
+} from "./searchResultUtils";
 
 type RefreshHistoryOpts = { typeId?: string; preserveSelectedPath?: string };
 
@@ -127,155 +135,13 @@ export function useSearchController() {
   }, [results.length, selectedIndex]);
   // 根据当前选择的搜索类型对结果做二次过滤（历史/增量结果都会走这里）
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
-    const id = typeof typeId === "string" && typeId.trim() ? typeId.trim() : "all";
-    if (id === "all") return items;
-    if (id === "app") {
-      // “应用”类型只展示应用：避免与“文件/文件夹”混杂，保证切换类型后结果清晰
-      return items.filter((x) => x.type === "app");
-    }
-    if (id === "file") {
-      // “文件”类型只展示普通文件 + 应用：图片/视频/自定义扩展的文件统一归属到各自类型，避免串结果
-      const imageExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
-      const videoExts = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
-      const customExts = new Set(
-        (settings.customSearchTypes || [])
-          .map((x) => (typeof x === "string" ? x.trim().toLowerCase() : ""))
-          .filter(Boolean),
-      );
-      return items.filter((x) => {
-        if (x.type === "app") return true;
-        if (x.type !== "file") return false;
-        const p = (x.path || "").toLowerCase();
-        const dot = p.lastIndexOf(".");
-        const ext = dot >= 0 ? p.slice(dot) : "";
-        if (!ext) return true;
-        if (imageExts.has(ext)) return false;
-        if (videoExts.has(ext)) return false;
-        if (customExts.has(ext)) return false;
-        return true;
-      });
-    }
-    if (id === "folder") return items.filter((x) => x.type === "folder");
-    // “设置”结果只出现在“设置/所有类型”中：这里用于过滤历史与后台增量结果
-    if (id === "settings") return items.filter((x) => x.type === "settings");
-    if (id === "image" || id === "video") {
-      // 图片/视频类型：只从文件结果里按扩展名筛选
-      const exts =
-        id === "image"
-          ? new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"])
-          : new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
-      return items.filter((x) => {
-        if (x.type !== "file") return false;
-        const p = (x.path || "").toLowerCase();
-        const dot = p.lastIndexOf(".");
-        const ext = dot >= 0 ? p.slice(dot) : "";
-        return exts.has(ext);
-      });
-    }
-    if (id.startsWith("ext:")) {
-      const ext = id.slice(4).toLowerCase();
-      if (!ext) return items;
-      return items.filter(
-        (x) => x.type === "file" && (x.path || "").toLowerCase().endsWith(ext),
-      );
-    }
-    return items;
+    return filterItemsBySearchTypeUtil(items, typeId, settings.customSearchTypes || []);
   };
 
-  const normalizeResultKey = (x: AppItem) => {
-    const t = typeof x?.type === "string" ? x.type : "";
-    const p = typeof x?.path === "string" ? x.path.trim().toLowerCase() : "";
-    return `${t}|${p}`;
-  };
+  const limitResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
 
-  const dedupeResults = (items: AppItem[]) => {
-    // 去重：保证切换类型/后台增量合并时不会出现重复项，且列表数量稳定可预期
-    const seen = new Set<string>();
-    const out: AppItem[] = [];
-    for (const it of items) {
-      const key = normalizeResultKey(it);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      out.push(it);
-    }
-    return out;
-  };
-
-  const limitResults = (items: AppItem[]) => items.slice(0, DISPLAY_LIMIT);
-
-  const mergeResultsStable = (prev: AppItem[], next: AppItem[]) => {
-    const nextByKey = new Map<string, AppItem>();
-    for (const it of next) {
-      const k = normalizeResultKey(it);
-      if (!k) continue;
-      nextByKey.set(k, it);
-    }
-
-    const seen = new Set<string>();
-    const merged: AppItem[] = [];
-    for (const it of prev) {
-      const k = normalizeResultKey(it);
-      if (!k || seen.has(k)) continue;
-      const newer = nextByKey.get(k);
-      if (newer) {
-        merged.push({
-          ...it,
-          ...newer,
-          icon: typeof newer.icon === "string" && newer.icon ? newer.icon : it.icon,
-        });
-      } else {
-        merged.push(it);
-      }
-      seen.add(k);
-    }
-
-    for (const it of next) {
-      const k = normalizeResultKey(it);
-      if (!k || seen.has(k)) continue;
-      merged.push(it);
-      seen.add(k);
-    }
-
-    return merged;
-  };
-
-  const mergeByServerOrder = (prev: AppItem[], serverOrdered: AppItem[]) => {
-    const prevByKey = new Map<string, AppItem>();
-    for (const it of prev) {
-      const k = normalizeResultKey(it);
-      if (!k) continue;
-      prevByKey.set(k, it);
-    }
-
-    const seen = new Set<string>();
-    const out: AppItem[] = [];
-
-    for (const it of serverOrdered) {
-      const k = normalizeResultKey(it);
-      if (!k || seen.has(k)) continue;
-      const p = prevByKey.get(k);
-      if (p) {
-        out.push({
-          ...it,
-          icon: typeof it.icon === "string" && it.icon ? it.icon : p.icon,
-        });
-      } else {
-        out.push(it);
-      }
-      seen.add(k);
-      if (out.length >= DISPLAY_LIMIT) return out;
-    }
-
-    for (const it of prev) {
-      const k = normalizeResultKey(it);
-      if (!k || seen.has(k)) continue;
-      out.push(it);
-      seen.add(k);
-      if (out.length >= DISPLAY_LIMIT) break;
-    }
-
-    return out;
-  };
+  const mergeByServerOrder = (prev: AppItem[], serverOrdered: AppItem[]) =>
+    mergeByServerOrderUtil(prev, serverOrdered, DISPLAY_LIMIT);
 
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {

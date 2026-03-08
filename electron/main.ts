@@ -1,10 +1,18 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, Menu, dialog, screen, nativeImage } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, Tray, dialog, screen } from 'electron';
 import path from 'node:path';
-import { existsSync, readFileSync, statSync, watch, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { hasChineseChar, toPinyinFull, toPinyinInitials } from './pinyin';
+import { resolveAppId } from './win/resolveAppId';
+import { openLnkShortcut, readUrlShortcut } from './win/shortcuts';
+import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from './win/startMenuShortcutIndex';
+import { iconDataCache, isTooSmallAppIconDataUrl } from './icon/iconCache';
+import { clearIconCaches, getAppIconDataStable, getFileIconData, getHistoryIconForPath } from './icon/iconService';
+import { ensureTray, getDefaultTrayIconPath } from './app/tray';
+import { registerShortcuts as registerGlobalShortcuts } from './app/shortcuts';
+import { handleSearchFiles } from './search/searchFilesHandler';
 
 interface InstalledApp {
 	Name: string;
@@ -56,7 +64,6 @@ const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
 const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
 const DEFAULT_THEME: AppSettings['theme'] = 'dark';
 const DEFAULT_HISTORY_LIMIT = 5;
-const HOTKEY_COOLDOWN_MS = 300;
 const DEFAULT_SEARCH_TYPE_ID = 'all';
 const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'copyPath', 'deleteHistory'];
 const WIN_CONTEXT_MENU_VERB_KEY = 'FileSearchAddToQuickList';
@@ -218,38 +225,7 @@ const RECENT_INDEX_MAX = 30_000;
 const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
 let recentReconcileInFlight = false;
 let recentReconcileLastAt = 0;
-const startMenuShortcutIndex = new Map<string, string>();
-let startMenuShortcutIndexReady = false;
-let startMenuShortcutIndexInitPromise: Promise<void> | null = null;
-const iconDataCache = new Map<string, string>();
-const ICON_CACHE_MAX = 1500;
-
-function isTooSmallAppIconDataUrl(value: string) {
-	const s = typeof value === 'string' ? value.trim() : '';
-	if (!s) return true;
-	return s.length < 900;
-}
-
-function setIconCache(key: string, value: string) {
-	if (!key) return;
-	// 只缓存“非空 icon”：避免首次提取失败把空字符串写进缓存，导致后续永远认为“已缓存”而无法再补齐图标
-	// 非空 icon 才能显著提升二次命中速度；空值则交由后续请求/回填重试
-	if (typeof value !== 'string' || !value) {
-		// 如果之前误写入了空值，这里顺手清掉，避免干扰后续补齐
-		const prev = iconDataCache.get(key) || '';
-		if (!prev) iconDataCache.delete(key);
-		return;
-	}
-	if (key.startsWith('app:') && isTooSmallAppIconDataUrl(value)) {
-		iconDataCache.delete(key);
-		return;
-	}
-	if (iconDataCache.size >= ICON_CACHE_MAX && !iconDataCache.has(key)) {
-		const firstKey = iconDataCache.keys().next().value;
-		if (firstKey) iconDataCache.delete(firstKey);
-	}
-	iconDataCache.set(key, value);
-}
+ 
 
 function normalizeRecentKey(rawPath: string) {
 	return typeof rawPath === 'string' ? rawPath.trim().toLowerCase() : '';
@@ -271,54 +247,6 @@ function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs: numbe
 			recentIndex.delete(k);
 		}
 	}
-}
-
-function buildStartMenuShortcutIndex() {
-	if (process.platform !== 'win32') return;
-	const roots = [
-		process.env.ProgramData ? path.join(process.env.ProgramData, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
-		process.env.APPDATA ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs') : '',
-		// 桌面快捷方式也是很多传统软件的入口：补齐“Get-StartApps 覆盖不到”的应用
-		app.getPath('desktop'),
-		process.env.PUBLIC ? path.join(process.env.PUBLIC, 'Desktop') : '',
-	].filter((p) => p && existsSync(p));
-
-	const walk = (dir: string) => {
-		let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }> = [];
-		try {
-			entries = readdirSync(dir, { withFileTypes: true }) as any;
-		} catch {
-			return;
-		}
-		for (const ent of entries) {
-			const full = path.join(dir, ent.name);
-			if (ent.isDirectory()) {
-				walk(full);
-				continue;
-			}
-			if (!ent.isFile()) continue;
-			if (!ent.name.toLowerCase().endsWith('.lnk')) continue;
-			const key = path.basename(ent.name, '.lnk').toLowerCase();
-			if (!startMenuShortcutIndex.has(key)) startMenuShortcutIndex.set(key, full);
-		}
-	};
-
-	for (const r of roots) walk(r);
-	startMenuShortcutIndexReady = true;
-}
-
-function ensureStartMenuShortcutIndex() {
-	if (process.platform !== 'win32') return Promise.resolve();
-	if (startMenuShortcutIndexReady) return Promise.resolve();
-	if (startMenuShortcutIndexInitPromise) return startMenuShortcutIndexInitPromise;
-	startMenuShortcutIndexInitPromise = Promise.resolve()
-		.then(() => {
-			if (!startMenuShortcutIndexReady) buildStartMenuShortcutIndex();
-		})
-		.finally(() => {
-			startMenuShortcutIndexInitPromise = null;
-		});
-	return startMenuShortcutIndexInitPromise;
 }
 
 let appShortcutRootsCache: string[] | null = null;
@@ -345,34 +273,6 @@ function isLikelyAppShortcutFile(filePath: string) {
 	return roots.some((r) => p.startsWith(r));
 }
 
-function findStartMenuShortcutByName(name: string) {
-	const n = (name || '').trim().toLowerCase();
-	if (!n) return '';
-	const exact = startMenuShortcutIndex.get(n);
-	if (exact) return exact;
-	const normalize = (s: string) => s.replace(/（.*?）|\(.*?\)|【.*?】|\[.*?\]/g, ' ').replace(/[\s._\-+\\/]+/g, '').trim();
-	const nn = normalize(n);
-	let best = '';
-	let bestScore = -1;
-	for (const [k, v] of startMenuShortcutIndex.entries()) {
-		const kk = normalize(k);
-		let score = -1;
-		if (k === n) score = 1000;
-		else if (kk && nn && kk === nn) score = 950;
-		else if (k.startsWith(n) || kk.startsWith(nn)) score = 800;
-		else if (k.includes(n) || n.includes(k) || (kk && nn && (kk.includes(nn) || nn.includes(kk)))) score = 600;
-		else {
-			const parts = n.split(/\s+/).filter(Boolean);
-			if (parts.length > 0 && parts.every((p) => k.includes(p))) score = 420 + parts.length * 20;
-		}
-		if (score > bestScore) {
-			bestScore = score;
-			best = v;
-		}
-	}
-	return bestScore > 0 ? best : '';
-}
-
 function normalizeAppGroupKey(name: string) {
 	// 将“主应用/卸载/升级/服务/修复”等条目归为同一组：用于把周边应用一起展示出来
 	// 例如：搜索“QQ音乐”时，也能补齐“卸载 QQ音乐”“QQ音乐升级服务”等关联项
@@ -389,393 +289,6 @@ function normalizeAppGroupKey(name: string) {
 	);
 	s = s.replace(/\s+/g, ' ').trim();
 	return s;
-}
-
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
-
-function normalizeIconFileSpec(spec: string) {
-	const raw = String(spec || '').trim();
-	if (!raw) return '';
-	const expandEnvVars = (s: string) => s.replace(/%([^%]+)%/g, (_m, k) => process.env[String(k)] || `%${k}%`);
-
-	let s = raw;
-	if (s.startsWith('@')) s = s.slice(1).trim();
-	let picked = '';
-	if (s.startsWith('"')) {
-		const end = s.indexOf('"', 1);
-		picked = end > 1 ? s.slice(1, end).trim() : s.replace(/^"+|"+$/g, '').trim();
-	} else {
-		picked = s.split(',')[0]?.trim() || '';
-	}
-
-	let out = picked || s;
-	const m = out.match(/^(.*?\.(?:exe|dll|ico|cpl))/i);
-	if (m?.[1]) out = m[1].trim();
-	out = expandEnvVars(out.trim());
-	return out;
-}
-
-async function getFileIconData(filePath: string) {
-	const key = `file:${filePath}`;
-	const cached = iconDataCache.get(key);
-	if (typeof cached === 'string') return cached;
-	let iconData = '';
-	try {
-		const normalizedSpecPath = resolveAppId(normalizeIconFileSpec(filePath));
-		if (normalizedSpecPath && normalizedSpecPath.toLowerCase() !== filePath.toLowerCase() && existsSync(normalizedSpecPath)) {
-			iconData = await getFileIconData(normalizedSpecPath);
-		}
-		if (iconData) {
-			setIconCache(key, iconData);
-			return iconData;
-		}
-
-		const ext = path.extname(filePath).toLowerCase();
-		if ((ext === '.lnk' || ext === '.url') && existsSync(filePath)) {
-			if (ext === '.lnk') {
-				const info = await resolveLnkByPowerShell(filePath);
-				const iconSpec = normalizeIconFileSpec(info?.iconLocation || '');
-				const iconResolved = resolveAppId(iconSpec);
-				if (iconResolved && existsSync(iconResolved)) {
-					const icon = await app.getFileIcon(iconResolved, { size: 'large' });
-					if (!icon.isEmpty()) iconData = icon.toDataURL();
-				}
-				if (!iconData) {
-					const targetResolved = resolveAppId(info?.targetPath || '');
-					const sameTarget =
-						targetResolved && targetResolved.toLowerCase() === resolveAppId(filePath).toLowerCase();
-					if (targetResolved && !sameTarget && existsSync(targetResolved)) {
-						iconData = await getFileIconData(targetResolved);
-					}
-				}
-			} else if (ext === '.url') {
-				const iconFile = normalizeIconFileSpec(readUrlIconFile(filePath));
-				const iconResolved = resolveAppId(iconFile);
-				if (iconResolved && existsSync(iconResolved)) {
-					iconData = await getFileIconData(iconResolved);
-				}
-			}
-		}
-
-		if (IMAGE_EXTENSIONS.has(ext) && existsSync(filePath)) {
-			try {
-				// 对于图片，尝试生成缩略图
-				const img = nativeImage.createFromPath(filePath);
-				if (!img.isEmpty()) {
-					// 缩放图片以提高性能，宽度 64 像素足够预览使用
-					iconData = img.resize({ width: 64, height: 64, quality: 'better' }).toDataURL();
-				}
-			} catch (err) {
-				console.error('Failed to generate image thumbnail:', err);
-			}
-		}
-
-		// 如果不是图片或者生成缩略图失败，使用系统图标
-		if (!iconData) {
-			const icon = await app.getFileIcon(filePath, { size: 'large' });
-			if (!icon.isEmpty()) iconData = icon.toDataURL();
-		}
-	} catch {}
-	if (iconData) setIconCache(key, iconData);
-	return iconData;
-}
-
-const uwpIconPathCache = new Map<string, string>();
-const uwpIconPathInFlight = new Map<string, Promise<string>>();
-
-function resolveUwpIconPathByAumid(aumid: string): Promise<string> {
-	const key = String(aumid || '').trim();
-	if (!key || !key.includes('!')) return Promise.resolve('');
-	const cached = uwpIconPathCache.get(key);
-	if (typeof cached === 'string' && cached) return Promise.resolve(cached);
-	const inflight = uwpIconPathInFlight.get(key);
-	if (inflight) return inflight;
-
-	const task = new Promise<string>((resolve) => {
-		try {
-			const escaped = key.replace(/'/g, "''");
-			const cmd = [
-				`$aumid='${escaped}';`,
-				`$parts=$aumid -split '!',2;`,
-				`$pfn=$parts[0];`,
-				`$appId=if($parts.Length -gt 1){$parts[1]}else{''};`,
-				`if(-not $pfn){ '' | Write-Output; exit 0 }`,
-				`$pkg=$null;`,
-				`try { $pkg=Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $pfn } | Select-Object -First 1 } catch { $pkg=$null }`,
-				`if(-not $pkg){ try { $pkg=Get-AppxPackage -PackageFamilyName $pfn | Select-Object -First 1 } catch { $pkg=$null } }`,
-				`if(-not $pkg){ try { $pkg=Get-AppxPackage -Name $pfn | Select-Object -First 1 } catch { $pkg=$null } }`,
-				`if(-not $pkg -or -not $pkg.InstallLocation){ '' | Write-Output; exit 0 }`,
-				`$root=$pkg.InstallLocation;`,
-				`$mf=Join-Path $root 'AppxManifest.xml';`,
-				`if(-not (Test-Path -LiteralPath $mf)){ '' | Write-Output; exit 0 }`,
-				`try { [xml]$x=Get-Content -LiteralPath $mf -Encoding UTF8 } catch { '' | Write-Output; exit 0 }`,
-				`$apps=@();`,
-				`try { $apps=@($x.Package.Applications.Application) } catch { $apps=@() }`,
-				`if(-not $apps -or $apps.Count -eq 0){ try { $apps=@($x.SelectNodes(\"//*[local-name()='Application']\")) } catch { $apps=@() } }`,
-				`$appNode=$null;`,
-				`if($apps){ foreach($a in $apps){`,
-				`  $id=[string]$a.Id;`,
-				`  if(-not $id){ try { $id=$a.GetAttribute('Id') } catch { $id='' } }`,
-				`  if($id -eq $appId){ $appNode=$a; break }`,
-				`} }`,
-				`if(-not $appNode -and $apps -and $apps.Count -gt 0){ $appNode=$apps[0] }`,
-				`$ve=$null;`,
-				`if($appNode){`,
-				`  foreach($c in $appNode.ChildNodes){ if($c -and $c.LocalName -eq 'VisualElements'){ $ve=$c; break } }`,
-				`  if(-not $ve){ $ve=$appNode.SelectSingleNode(\".//*[local-name()='VisualElements']\") }`,
-				`}`,
-				`$rels=@();`,
-				`if($ve){`,
-				`  foreach($n in @('Square44x44Logo','Square150x150Logo','Logo','SmallLogo')){`,
-				`    $v=$ve.GetAttribute($n); if($v){ $rels += $v }`,
-				`  }`,
-				`}`,
-				`$cands=@();`,
-				`foreach($rel in $rels){`,
-				`  $base=Join-Path $root $rel;`,
-				`  if(Test-Path -LiteralPath $base){ $cands += $base; continue }`,
-				`  $dir=Split-Path -Parent $base;`,
-				`  $bn=[System.IO.Path]::GetFileNameWithoutExtension($base);`,
-				`  $ext=[System.IO.Path]::GetExtension($base);`,
-				`  if(-not $ext){ $ext='.png' }`,
-				`  if(Test-Path -LiteralPath $dir){`,
-				`    $cands += Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -like ($bn + '*') -and $_.Extension -eq $ext } | Select-Object -ExpandProperty FullName`,
-				`  }`,
-				`}`,
-				`if(-not $cands -or $cands.Count -eq 0){`,
-				`  $assetDir=Join-Path $root 'Assets';`,
-				`  if(Test-Path -LiteralPath $assetDir){`,
-				`    $cands += Get-ChildItem -LiteralPath $assetDir -File -Recurse -ErrorAction SilentlyContinue |`,
-				`      Where-Object { $_.Extension -match '^\\.(png|jpg|jpeg|ico)$' -and $_.Name -match '(square|applist|storelogo|logo|snip|screen|capture)' } |`,
-				`      Select-Object -ExpandProperty FullName`,
-				`  }`,
-				`}`,
-				`if(-not $cands -or $cands.Count -eq 0){ '' | Write-Output; exit 0 }`,
-				`$best=$null; $bestScore=-1;`,
-				`foreach($fp in $cands){`,
-				`  $n=[System.IO.Path]::GetFileName($fp).ToLower();`,
-				`  $s=0;`,
-				`  if($n -match 'targetsize-(\\d+)'){ $s += [int]$matches[1]*50 }`,
-				`  if($n -match 'scale-(\\d+)'){ $s += [int]$matches[1] }`,
-				`  if($n -match 'square44|applist'){ $s += 2000 }`,
-				`  if($n -match 'unplated'){ $s += 80 }`,
-				`  if($s -gt $bestScore){ $bestScore=$s; $best=$fp }`,
-				`}`,
-				`if($best){ $best | Write-Output } else { '' | Write-Output }`,
-			].join('');
-
-			const ps = spawn('powershell', ['-NoProfile', '-NoLogo', '-Command', cmd], { windowsHide: true });
-			let out = '';
-			ps.stdout.setEncoding('utf8');
-			ps.stdout.on('data', (c) => (out += String(c)));
-			ps.on('close', () => resolve((out || '').trim()));
-			ps.on('error', () => resolve(''));
-		} catch {
-			resolve('');
-		}
-	})
-		.then((p) => {
-			const v = typeof p === 'string' ? p.trim() : '';
-			if (v) uwpIconPathCache.set(key, v);
-			return v;
-		})
-		.finally(() => {
-			uwpIconPathInFlight.delete(key);
-		});
-
-	uwpIconPathInFlight.set(key, task);
-	return task;
-}
-
-const shellItemIconCache = new Map<string, string>();
-const shellItemIconInFlight = new Map<string, Promise<string>>();
-
-function getShellItemIconDataUrl(spec: string): Promise<string> {
-	if (process.platform !== 'win32') return Promise.resolve('');
-	const key = String(spec || '').trim();
-	if (!key) return Promise.resolve('');
-	const cached = shellItemIconCache.get(key);
-	if (typeof cached === 'string') return Promise.resolve(cached);
-	const inflight = shellItemIconInFlight.get(key);
-	if (inflight) return inflight;
-
-	const task = new Promise<string>((resolve) => {
-		try {
-			const escaped = key.replace(/'/g, "''");
-			const cmd = [
-				"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;",
-				`$spec='${escaped}';`,
-				"try {",
-				"  try { Add-Type -AssemblyName System.Drawing | Out-Null } catch {}",
-				"  if(-not ('TraeShellIcon' -as [type])) {",
-				"    Add-Type @\"",
-				"using System;",
-				"using System.Runtime.InteropServices;",
-				"public class TraeShellIcon {",
-				"  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]",
-				"  public struct SHFILEINFO {",
-				"    public IntPtr hIcon;",
-				"    public int iIcon;",
-				"    public uint dwAttributes;",
-				"    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)]",
-				"    public string szDisplayName;",
-				"    [MarshalAs(UnmanagedType.ByValTStr, SizeConst=80)]",
-				"    public string szTypeName;",
-				"  }",
-				"  [DllImport(\"shell32.dll\", CharSet=CharSet.Unicode)]",
-				"  public static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, ref SHFILEINFO psfi, uint cbFileInfo, uint uFlags);",
-				"  [DllImport(\"user32.dll\", SetLastError=true)]",
-				"  public static extern bool DestroyIcon(IntPtr hIcon);",
-				"  public const uint SHGFI_ICON = 0x000000100;",
-				"  public const uint SHGFI_LARGEICON = 0x000000000;",
-				"}",
-				"\"@ | Out-Null",
-				"  }",
-				"  $info = New-Object TraeShellIcon+SHFILEINFO;",
-				"  [TraeShellIcon]::SHGetFileInfo($spec, 0, [ref]$info, [uint32][Runtime.InteropServices.Marshal]::SizeOf($info), [TraeShellIcon]::SHGFI_ICON -bor [TraeShellIcon]::SHGFI_LARGEICON) | Out-Null;",
-				"  if($info.hIcon -eq [IntPtr]::Zero){ '' | Write-Output; exit 0 }",
-				"  $icon=[System.Drawing.Icon]::FromHandle($info.hIcon);",
-				"  $bmp=$icon.ToBitmap();",
-				"  $ms=New-Object System.IO.MemoryStream;",
-				"  $bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png);",
-				"  $bytes=$ms.ToArray();",
-				"  $ms.Dispose();",
-				"  $bmp.Dispose();",
-				"  [TraeShellIcon]::DestroyIcon($info.hIcon) | Out-Null;",
-				"  ('data:image/png;base64,' + [Convert]::ToBase64String($bytes)) | Write-Output;",
-				"} catch { '' | Write-Output }",
-			].join('');
-			const ps = spawn('powershell', ['-NoProfile', '-NoLogo', '-Command', cmd], { windowsHide: true });
-			let out = '';
-			ps.stdout.setEncoding('utf8');
-			ps.stdout.on('data', (c) => (out += String(c)));
-			ps.on('close', () => resolve((out || '').trim()));
-			ps.on('error', () => resolve(''));
-		} catch {
-			resolve('');
-		}
-	})
-		.then((v) => {
-			const dataUrl = typeof v === 'string' ? v.trim() : '';
-			if (dataUrl) shellItemIconCache.set(key, dataUrl);
-			return dataUrl;
-		})
-		.finally(() => {
-			shellItemIconInFlight.delete(key);
-		});
-
-	shellItemIconInFlight.set(key, task);
-	return task;
-}
-
-function isProbablyUselessAppIcon(img: Electron.NativeImage) {
-	try {
-		if (!img || img.isEmpty()) return true;
-		const sz = img.getSize?.() || { width: 0, height: 0 };
-		if ((sz.width || 0) < 24 || (sz.height || 0) < 24) return true;
-
-		const sample = img.resize({ width: 24, height: 24, quality: 'better' });
-		const bmp = sample.toBitmap();
-		if (!bmp || bmp.length < 24 * 24 * 4) return true;
-
-		let nonTransparent = 0;
-		let maxAlpha = 0;
-		let firstColor = -1;
-		let sameColorCount = 0;
-		const step = 4 * 4;
-		for (let i = 0; i + 3 < bmp.length; i += step) {
-			const b = bmp[i] || 0;
-			const g = bmp[i + 1] || 0;
-			const r = bmp[i + 2] || 0;
-			const a = bmp[i + 3] || 0;
-			if (a > 0) nonTransparent += 1;
-			if (a > maxAlpha) maxAlpha = a;
-			const c = (r << 16) | (g << 8) | b;
-			if (firstColor < 0) firstColor = c;
-			if (c === firstColor) sameColorCount += 1;
-		}
-
-		if (maxAlpha <= 8) return true;
-		if (nonTransparent <= 4) return true;
-		if (sameColorCount >= Math.floor((24 * 24) / 16) - 1) return true;
-		return false;
-	} catch {
-		return false;
-	}
-}
-
-async function getAppIconData(appName: string, appId: string) {
-	const key = `app:${appId}`;
-	const cached = iconDataCache.get(key);
-	if (typeof cached === 'string' && cached) {
-		if (!isTooSmallAppIconDataUrl(cached)) return cached;
-		iconDataCache.delete(key);
-	}
-	let iconData = '';
-	try {
-		const rawId = typeof appId === 'string' ? appId.trim() : '';
-		const resolved = resolveAppId(rawId);
-		const normalizedResolved = normalizeIconFileSpec(resolved);
-
-		if ((normalizedResolved.includes('\\') || normalizedResolved.includes('/')) && existsSync(normalizedResolved)) {
-			iconData = await getFileIconData(normalizedResolved);
-		}
-
-		if (!iconData && rawId.includes('!')) {
-			try {
-				const icon = await app.getFileIcon(`shell:AppsFolder\\${rawId}`, { size: 'large' });
-				if (!icon.isEmpty() && !isProbablyUselessAppIcon(icon)) {
-					const d = icon.toDataURL();
-					if (d && d.length >= 900) iconData = d;
-				}
-			} catch {}
-		}
-
-		if (!iconData && rawId.includes('!')) {
-			iconData = await getShellItemIconDataUrl(`shell:AppsFolder\\${rawId}`);
-		}
-
-		if (!iconData) {
-			if (!startMenuShortcutIndexReady && startMenuShortcutIndex.size <= 0) await ensureStartMenuShortcutIndex();
-			const shortcut = findStartMenuShortcutByName(appName);
-			if (shortcut && existsSync(shortcut)) iconData = await getFileIconData(shortcut);
-		}
-
-		if (!iconData && rawId.includes('!')) {
-			const iconPath = await resolveUwpIconPathByAumid(rawId);
-			if (iconPath && existsSync(iconPath)) {
-				try {
-					const buf = readFileSync(iconPath);
-					const img = nativeImage.createFromBuffer(buf);
-					if (!img.isEmpty()) iconData = img.resize({ width: 64, height: 64, quality: 'better' }).toDataURL();
-					if (!iconData) {
-						const ext = path.extname(iconPath).toLowerCase();
-						const mime =
-							ext === '.jpg' || ext === '.jpeg'
-								? 'image/jpeg'
-								: ext === '.ico'
-									? 'image/x-icon'
-									: 'image/png';
-						iconData = `data:${mime};base64,${buf.toString('base64')}`;
-					}
-				} catch {}
-			}
-		}
-	} catch {}
-	if (iconData) setIconCache(key, iconData);
-	return iconData;
-}
-
-async function getAppIconDataStable(appName: string, appId: string, maxAttempts = 3) {
-	const attempts = Math.max(1, Math.min(4, Number(maxAttempts) || 1));
-	const waits = [0, 140, 320, 560];
-	for (let i = 0; i < attempts; i++) {
-		const waitMs = waits[i] || 0;
-		if (waitMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
-		const icon = await getAppIconData(appName, appId);
-		if (icon) return icon;
-	}
-	return '';
 }
 
 const FILE_INDEX_VERSION = 5;
@@ -978,7 +491,7 @@ async function clearLocalCacheButKeepAccountAndSettings() {
 	// 目标：用户执行 clear:cache 后，下次呼出面板会自动重建索引，并且不会丢失登录态与配置
 	try {
 		recentIndex.clear();
-		iconDataCache.clear();
+		await clearIconCaches();
 		// 索引复位放到 Worker 线程执行：避免主线程残留状态影响后续重建
 		await fileIndex.reset();
 
@@ -1365,26 +878,6 @@ function loadInstalledApps() {
 	}, 1400);
 }
 
-function resolveAppId(appId: string): string {
-	if (!appId) return '';
-	// 处理 Windows 快捷方式里常见的“已知目录 GUID”占位符：例如 {1AC14E77-...}\osk.exe
-	// 部分系统/来源会把末尾的 '}' 误写成 ')'，这里一并容错，避免打开应用时报“找不到文件”
-	let resolved = String(appId);
-	resolved = resolved.replace(/\{([0-9a-fA-F-]{36})\)\s*/g, '{$1}');
-
-	const sys32 = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32') : 'C:\\Windows\\System32';
-	const replacements: Array<{ re: RegExp; val: string }> = [
-		{ re: /\{6D809377-6AF0-444B-8957-A3773F02200E\}/gi, val: process.env.ProgramFiles || 'C:\\Program Files' },
-		{ re: /\{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E\}/gi, val: process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)' },
-		{ re: /\{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27\}/gi, val: sys32 },
-		// Windows System32 已知目录（常见于系统组件快捷方式）
-		{ re: /\{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7\}/gi, val: sys32 },
-	];
-
-	for (const r of replacements) resolved = resolved.replace(r.re, r.val);
-	return resolved;
-}
-
 async function openResolvedTarget(resolved: string) {
 	if (!resolved) return false;
 	const raw = String(resolved || '').trim();
@@ -1434,91 +927,6 @@ async function openResolvedTarget(resolved: string) {
 	} catch {}
 	if (tryExplorer(url)) return true;
 	return await tryStartProcess(url);
-}
-
-function readUrlShortcut(filePath: string) {
-	try {
-		const raw = readFileSync(filePath, 'utf-8');
-		const m = raw.match(/^\s*URL\s*=\s*(.+)\s*$/im);
-		const url = m?.[1]?.trim();
-		return url || '';
-	} catch {
-		return '';
-	}
-}
-
-function readUrlIconFile(filePath: string) {
-	try {
-		const raw = readFileSync(filePath, 'utf-8');
-		const m = raw.match(/^\s*IconFile\s*=\s*(.+)\s*$/im);
-		const iconFile = m?.[1]?.trim();
-		return iconFile || '';
-	} catch {
-		return '';
-	}
-}
-
-function resolveLnkByPowerShell(lnkPath: string) {
-	return new Promise<{ targetPath: string; arguments: string; workingDirectory: string; iconLocation: string } | null>((resolve) => {
-		try {
-			const escaped = lnkPath.replace(/'/g, "''");
-			const cmd =
-				`$w=New-Object -ComObject WScript.Shell;` +
-				`$s=$w.CreateShortcut('${escaped}');` +
-				`$o=@{targetPath=$s.TargetPath;arguments=$s.Arguments;workingDirectory=$s.WorkingDirectory;iconLocation=$s.IconLocation};` +
-				`$o|ConvertTo-Json -Compress`;
-			const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
-			let out = '';
-			ps.stdout.on('data', (c) => (out += c.toString()));
-			ps.on('close', () => {
-				try {
-					const obj = JSON.parse(out || 'null');
-					if (!obj || typeof obj !== 'object') return resolve(null);
-					resolve({
-						targetPath: typeof obj.targetPath === 'string' ? obj.targetPath : '',
-						arguments: typeof obj.arguments === 'string' ? obj.arguments : '',
-						workingDirectory: typeof obj.workingDirectory === 'string' ? obj.workingDirectory : '',
-						iconLocation: typeof obj.iconLocation === 'string' ? obj.iconLocation : '',
-					});
-				} catch {
-					resolve(null);
-				}
-			});
-			ps.on('error', () => resolve(null));
-		} catch {
-			resolve(null);
-		}
-	});
-}
-
-async function openLnkShortcut(lnkPath: string) {
-	const info = await resolveLnkByPowerShell(lnkPath);
-	if (!info?.targetPath) return false;
-	return await new Promise<boolean>((resolve) => {
-		try {
-			// 快捷方式目标路径可能包含“已知目录 GUID”占位符：这里先做一次解析，避免 Start-Process 报“找不到文件”
-			const resolvedTarget = resolveAppId(info.targetPath);
-			if (!resolvedTarget) return resolve(false);
-			if ((resolvedTarget.includes('\\') || resolvedTarget.includes('/')) && !existsSync(resolvedTarget)) return resolve(false);
-			const fp = resolvedTarget.replace(/'/g, "''");
-			const al = (info.arguments || '').replace(/'/g, "''");
-			const wdResolved = resolveAppId(info.workingDirectory || '');
-			const wd = (wdResolved || '').replace(/'/g, "''");
-			const cmd =
-				`$fp='${fp}';` +
-				`$al='${al}';` +
-				`$wd='${wd}';` +
-				`try { ` +
-				`if ($wd) { Start-Process -FilePath $fp -ArgumentList $al -WorkingDirectory $wd -ErrorAction Stop } ` +
-				`else { Start-Process -FilePath $fp -ArgumentList $al -ErrorAction Stop } ` +
-				`} catch { exit 1 }`;
-			const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
-			ps.on('close', (code) => resolve(code === 0));
-			ps.on('error', () => resolve(false));
-		} catch {
-			resolve(false);
-		}
-	});
 }
 
 process.env.DIST = path.join(__dirname, '../dist');
@@ -2054,18 +1462,8 @@ ipcMain.handle('login-request', async (_event, { url, options }) => {
 	}
 });
 
-async function addQuickItemFromDialog() {
+async function handleQuickItemPicked(targetPath: string) {
 	try {
-		const result = await dialog.showOpenDialog({
-			title: '添加到 File Search 快捷列表',
-			buttonLabel: '添加',
-			properties: ['openFile'],
-			filters: [{ name: '应用/快捷方式', extensions: ['exe', 'lnk', 'url'] }],
-		});
-		if (result.canceled) return;
-		const targetPath = result.filePaths?.[0];
-		if (!targetPath) return;
-
 		const ext = path.extname(targetPath).toLowerCase();
 		const name = path.basename(targetPath, ext) || path.basename(targetPath) || '快捷项';
 		recordHistoryItem({ name, path: targetPath, type: 'file' });
@@ -2073,57 +1471,18 @@ async function addQuickItemFromDialog() {
 	} catch {}
 }
 
-function ensureTray() {
-	try {
-		const iconPath = path.join(process.env.VITE_PUBLIC || '', 'tray.png');
-		tray = new Tray(iconPath);
-		const contextMenu = Menu.buildFromTemplate([
-			{
-				label: '显示搜索框',
-				click: () => toggleSearchWindow(),
-			},
-			{
-				label: '新增文件到FileSearch的快捷列表',
-				click: () => void addQuickItemFromDialog(),
-			},
-			{
-				label: '设置',
-				click: () => showSettingsWindow(),
-			},
-			{ type: 'separator' },
-			{ label: '退出', click: () => app.quit() },
-		]);
-		tray.setToolTip('File Search');
-		tray.setContextMenu(contextMenu);
-		tray.on('click', () => {
-			toggleSearchWindow();
-		});
-	} catch {}
+function registerShortcutsForSettings(s: { searchShortcut: string; settingsShortcut: string }) {
+	registerGlobalShortcuts({
+		getSearchShortcut: () => s.searchShortcut,
+		getSettingsShortcut: () => s.settingsShortcut,
+		openSearchWindow,
+		showSettingsWindow,
+	});
 }
 
-function registerShortcuts() {
-	globalShortcut.unregisterAll();
-	const settings = loadSettings();
-
-	let lastSearchAt = 0;
-	let lastSettingsAt = 0;
-
-	const okSearch = globalShortcut.register(settings.searchShortcut, () => {
-		const now = Date.now();
-		if (now - lastSearchAt < HOTKEY_COOLDOWN_MS) return;
-		lastSearchAt = now;
-		openSearchWindow();
-	});
-
-	const okSettings = globalShortcut.register(settings.settingsShortcut, () => {
-		const now = Date.now();
-		if (now - lastSettingsAt < HOTKEY_COOLDOWN_MS) return;
-		lastSettingsAt = now;
-		showSettingsWindow();
-	});
-
-	if (!okSearch) dialog.showErrorBox('快捷键注册失败', `无法注册呼出搜索框快捷键：${settings.searchShortcut}`);
-	if (!okSettings) dialog.showErrorBox('快捷键注册失败', `无法注册呼出设置界面快捷键：${settings.settingsShortcut}`);
+function registerShortcutsFromDisk() {
+	const s = loadSettings();
+	registerShortcutsForSettings({ searchShortcut: s.searchShortcut, settingsShortcut: s.settingsShortcut });
 }
 
 app.on('window-all-closed', () => {
@@ -2151,8 +1510,16 @@ if (!gotTheLock) {
 		// 初始化时同步设置忽略规则（主进程缓存 + Worker 内索引规则）
 		await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
 		createWindow();
-		ensureTray();
-		registerShortcuts();
+		tray = ensureTray({
+			getIconPath: getDefaultTrayIconPath,
+			toggleSearchWindow,
+			showSettingsWindow,
+			onAddQuickItemPath: handleQuickItemPicked,
+		});
+		registerShortcutsForSettings({
+			searchShortcut: initialSettings.searchShortcut,
+			settingsShortcut: initialSettings.settingsShortcut,
+		});
 		loadInstalledApps();
 		void ensureWindowsAppContextMenu();
 		try {
@@ -2448,11 +1815,11 @@ ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
 	globalShortcut.unregisterAll();
 
 	if (!okSearch) {
-		registerShortcuts();
+		registerShortcutsFromDisk();
 		return { ok: false, message: '呼出搜索框快捷键已被占用' };
 	}
 	if (!okSettings) {
-		registerShortcuts();
+		registerShortcutsFromDisk();
 		return { ok: false, message: '呼出设置界面快捷键已被占用' };
 	}
 
@@ -2467,7 +1834,7 @@ ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
 	// historyLimit 变化时裁剪历史
 	const history = loadHistory();
 	saveHistory(next.historyLimit > 0 ? history.filter((h) => isExistingTarget(h)).slice(0, next.historyLimit) : []);
-	registerShortcuts();
+	registerShortcutsForSettings({ searchShortcut: next.searchShortcut, settingsShortcut: next.settingsShortcut });
 	win?.webContents.send('settings-updated', next);
 	settingsWin?.webContents.send('settings-updated', next);
 
@@ -2490,35 +1857,8 @@ ipcMain.handle('get-history', async () => {
 
 	const results = await Promise.all(
 		history.map(async (h) => {
-			try {
-				if (h.type === 'app') {
-					const iconData = await getAppIconData(h.name, h.path);
-					return { name: h.name, path: h.path, type: h.type, icon: iconData };
-				}
-				const resolved = resolveAppId(h.path);
-				const lower = resolved.toLowerCase();
-				if (lower.endsWith('.lnk')) {
-					const info = await resolveLnkByPowerShell(resolved);
-					const targetResolved = resolveAppId(info?.targetPath || '');
-					if (targetResolved && existsSync(targetResolved)) {
-						const iconData = await getFileIconData(targetResolved);
-						return { name: h.name, path: h.path, type: h.type, icon: iconData };
-					}
-				}
-				if (lower.endsWith('.url')) {
-					const iconFile = readUrlIconFile(resolved);
-					const iconResolved = resolveAppId(iconFile);
-					if (iconResolved && existsSync(iconResolved)) {
-						const iconData = await getFileIconData(iconResolved);
-						return { name: h.name, path: h.path, type: h.type, icon: iconData };
-					}
-				}
-				if (existsSync(resolved)) {
-					const iconData = await getFileIconData(resolved);
-					return { name: h.name, path: h.path, type: h.type, icon: iconData };
-				}
-			} catch {}
-			return { name: h.name, path: h.path, type: h.type, icon: '' };
+			const iconData = await getHistoryIconForPath({ type: h.type, name: h.name, path: h.path });
+			return { name: h.name, path: h.path, type: h.type, icon: iconData };
 		})
 	);
 
@@ -2663,118 +2003,6 @@ ipcMain.handle('get-result-icon', async (_event, item: { type: string; path: str
 	}
 });
 
-ipcMain.handle('get-result-icon-debug', async (_event, item: { type: string; path: string; name?: string }) => {
-	const t = typeof item?.type === 'string' ? item.type : '';
-	const p = typeof item?.path === 'string' ? item.path : '';
-	const n = typeof item?.name === 'string' ? item.name : '';
-	const debug: any = {
-		type: t,
-		path: p,
-		name: n,
-		steps: [] as any[],
-	};
-	const push = (name: string, data: Record<string, any>) => {
-		debug.steps.push({ name, ...data });
-	};
-	try {
-		if (!t || !p) return { icon: '', debug };
-		if (t === 'file') {
-			const icon = await getFileIconData(p);
-			push('file', { iconLen: typeof icon === 'string' ? icon.length : 0 });
-			return { icon, debug };
-		}
-		if (t !== 'app') return { icon: '', debug };
-
-		await ensureStartMenuShortcutIndex();
-		const rawId = String(p || '').trim();
-		push('input', { rawId, isAumid: rawId.includes('!') });
-
-		let icon = '';
-		const resolved = resolveAppId(rawId);
-		const normalizedResolved = normalizeIconFileSpec(resolved);
-		const isFsPath = normalizedResolved.includes('\\') || normalizedResolved.includes('/');
-		push('resolved', {
-			resolved,
-			normalizedResolved,
-			isFsPath,
-			exists: isFsPath ? existsSync(normalizedResolved) : false,
-		});
-		if (isFsPath && normalizedResolved && existsSync(normalizedResolved)) {
-			const d = await getFileIconData(normalizedResolved);
-			push('file-icon', { iconLen: d.length });
-			if (d) icon = d;
-		}
-
-		if (!icon && rawId.includes('!')) {
-			try {
-				const ni = await app.getFileIcon(`shell:AppsFolder\\${rawId}`, { size: 'large' });
-				const sz = !ni.isEmpty() && typeof ni.getSize === 'function' ? ni.getSize() : { width: 0, height: 0 };
-				const useless = !ni.isEmpty() && isProbablyUselessAppIcon(ni);
-				const d = !ni.isEmpty() && !useless ? ni.toDataURL() : '';
-				const tooSmall = d ? d.length < 900 : false;
-				const accepted = Boolean(d) && !tooSmall;
-				push('appsFolder-getFileIcon', { empty: ni.isEmpty(), size: sz, useless, tooSmall, accepted, iconLen: d.length });
-				if (accepted) icon = d;
-			} catch (e: any) {
-				push('appsFolder-getFileIcon', { error: e?.message || String(e) });
-			}
-		}
-
-		if (!icon && rawId.includes('!')) {
-			const d = await getShellItemIconDataUrl(`shell:AppsFolder\\${rawId}`);
-			push('appsFolder-shellItem', { iconLen: d.length });
-			if (d) icon = d;
-		}
-
-		if (!icon) {
-			const shortcut = n ? findStartMenuShortcutByName(n) : '';
-			push('startMenuShortcut', { shortcut, exists: shortcut ? existsSync(shortcut) : false });
-			if (shortcut && existsSync(shortcut)) {
-				const d = await getFileIconData(shortcut);
-				push('startMenuShortcut-icon', { iconLen: d.length });
-				if (d) icon = d;
-			}
-		}
-
-		if (!icon && rawId.includes('!')) {
-			const iconPath = await resolveUwpIconPathByAumid(rawId);
-			const exists = iconPath ? existsSync(iconPath) : false;
-			push('uwp-iconPath', { iconPath, exists });
-			if (iconPath && exists) {
-				try {
-					const buf = readFileSync(iconPath);
-					push('uwp-readFile', { bytes: buf.length });
-					const img = nativeImage.createFromBuffer(buf);
-					const size = !img.isEmpty() ? img.getSize() : { width: 0, height: 0 };
-					push('uwp-decode', { empty: img.isEmpty(), size });
-					let d = '';
-					if (!img.isEmpty()) d = img.resize({ width: 64, height: 64, quality: 'better' }).toDataURL();
-					if (!d) {
-						const ext = path.extname(iconPath).toLowerCase();
-						const mime =
-							ext === '.jpg' || ext === '.jpeg'
-								? 'image/jpeg'
-								: ext === '.ico'
-									? 'image/x-icon'
-									: 'image/png';
-						d = `data:${mime};base64,${buf.toString('base64')}`;
-					}
-					push('uwp-final', { iconLen: d.length });
-					if (d) icon = d;
-				} catch (e: any) {
-					push('uwp-readFile', { error: e?.message || String(e) });
-				}
-			}
-		}
-
-		push('final', { iconLen: icon.length });
-		return { icon, debug };
-	} catch (e: any) {
-		push('fatal', { error: e?.message || String(e) });
-		return { icon: '', debug };
-	}
-});
-
 ipcMain.handle('rebuild-file-index', async (_event, options?: { ignoredPaths?: string[] }) => {
 	// 全盘索引需要尊重用户配置的限制（例如路径黑名单）：这里允许设置页把“当前配置”传进来生效
 	if (Array.isArray(options?.ignoredPaths)) {
@@ -2789,10 +2017,29 @@ ipcMain.handle('get-file-index-status', async () => {
 	return await fileIndex.getStatus();
 });
 
-ipcMain.handle(
-	'search-files',
-	async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
-	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
+ipcMain.handle('search-files', async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
+	return await handleSearchFiles(event, query, options, {
+		fileIndex,
+		reconcileRecentIndex: () => void reconcileRecentIndex(),
+		loadSettings,
+		loadHistoryStats,
+		normalizeHistoryKey,
+		normalizeExtKey,
+		getInstalledApps: () => installedAppsCache,
+		normalizeAppGroupKey,
+		iconDataCache,
+		isTooSmallAppIconDataUrl,
+		getAppIconDataStable,
+		getFileIconData,
+		isIgnoredPathByCache,
+		normalizeRecentKey,
+		recentIndex,
+		shouldSkipWatchPath,
+		getWindowsFileSystemRoots,
+	});
+});
+
+async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, options?: any) {
 	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
@@ -3888,4 +3135,3 @@ ipcMain.handle(
 		totalCount,
 	};
 	}
-);
