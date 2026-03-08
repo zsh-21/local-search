@@ -7,7 +7,6 @@ import {
   dedupeResults,
   filterItemsBySearchType as filterItemsBySearchTypeUtil,
   limitResults as limitResultsUtil,
-  mergeByServerOrder as mergeByServerOrderUtil,
   mergeResultsStable,
   normalizeResultKey,
 } from "./searchResultUtils";
@@ -139,9 +138,6 @@ export function useSearchController() {
   };
 
   const limitResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
-
-  const mergeByServerOrder = (prev: AppItem[], serverOrdered: AppItem[]) =>
-    mergeByServerOrderUtil(prev, serverOrdered, DISPLAY_LIMIT);
 
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {

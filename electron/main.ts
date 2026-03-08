@@ -1548,6 +1548,8 @@ if (!gotTheLock) {
 
 app.on('will-quit', () => {
 	globalShortcut.unregisterAll();
+	tray?.destroy();
+	tray = null;
 	for (const w of userDirWatchers.values()) {
 		try {
 			w.close();
@@ -2039,7 +2041,7 @@ ipcMain.handle('search-files', async (event, query: string, options?: { searchTy
 	});
 });
 
-async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, options?: any) {
+export async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, options?: any) {
 	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
@@ -2047,14 +2049,6 @@ async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, op
 
 	const lowerQuery = query.trim().toLowerCase();
 	const queryParts = lowerQuery.split(/\s+/).filter(Boolean);
-	const aliases: Record<string, string[]> = {
-		wechat: ['wechat', 'weixin', '微信'],
-		微信: ['wechat', 'weixin', '微信'],
-		google: ['google', 'chrome'],
-		chrome: ['google', 'chrome'],
-		edge: ['edge', 'microsoft edge'],
-	};
-	const keywords = aliases[lowerQuery] || [lowerQuery];
 
 	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
 	// 搜索会话 ID：用于将后台分批推送的 more-results 与当前搜索绑定，避免切换类型后出现重复项/数量不一致
@@ -2311,7 +2305,6 @@ async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, op
 		const matchedAppIds = new Set<string>();
 		const results: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [];
 		for (const appItem of installedAppsCache) {
-			const nameLower = appItem.Name.toLowerCase();
 			// 应用匹配按“分词 + 模糊子序列”计算相关性：避免仅靠 includes 导致弱相关项混入
 			const legacyScore = scoreRecentName(appItem.Name);
 			const weighted = computeWeightedNameMatch(appItem.Name);
@@ -2553,7 +2546,6 @@ async function legacySearchFilesHandler_DO_NOT_USE(event: any, query: string, op
 			}
 
 			const isDirectory = Boolean(it.isDirectory);
-			const timeMs = 0;
 
 			if (searchTypeId === 'file') {
 				if (isDirectory) continue;

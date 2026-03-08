@@ -54,8 +54,6 @@ export async function handleSearchFiles(
 		isIgnoredPathByCache,
 		normalizeRecentKey,
 		recentIndex,
-		shouldSkipWatchPath,
-		getWindowsFileSystemRoots,
 	} = deps;
 	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
 	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
@@ -64,15 +62,7 @@ export async function handleSearchFiles(
 	void reconcileRecentIndex();
 
 	const nameScorer = createNameScorer(query);
-	const { lowerQuery, queryParts, computeWeightedNameMatch, scoreRecentName } = nameScorer;
-	const aliases: Record<string, string[]> = {
-		wechat: ['wechat', 'weixin', '微信'],
-		微信: ['wechat', 'weixin', '微信'],
-		google: ['google', 'chrome'],
-		chrome: ['google', 'chrome'],
-		edge: ['edge', 'microsoft edge'],
-	};
-	const keywords = aliases[lowerQuery] || [lowerQuery];
+	const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;
 
 	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
 	// 搜索会话 ID：用于将后台分批推送的 more-results 与当前搜索绑定，避免切换类型后出现重复项/数量不一致
