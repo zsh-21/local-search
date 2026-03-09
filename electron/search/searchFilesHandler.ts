@@ -172,6 +172,9 @@ export async function handleSearchFiles(
 		if (isIgnoredPathByCache(r.path)) continue;
 		if (driveFilter && !r.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
 		if (extFilter && !String(r.path).toLowerCase().endsWith(extFilter)) continue;
+		// 再次过滤无效路径（兜底）：FileIndex 层面已过滤，但为防止旧缓存/搜索结果泄漏，此处对文件类型再做一次校验
+		// 应用类型（App）不走此逻辑，因此 Microsoft.ScreenSketch... 等 AUMID 不受影响
+		if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(r.path) && !r.path.startsWith('\\\\')) continue;
 		filteredFiles.push(r);
 	}
 

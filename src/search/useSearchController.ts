@@ -381,7 +381,10 @@ export function useSearchController() {
         startTransition(() => {
           const limited = limitResults(dedupeResults(nextResults));
           setResults(limited);
-          setTotalCount(typeof resp?.totalCount === "number" ? resp.totalCount : limited.length);
+          const rawTotal = typeof resp?.totalCount === "number" ? resp.totalCount : limited.length;
+          // 如果没有更多结果，且当前结果数量小于后端返回的总数（说明前端去重了），则以当前结果数量为准，避免界面显示“12条结果”但列表只有3项
+          const finalTotal = (!resp?.hasMore && limited.length < rawTotal) ? limited.length : rawTotal;
+          setTotalCount(finalTotal);
           setIsIndexing(Boolean(resp?.isIndexing));
           setHasMore(Boolean(resp?.hasMore));
         });
