@@ -17,7 +17,7 @@ export function SearchViewImpl() {
     const out: string[] = [];
     for (const id of raw) {
       if (id === "deleteHistory" && !isHistoryMode) continue;
-      if (!["openFolder", "copyPath", "deleteHistory"].includes(id)) continue;
+      if (!["openFolder", "copyPath", "deleteHistory", "runAsAdmin"].includes(id)) continue;
       if (out.includes(id)) continue;
       out.push(id);
       if (out.length >= 3) break;
@@ -134,7 +134,11 @@ export function SearchViewImpl() {
         style={style}
         {...ariaAttributes}
         className={`result-item-wrapper ${isSelected ? "selected" : ""}`}
-        onClick={() => c.launchApp(item)}
+        onMouseDown={(e) => {
+          if (e.button === 0) {
+            c.launchApp(item);
+          }
+        }}
         onMouseEnter={() => {
           return;
         }}
@@ -162,9 +166,14 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       c.openFolder(item);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((e as any).detail === 0) c.openFolder(item);
                     }}
                     title="打开所在目录"
                     aria-label="打开所在目录"
@@ -185,12 +194,16 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       navigator.clipboard
                         .writeText(item.path)
                         .then(() => c.showToast("已复制路径", "success"))
                         .catch(() => c.showToast("复制失败", "error"));
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                     }}
                     title="复制路径"
                     aria-label="复制路径"
@@ -207,14 +220,46 @@ export function SearchViewImpl() {
                   </button>
                 );
               }
+              if (actionId === "runAsAdmin") {
+                return (
+                  <button
+                    key={actionId}
+                    className="action-btn"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      c.runAsAdmin(item);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                    title="以管理员身份运行"
+                    aria-label="以管理员身份运行"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                );
+              }
               if (actionId === "deleteHistory") {
                 return (
                   <button
                     key={actionId}
                     className="action-btn delete-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       void c.deleteHistoryItem(item.path);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                     }}
                     title="删除该历史"
                     aria-label="删除该历史"
@@ -265,6 +310,10 @@ export function SearchViewImpl() {
       className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""}`}
       ref={c.containerRef}
       onKeyDownCapture={c.handleKeyDownCapture}
+      onMouseDownCapture={(e) => {
+        if (e.target !== e.currentTarget) return;
+        c.hideWindow();
+      }}
     >
       <BackgroundImage path={c.settings.backgroundImagePath} opacity={c.settings.backgroundImageOpacity} />
       <ParticleBackground enabled={c.settings.enableEffect} type={c.settings.effectType} />

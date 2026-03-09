@@ -282,8 +282,16 @@ export class FileIndex {
 
 	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
+		// 严格校验路径格式：必须是绝对路径且包含盘符（Windows下），避免相对路径/缺失盘符导致无法打开
+		if (process.platform === 'win32') {
+			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\\\')) return;
+		} else {
+			if (!entryPath.startsWith('/')) return;
+		}
+
 		const db = await this.ensureDB();
-		if (this.pathToId.has(entryPath)) return;
+		const key = entryPath.toLowerCase();
+		if (this.pathToId.has(key)) return;
 		// Check ignore path
 		if (this.isIgnoredPath(entryPath)) return;
 
@@ -304,18 +312,19 @@ export class FileIndex {
 			ext,
 			drive,
 		});
-		if (typeof id === 'string' && id) this.pathToId.set(entryPath, id);
+		if (typeof id === 'string' && id) this.pathToId.set(key, id);
 	}
 
 	async removePath(entryPath: string) {
 		if (!entryPath) return;
-		const id = this.pathToId.get(entryPath);
+		const key = entryPath.toLowerCase();
+		const id = this.pathToId.get(key);
 		if (!id) return;
 		const db = await this.ensureDB();
 		try {
 			await remove(db, id);
 		} catch {}
-		this.pathToId.delete(entryPath);
+		this.pathToId.delete(key);
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -350,12 +359,12 @@ export class FileIndex {
 					ext: e.ext,
 				}));
 				const ids = await insertMultiple(this.db, docs);
-				for (let i = 0; i < docs.length; i++) {
-					const p = docs[i]?.path;
-					const id = (ids as any)[i];
-					if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p, id);
-				}
-				batch.length = 0;
+			for (let i = 0; i < docs.length; i++) {
+				const p = docs[i]?.path;
+				const id = (ids as any)[i];
+				if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p.toLowerCase(), id);
+			}
+			batch.length = 0;
 			};
 
 			let count = 0;
@@ -378,7 +387,11 @@ export class FileIndex {
 				}
 				p = typeof p === 'string' ? p.trim() : '';
 				if (!p) continue;
-				if (this.pathToId.has(p)) continue;
+				// 过滤无效路径（如缺失盘符）
+				if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(p) && !p.startsWith('\\\\')) continue;
+				
+				const key = p.toLowerCase();
+				if (this.pathToId.has(key)) continue;
 				// 快捷方式不参与索引与搜索：加载历史缓存时也过滤掉，避免旧缓存导致仍出现 .lnk/.url
 				if (!isDirectory) {
 					const ext = path.extname(p).toLowerCase();
@@ -460,7 +473,7 @@ export class FileIndex {
 			for (let i = 0; i < docs.length; i++) {
 				const p = docs[i]?.path;
 				const id = (ids as any)[i];
-				if (typeof p === 'string' && p && typeof id === 'string' && id) nextPathToId.set(p, id);
+				if (typeof p === 'string' && p && typeof id === 'string' && id) nextPathToId.set(p.toLowerCase(), id);
 			}
 			for (const e of toWrite) {
 				cacheWs.write(`${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`);
@@ -487,7 +500,7 @@ export class FileIndex {
 		const addNext = (entry: FileIndexEntry) => {
 			if (entryCount >= this.maxEntries) return;
 			if (this.isIgnoredPath(entry.path)) return;
-			if (nextPathToId.has(entry.path)) return;
+			if (nextPathToId.has(entry.path.toLowerCase())) return;
 			// 快捷方式不参与索引：避免 .lnk/.url 出现在搜索结果里
 			if (!entry.isDirectory) {
 				const ext = path.extname(entry.name).toLowerCase();

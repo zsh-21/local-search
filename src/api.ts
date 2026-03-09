@@ -12,7 +12,7 @@ export interface User {
   primaryColor: string;
   // 会员到期时间（ISO 字符串）；后端仅在存在记录时返回
   memberExpiresAt?: string;
-  role?: string;
+  plan?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -26,6 +26,9 @@ export interface LoginResponse {
     membership?: {
       expiresAt: string;
     };
+    config?: {
+      maxDevices: number;
+    };
   } | null;
   message: string;
 }
@@ -37,6 +40,9 @@ export interface RefreshResponse {
     user: User;
     membership?: {
       expiresAt: string;
+    };
+    config?: {
+      maxDevices: number;
     };
   } | null;
   message: string;
@@ -65,17 +71,22 @@ function normalizeUserFromLoginData(data: { token: string; user: User; membershi
 
 export async function login(account: string, password: string): Promise<{ token: string; user: User }> {
   try {
+    const deviceId = await window.ipcRenderer.invoke('get-device-id');
     // 登录接口：成功返回 token 与 user；失败抛错交给 UI 统一提示
     const result = await requestJson(`${API_BASE_URL}/api/exe/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ account, password }),
+      body: JSON.stringify({ account, password, deviceId }),
     });
 
     if (!result.ok) {
-      throw new Error(result.statusText || `HTTP error! status: ${result.status}`);
+      const errorMsg = result.data?.message;
+      if (result.status === 403) {
+        throw new Error(errorMsg || "该账号已在两台设备登录，请退出其他设备后重试");
+      }
+      throw new Error(errorMsg || result.statusText || `HTTP error! status: ${result.status}`);
     }
 
     const responseData: LoginResponse = result.data;

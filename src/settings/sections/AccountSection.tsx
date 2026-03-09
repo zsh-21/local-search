@@ -76,6 +76,17 @@ export function AccountSection({
     };
   }, [avatarMenuOpen]);
 
+  const getRemainingTimeText = (expiresAt?: string) => {
+    if (!expiresAt) return "";
+    const end = new Date(expiresAt).getTime();
+    const now = Date.now();
+    const diff = end - now;
+    if (diff <= 0) return "";
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    return `${days}天${hours}小时`;
+  };
+
   return (
     <div className="settings-content">
       <div className="settings-group">
@@ -194,7 +205,16 @@ export function AccountSection({
                 <div className="account-detail-val">
                   {isMember ? (
                     <>
-                      {isMember && <div className="profile-vip-tag">已订阅</div>}
+                      {isMember && (
+                        <div className="profile-vip-tag">
+                          {user.plan === "trial" ? "试用中" : "已订阅"}
+                        </div>
+                      )}
+                      {user.memberExpiresAt && (
+                        <span className="vip-remaining-time" style={{ marginLeft: 8, fontSize: 13, opacity: 0.8 }}>
+                          还剩 {getRemainingTimeText(user.memberExpiresAt)}
+                        </span>
+                      )}
                     </>
                   ) : (
                     "非会员/已过期"

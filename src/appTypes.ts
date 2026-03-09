@@ -44,7 +44,7 @@ export interface AppSettings {
 }
 
 // 搜索结果右侧操作按钮：最多展示三项，用户可在设置里选择与排序
-export type ResultActionButtonId = "openFolder" | "copyPath" | "deleteHistory";
+export type ResultActionButtonId = "openFolder" | "copyPath" | "deleteHistory" | "runAsAdmin";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   autoStart: false,

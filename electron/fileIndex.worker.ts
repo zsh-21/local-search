@@ -1,20 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import { FileIndex } from './fileIndex';
 
-type WorkerRequest =
-	| { id: number; op: 'init'; payload: { cachePath: string; maxEntries?: number } }
-	| { id: number; op: 'reset' }
-	| { id: number; op: 'getStatus' }
-	| { id: number; op: 'setSearchWindowVisible'; payload: { visible: boolean } }
-	| { id: number; op: 'setIgnoredPaths'; payload: { paths: string[] } }
-	| { id: number; op: 'pauseIndexingFor'; payload: { ms: number } }
-	| { id: number; op: 'loadCache' }
-	| { id: number; op: 'buildIfEmpty' }
-	| { id: number; op: 'rebuild' }
-	| { id: number; op: 'ingestPath'; payload: { path: string; isDirectory: boolean } }
-	| { id: number; op: 'removePath'; payload: { path: string } }
-	| { id: number; op: 'search'; payload: { query: string; limit: number; options?: { where?: any } } };
-
 type WorkerResponse = { id: number; ok: true; result?: any } | { id: number; ok: false; error: string };
 
 // 将文件索引（Orama 建库/搜索/重建）放入 Worker 线程：避免主线程长任务导致拖拽/交互卡顿

@@ -141,6 +141,7 @@ export function SearchSection({
   const resultActionOptions: { id: AppSettings["resultActionButtons"][number]; label: string; note?: string }[] = [
     { id: "openFolder", label: "打开所在目录" },
     { id: "copyPath", label: "复制路径" },
+    { id: "runAsAdmin", label: "使用管理员权限打开" },
     { id: "deleteHistory", label: "删除历史记录", note: "仅历史模式显示" },
   ];
   const selectedActionIds = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];
@@ -476,7 +477,7 @@ export function SearchSection({
                   opt.id === "all" ? null : (
                     <button
                       type="button"
-                      className={`type-toggle-btn ${isTypeDisabled(opt.id) ? "" : "on"}`}
+                      className={`type-toggle-btn ${isTypeDisabled(opt.id) ? "on" : ""}`}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -485,7 +486,7 @@ export function SearchSection({
                       aria-pressed={!isTypeDisabled(opt.id)}
                       aria-label={isTypeDisabled(opt.id) ? "启用该类型" : "禁用该类型"}
                     >
-                      {isTypeDisabled(opt.id) ? "关闭" : "开启"}
+                      {isTypeDisabled(opt.id) ? "开启" : "关闭"}
                     </button>
                   )
                 }
