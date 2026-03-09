@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 // 图片文件扩展名集合
 export const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 // 视频文件扩展名集合

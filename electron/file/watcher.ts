@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, statSync, watch } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileIndex, isIgnoredPathByCache } from './indexService';
@@ -9,6 +9,11 @@ import { fileIndex, isIgnoredPathByCache } from './indexService';
 const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 // Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
 let windowsFileSystemRootsCache: string[] = [];
+// Windows 盘符缓存的最后刷新时间：降低 PowerShell 调用频率，减少后台常驻资源消耗
+let windowsFileSystemRootsLastAt = 0;
+
+// 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一次 PowerShell
+const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
 // 最近变更索引：用于弥补 fs.watch 丢事件/全量索引未覆盖导致的“新建文件搜不到”
 const RECENT_INDEX_MAX = 30_000;
@@ -42,10 +47,11 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
   return new Promise((resolve) => {
     try {
       const ps = spawn('powershell', [
+        '-NoLogo',
         '-NoProfile',
         '-Command',
         'Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root',
-      ]);
+      ], { windowsHide: true });
       let out = '';
       ps.stdout.on('data', (d) => (out += d.toString()));
       ps.on('close', () => {
@@ -98,18 +104,20 @@ export async function startUserDirectoryWatchers() {
         const fullPath = path.isAbsolute(raw) ? raw : path.join(normalized, raw);
         if (shouldSkipWatchPath(fullPath)) return;
         setTimeout(() => {
-          try {
-            if (!existsSync(fullPath)) {
+          // 事件回调处尽量避免同步 IO（existsSync/statSync），降低主进程卡顿概率
+          void (async () => {
+            try {
+              const st = await fs.stat(fullPath);
+              const isDir = st.isDirectory();
+              const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+              upsertRecentIndex(fullPath, isDir, timeMs);
+              await fileIndex.ingestPath(fullPath, isDir);
+            } catch {
+              // stat 失败通常意味着文件被删除/无权限：按删除处理，保证索引尽快收敛
               recentIndex.delete(normalizeRecentKey(fullPath));
-              void fileIndex.removePath(fullPath);
-              return;
+              await fileIndex.removePath(fullPath);
             }
-            const st = statSync(fullPath);
-            const isDir = st.isDirectory();
-            const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
-            upsertRecentIndex(fullPath, isDir, timeMs);
-            void fileIndex.ingestPath(fullPath, isDir);
-          } catch {}
+          })();
         }, 80);
       });
       userDirWatchers.set(key, w);
@@ -120,7 +128,12 @@ export async function startUserDirectoryWatchers() {
     // Windows 盘符可能运行期变化（U盘/移动硬盘），这里定时刷新并增删 watcher
     if (process.platform === 'win32') {
       try {
-        windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
+        const now = Date.now();
+        // 降低 PowerShell 调用频率：在刷新间隔内直接复用缓存结果
+        if (now - windowsFileSystemRootsLastAt > WINDOWS_ROOTS_REFRESH_INTERVAL_MS || windowsFileSystemRootsCache.length === 0) {
+          windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
+          windowsFileSystemRootsLastAt = now;
+        }
       } catch {}
     }
     const roots = (() => {
@@ -153,7 +166,7 @@ export async function startUserDirectoryWatchers() {
   if (process.platform === 'win32') {
     setInterval(() => {
       void refreshRootsAndWatch();
-    }, 12_000);
+    }, WINDOWS_ROOTS_REFRESH_INTERVAL_MS);
   }
 }
 
@@ -214,7 +227,8 @@ export async function reconcileRecentIndex(budgetMs = 1200) {
           const fullPath = path.join(dir, ent.name);
           if (shouldSkipWatchPath(fullPath)) continue;
           try {
-            const st = statSync(fullPath);
+            // 兜底扫描属于后台任务：使用异步 stat，避免阻塞主进程
+            const st = await fs.stat(fullPath);
             const isDir = st.isDirectory();
             const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
             upsertRecentIndex(fullPath, isDir, timeMs);

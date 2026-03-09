@@ -36,9 +36,21 @@ interface IndexShard {
   roots: string[]; // 该分片负责的根路径
 }
 
-const shards: IndexShard[] = [];
 // 限制 Worker 数量，避免过多线程竞争
 const WORKER_COUNT = Math.max(2, Math.min(4, cpus().length));
+
+// 预分配分片结构：避免在未初始化 Worker 时，shards.map(...) 变成空数组
+const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
+  id: i,
+  worker: null,
+  pending: new Map(),
+  seq: 0,
+  roots: [],
+}));
+
+// 运行期状态缓存：用于延迟创建 Worker 时仍能保持行为一致
+let searchWindowVisibleCache = false;
+let ignoredPathsCacheForWorkers: string[] = [];
 
 function setIgnoredPathsCache(paths: string[]) {
   const raw: string[] = Array.isArray(paths) ? paths : [];
@@ -96,7 +108,8 @@ export function isIgnoredPathByCache(targetPath: string) {
 }
 
 function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEntries: number }) {
-  if (shards[shardIndex]?.worker) return shards[shardIndex];
+  const shard = shards[shardIndex];
+  if (shard?.worker) return shard;
 
   // 为每个分片分配独立的缓存文件
   const cachePath = `${options.baseCachePath.replace(/\.txt$/, '')}-${shardIndex}.txt`;
@@ -105,15 +118,7 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
   // 注意：如果打包后 main.js 在 dist-electron 根目录，则此处路径正确
   const workerPath = path.join(__dirname, 'fileIndex.worker.js');
   const worker = new Worker(workerPath);
-  
-  const shard: IndexShard = {
-    id: shardIndex,
-    worker,
-    pending: new Map(),
-    seq: 0,
-    roots: [],
-  };
-  shards[shardIndex] = shard;
+  shard.worker = worker;
 
   worker.on('message', (msg: any) => {
     const id = typeof msg?.id === 'number' ? msg.id : -1;
@@ -133,17 +138,26 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
     shard.worker = null;
   });
 
-  // 初始化 Worker
-  const seq = ++shard.seq;
-  shard.pending.set(seq, { resolve: () => {}, reject: () => {} });
-  worker.postMessage({ 
-    id: seq, 
-    op: 'init', 
-    payload: { 
-      cachePath, 
-      maxEntries: Math.floor(options.maxEntries / WORKER_COUNT) // 均分最大条目限制
-    } 
+  // 初始化与状态同步：需要在 Worker 创建后立即下发，否则延迟创建会导致“设置不同步”
+  const fireAndForget = (op: FileIndexWorkerOp, payload?: any) => {
+    const id = ++shard.seq;
+    shard.pending.set(id, { resolve: () => {}, reject: () => {} });
+    worker.postMessage({ id, op, payload });
+  };
+
+  // 1) init 必须最先发送
+  fireAndForget('init', {
+    cachePath,
+    maxEntries: Math.floor(options.maxEntries / WORKER_COUNT),
   });
+
+  // 2) 同步“搜索窗口可见性”状态：避免后创建的 Worker 低优先级策略不生效
+  fireAndForget('setSearchWindowVisible', { visible: searchWindowVisibleCache });
+
+  // 3) 同步忽略路径：避免后创建的 Worker 未应用忽略规则
+  if (ignoredPathsCacheForWorkers.length > 0) {
+    fireAndForget('setIgnoredPaths', { paths: ignoredPathsCacheForWorkers });
+  }
 
   return shard;
 }
@@ -182,11 +196,6 @@ function getShardForPath(targetPath: string): number {
   return Math.abs(hash) % WORKER_COUNT;
 }
 
-// 初始化所有分片
-for (let i = 0; i < WORKER_COUNT; i++) {
-  ensureShard(i, { baseCachePath: FILE_INDEX_PATH, maxEntries: 2_000_000 });
-}
-
 export const fileIndex = {
   reset: async () => {
     await Promise.all(shards.map((_, i) => callShard(i, 'reset')));
@@ -201,16 +210,32 @@ export const fileIndex = {
   },
 
   setSearchWindowVisible: (visible: boolean) => {
-    shards.forEach((_, i) => void callShard(i, 'setSearchWindowVisible', { visible }));
+    // 缓存状态：用于延迟创建 Worker 后的状态同步
+    searchWindowVisibleCache = visible;
+    // 仅对已创建的 Worker 下发，避免为了 UI 状态创建 Worker
+    shards.forEach((shard, i) => {
+      if (!shard.worker) return;
+      void callShard(i, 'setSearchWindowVisible', { visible });
+    });
   },
 
   setIgnoredPaths: async (paths: string[]) => {
     setIgnoredPathsCache(paths);
-    await Promise.all(shards.map((_, i) => callShard(i, 'setIgnoredPaths', { paths })));
+    // 缓存状态：用于延迟创建 Worker 后的状态同步
+    ignoredPathsCacheForWorkers = Array.isArray(paths) ? paths : [];
+    // 对已创建的 Worker 批量下发，避免触发未必要的 Worker 初始化
+    await Promise.all(
+      shards
+        .map((shard, i) => (shard.worker ? callShard(i, 'setIgnoredPaths', { paths }) : Promise.resolve()))
+    );
   },
 
   pauseIndexingFor: (ms: number) => {
-    shards.forEach((_, i) => void callShard(i, 'pauseIndexingFor', { ms }));
+    // 仅对已创建的 Worker 生效，避免为了暂停任务创建 Worker
+    shards.forEach((shard, i) => {
+      if (!shard.worker) return;
+      void callShard(i, 'pauseIndexingFor', { ms });
+    });
   },
 
   loadCache: async () => {
@@ -225,78 +250,12 @@ export const fileIndex = {
   rebuild: async () => {
     // 1. 获取所有盘符
     const allRoots = await getWindowsFileSystemRoots();
-    
-    // 2. 智能分配 Roots 给 Workers
-    // 策略：
-    // - 如果只有一个 C 盘，将其下的 Users 分给 Worker 0，其他目录分给 Worker 1...
-    // - 如果有多个盘，按盘符分配
-    
+
+    // 2. Roots 分配给 Workers：按盘符轮询分配，保持实现简单稳定
     const assignments: string[][] = Array.from({ length: WORKER_COUNT }, () => []);
-    
-    if (allRoots.length === 1 && allRoots[0].toLowerCase().startsWith('c')) {
-      // 只有 C 盘：精细化拆分
-      // Worker 0: Users (通常文件最多)
-      // Worker 1: Program Files 等
-      // Worker 2+: Windows (通常会被 ignore) 和其他
-      assignments[0].push('C:\\Users');
-      
-      // 其他顶级目录分配给剩余 Worker
-      // 这里为了简化，我们让其他 Worker 扫描 C:\ 但利用 `ignoredPaths` 或 `scope` 互斥？
-      // 不，最好的方式是显式指定。
-      // 由于无法预知 C 根目录下有哪些文件夹，我们采取一种混合策略：
-      // Worker 0 负责 C:\Users
-      // Worker 1 负责 C:\ 排除 Users (需要在 FileIndex 中支持 exclude? 目前不支持)
-      // 变通：让 Worker 1 扫描 C:\，但在 ingestPath 时判断？不行，rebuild 是遍历。
-      
-      // 简单方案：
-      // Worker 0: C:\Users
-      // Worker 1: C:\ (全量扫描) -> 这样会重复。
-      
-      // 改进方案：如果只有 C 盘，所有 Worker 都扫描 C 盘，但利用 Hash Sharding 决定是否索引？
-      // 这会浪费 IO（多线程扫同一个盘）。
-      
-      // 妥协方案：多 Worker 模式下，对于单盘系统，我们只用 1 个 Worker 负责全盘，避免复杂性。
-      // 或者：C 盘很大，必须拆分。
-      // 我们显式列出 C 盘常见目录？
-      // [Users, Program Files, Program Files (x86), Windows, ProgramData]
-      // 剩下的目录给最后一个 Worker。
-      
-      // 让我们采用“主目录优先”策略：
-      // Shard 0: C:\Users
-      // Shard 1: C:\ (根)
-      // 并在 Shard 1 的 ignore 列表中临时添加 C:\Users ?
-      // FileIndex 支持 setIgnoredPaths。我们可以给不同 Worker 设置不同的 ignore！
-      
-      // 动态设置 Ignore：
-      // Shard 0: 正常 ignore
-      // Shard 1: 正常 ignore + C:\Users
-      
-      // 保存分配信息
-      shards[0].roots = ['C:\\Users'];
-      shards[1].roots = ['C:\\']; // Shard 1 扫全盘
-      
-      // 更新 Worker 1 的 Ignore 规则，排除 Users
-      // 注意：这需要 setIgnoredPaths 支持增量或我们手动合并。
-      // 这里我们简单做：rebuild 时传递 explicitRoots。
-      // 对于 Shard 1，我们不仅传递 roots=['C:\\']，还需要告诉它 exclude=['C:\\Users']。
-      // 目前 FileIndex.ts 的 rebuild 不支持 exclude。
-      
-      // 回退到简单策略：单盘系统只用 Worker 0 扫全盘。多核优化仅针对多盘系统。
-      // 毕竟普通用户 C 盘文件虽多，但 IO 瓶颈在，多线程扫同一个 SSD 分区提升有限且复杂。
-      // 真正受益的是 C 盘 + D 盘 (数据盘)。
-      
-      // 修正策略：
-      // 简单的 Round-Robin 分配 Roots。
-      allRoots.forEach((root, idx) => {
-        assignments[idx % WORKER_COUNT].push(root);
-      });
-      
-    } else {
-      // 多盘系统：均匀分配
-      allRoots.forEach((root, idx) => {
-        assignments[idx % WORKER_COUNT].push(root);
-      });
-    }
+    allRoots.forEach((root, idx) => {
+      assignments[idx % WORKER_COUNT].push(root);
+    });
 
     // 更新分片状态
     assignments.forEach((roots, i) => {
@@ -329,24 +288,37 @@ export const fileIndex = {
       callShard<any>(i, 'search', { query, limit, options })
     ));
     
-    // 2. 合并结果
-    let allResults: any[] = [];
+    // 2. 合并结果：用 Top-K 插入替代全量 sort，降低高频搜索时的 CPU 波动
+    const topResults: any[] = [];
+    const insertTopK = (item: any) => {
+      if (!item) return;
+      if (!Number.isFinite(item.score)) return;
+      if (limit <= 0) return;
+
+      // 二分插入，保持 topResults 按 score 降序
+      let lo = 0;
+      let hi = topResults.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (item.score > topResults[mid].score) hi = mid;
+        else lo = mid + 1;
+      }
+      topResults.splice(lo, 0, item);
+      if (topResults.length > limit) topResults.pop();
+    };
+
     let totalCount = 0;
     let isIndexing = false;
     
     for (const res of results) {
-      if (res.results) allResults = allResults.concat(res.results);
+      if (Array.isArray(res.results)) {
+        for (const it of res.results) insertTopK(it);
+      }
       if (res.totalCount) totalCount += res.totalCount;
       if (res.isIndexing) isIndexing = true;
     }
-    
-    // 3. 排序与截断
-    allResults.sort((a, b) => b.score - a.score);
-    if (allResults.length > limit) {
-      allResults = allResults.slice(0, limit);
-    }
-    
-    return { results: allResults, isIndexing, totalCount };
+
+    return { results: topResults, isIndexing, totalCount };
   }
 };
 

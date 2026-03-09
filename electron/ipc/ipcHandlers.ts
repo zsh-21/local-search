@@ -238,8 +238,20 @@ export function registerIpcHandlers() {
     } catch {}
 
     // Rebuild index if ignored paths changed
-    if (prevIgnoredPaths.join('|') !== next.ignoredPaths.join('|')) {
-        void fileIndex.rebuild();
+    // 忽略路径对比：仅当“集合内容”变化时才触发重建，避免因为顺序变化导致误重建
+    const normalizeIgnoredPathsForCompare = (list: string[]) => {
+      const arr = Array.isArray(list) ? list : [];
+      return arr
+        .filter((v) => typeof v === 'string')
+        .map((v) => v.trim())
+        .filter(Boolean)
+        .slice()
+        .sort();
+    };
+    const prevKey = normalizeIgnoredPathsForCompare(prevIgnoredPaths).join('|');
+    const nextKey = normalizeIgnoredPathsForCompare(next.ignoredPaths).join('|');
+    if (prevKey !== nextKey) {
+      void fileIndex.rebuild();
     }
     return { ok: true };
   });

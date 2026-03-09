@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
 import { toPinyinFull, toPinyinInitials } from './pinyin';
-import { shouldIndexFile, normalizeDrive, classifyKind, shouldSkipDirName } from './file/utils';
+import { shouldIndexFile, normalizeDrive, classifyKind } from './file/utils';
 import { RecursiveScanner } from './file/scanners/recursiveScanner';
 import { UsnScanner } from './file/scanners/usnScanner';
 import { SystemDetector } from './file/systemDetector';
@@ -434,8 +434,11 @@ export class FileIndex {
 				const id = (ids as any)[i];
 				if (typeof p === 'string' && p && typeof id === 'string' && id) nextPathToId.set(p.toLowerCase(), id);
 			}
-			for (const e of toWrite) {
-				cacheWs.write(`${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`);
+
+			// 写入缓存时处理背压：大索引构建时避免 write 堆积导致内存抖动
+			const lines = toWrite.map((e) => `${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`).join('');
+			if (!cacheWs.write(lines)) {
+				await new Promise<void>((resolve) => cacheWs.once('drain', () => resolve()));
 			}
 		};
 
