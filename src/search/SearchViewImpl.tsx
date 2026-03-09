@@ -17,7 +17,7 @@ export function SearchViewImpl() {
     const out: string[] = [];
     for (const id of raw) {
       if (id === "deleteHistory" && !isHistoryMode) continue;
-      if (!["openFolder", "copyPath", "deleteHistory"].includes(id)) continue;
+      if (!["openFolder", "copyPath", "deleteHistory", "runAsAdmin"].includes(id)) continue;
       if (out.includes(id)) continue;
       out.push(id);
       if (out.length >= 3) break;
@@ -203,6 +203,30 @@ export function SearchViewImpl() {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path
                         d="M8 4V3c0-.6.4-1 1-1h10c.6 0 1 .4 1 1v10c0 .6-.4 1-1 1h-1M4 8v12c0 .6.4 1 1 1h10c.6 0 1-.4 1-1V8c0-.6-.4-1-1-1H5c-.6 0-1 .4-1 1Z"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                );
+              }
+              if (actionId === "runAsAdmin") {
+                return (
+                  <button
+                    key={actionId}
+                    className="action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      c.runAsAdmin(item);
+                    }}
+                    title="以管理员身份运行"
+                    aria-label="以管理员身份运行"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
                         stroke="currentColor"
                         strokeWidth="1.8"
                         strokeLinecap="round"

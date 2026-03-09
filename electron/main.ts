@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync, watch, writeFileSync } from 'node:f
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
+import { randomUUID } from 'node:crypto';
 import { hasChineseChar, toPinyinFull, toPinyinInitials } from './pinyin';
 import { resolveAppId } from './win/resolveAppId';
 import { openLnkShortcut, readUrlShortcut } from './win/shortcuts';
@@ -43,7 +44,7 @@ interface AppSettings {
 	resultActionButtons: ResultActionButtonId[];
 }
 
-type ResultActionButtonId = 'openFolder' | 'copyPath' | 'deleteHistory';
+type ResultActionButtonId = 'openFolder' | 'copyPath' | 'deleteHistory' | 'runAsAdmin';
 
 if (!app.isPackaged) {
 	const baseUserData = app.getPath('userData');
@@ -58,6 +59,7 @@ const FILE_INDEX_META_PATH = path.join(app.getPath('userData'), 'file-index-meta
 const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
 const HISTORY_STATS_PATH = path.join(app.getPath('userData'), 'history-stats.json');
 const INSTALLED_APPS_CACHE_PATH = path.join(app.getPath('userData'), 'installed-apps.json');
+const DEVICE_ID_PATH = path.join(app.getPath('userData'), 'device-id.json');
 const INSTALLED_APPS_CACHE_VERSION = 1;
 
 const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
@@ -397,7 +399,7 @@ function loadSettings(): AppSettings {
 			const safeDefaultSearchTypeId = disabledSearchTypeIds.includes(defaultSearchTypeId) ? 'all' : defaultSearchTypeId;
 
 			// 结果右侧按钮配置：过滤非法值、去重并限制最多三项
-			const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
+			const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory', 'runAsAdmin']);
 			const rawActionButtons: string[] = Array.isArray(raw?.resultActionButtons)
 				? raw.resultActionButtons.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
 				: [];
@@ -1417,6 +1419,24 @@ function showSettingsWindow() {
 	createSettingsWindow();
 }
 
+function getDeviceId() {
+	try {
+		if (existsSync(DEVICE_ID_PATH)) {
+			const raw = JSON.parse(readFileSync(DEVICE_ID_PATH, 'utf-8'));
+			if (typeof raw?.deviceId === 'string' && raw.deviceId) return raw.deviceId;
+		}
+	} catch {}
+	const newId = randomUUID();
+	try {
+		writeFileSync(DEVICE_ID_PATH, JSON.stringify({ deviceId: newId }));
+	} catch {}
+	return newId;
+}
+
+ipcMain.handle('get-device-id', () => {
+	return getDeviceId();
+});
+
 ipcMain.handle('search-view-ready', () => {
 	searchAllowBlurHide = true;
 	// Do not reduce the protection time set by openSearchWindow
@@ -1764,7 +1784,7 @@ ipcMain.handle('save-settings', async (_event, settings: AppSettings) => {
 		ignoredPaths.push(p);
 	}
 
-	const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory']);
+	const allowedActionIds = new Set<ResultActionButtonId>(['openFolder', 'copyPath', 'deleteHistory', 'runAsAdmin']);
 	const rawActionButtons: string[] = Array.isArray(settings?.resultActionButtons)
 		? settings.resultActionButtons.map((x: any) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
 		: [];
@@ -1975,6 +1995,37 @@ ipcMain.handle('open-folder', async (event, input: any) => {
 		}
 		BrowserWindow.fromWebContents(event.sender)?.hide();
 		return true;
+	} catch {
+		return false;
+	}
+});
+
+ipcMain.handle('run-as-admin', async (event, input: any) => {
+	try {
+		const p = typeof input === 'string' ? input : typeof input?.path === 'string' ? input.path : '';
+		if (!p) return false;
+		
+		const resolved = resolveAppId(p);
+		
+		if (process.platform === 'win32') {
+			const escaped = resolved.replace(/'/g, "''");
+			// 使用 PowerShell 的 Start-Process -Verb RunAs 提权运行
+			const cmd = `Start-Process '${escaped}' -Verb RunAs`;
+			const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
+			
+			const ok = await new Promise<boolean>((resolve) => {
+				ps.on('close', (code) => resolve(code === 0));
+				ps.on('error', () => resolve(false));
+			});
+			if (ok) {
+				BrowserWindow.fromWebContents(event.sender)?.hide();
+			}
+			return ok;
+		}
+		// 非 Windows 平台暂不支持提权，降级为普通打开
+		const ok = await openResolvedTarget(resolved);
+		if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+		return ok;
 	} catch {
 		return false;
 	}

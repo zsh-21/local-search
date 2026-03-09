@@ -141,6 +141,7 @@ export function SearchSection({
   const resultActionOptions: { id: AppSettings["resultActionButtons"][number]; label: string; note?: string }[] = [
     { id: "openFolder", label: "打开所在目录" },
     { id: "copyPath", label: "复制路径" },
+    { id: "runAsAdmin", label: "使用管理员权限打开" },
     { id: "deleteHistory", label: "删除历史记录", note: "仅历史模式显示" },
   ];
   const selectedActionIds = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];

@@ -569,6 +569,12 @@ export function useSearchController() {
     });
   };
 
+  const runAsAdmin = (app: AppItem) => {
+    window.ipcRenderer?.invoke("run-as-admin", {
+      path: app.path,
+    });
+  };
+
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === "l" || e.key === "k")) {
       e.preventDefault();
@@ -766,6 +772,7 @@ export function useSearchController() {
     openSettings,
     openFolder,
     launchApp,
+    runAsAdmin,
     hideWindow,
     refreshHistory,
     deleteHistoryItem,
