@@ -162,9 +162,14 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       c.openFolder(item);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if ((e as any).detail === 0) c.openFolder(item);
                     }}
                     title="打开所在目录"
                     aria-label="打开所在目录"
@@ -265,6 +270,10 @@ export function SearchViewImpl() {
       className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""}`}
       ref={c.containerRef}
       onKeyDownCapture={c.handleKeyDownCapture}
+      onMouseDownCapture={(e) => {
+        if (e.target !== e.currentTarget) return;
+        c.hideWindow();
+      }}
     >
       <BackgroundImage path={c.settings.backgroundImagePath} opacity={c.settings.backgroundImageOpacity} />
       <ParticleBackground enabled={c.settings.enableEffect} type={c.settings.effectType} />

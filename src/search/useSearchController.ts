@@ -528,10 +528,16 @@ export function useSearchController() {
     }
   }, [selectedIndex, lastSelectedBy]);
 
+  const hideWindow = () => {
+    setTypeMenuOpen(false);
+    window.ipcRenderer?.invoke("hide-window");
+  };
+
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        window.ipcRenderer?.send("hide-window");
+        e.preventDefault();
+        hideWindow();
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -572,8 +578,7 @@ export function useSearchController() {
     }
 
     if (e.key === "Escape") {
-      setTypeMenuOpen(false);
-      window.ipcRenderer?.invoke("hide-window");
+      hideWindow();
       return;
     }
 
@@ -761,6 +766,7 @@ export function useSearchController() {
     openSettings,
     openFolder,
     launchApp,
+    hideWindow,
     refreshHistory,
     deleteHistoryItem,
     scrollToTop,
