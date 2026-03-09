@@ -59,7 +59,7 @@ parentPort?.on('message', async (msg: any) => {
 			return;
 		}
 		if (req.op === 'rebuild') {
-			await fileIndex.rebuild();
+			await fileIndex.rebuild(req.payload?.roots);
 			reply({ id: req.id, ok: true });
 			return;
 		}

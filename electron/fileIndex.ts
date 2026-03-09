@@ -434,7 +434,7 @@ export class FileIndex {
 		await this.rebuild();
 	}
 
-	async rebuild() {
+	async rebuild(explicitRoots?: string[]) {
 		if (this.isIndexing) return;
 		this.isIndexing = true;
 		this.rebuildStartedAt = Date.now();
@@ -511,7 +511,9 @@ export class FileIndex {
 			entryCount++;
 		};
 
-		const roots = await getWindowsFileSystemRoots();
+		const roots = Array.isArray(explicitRoots) && explicitRoots.length > 0 
+            ? explicitRoots 
+            : await getWindowsFileSystemRoots();
 
 		try {
 			for (const root of roots) {
