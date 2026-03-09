@@ -103,6 +103,11 @@ export async function handleSearchFiles(
 	});
 	const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 	const videoExts = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
+	// 过滤快捷方式：.lnk/.url 往往只是指向目标文件/应用，会导致结果重复
+	const isShortcutPath = (p: string) => {
+		const lower = String(p || '').toLowerCase();
+		return lower.endsWith('.lnk') || lower.endsWith('.url');
+	};
 	const settingsItems = getWindowsSettingsItems();
 	const { settingsResults, settingsOnly } = searchSettingsItems({
 		searchTypeId,
@@ -169,6 +174,7 @@ export async function handleSearchFiles(
 	const filteredFiles: Array<any> = [];
 	for (const r of fileResultsRaw) {
 		if (!r?.path) continue;
+		if (isShortcutPath(r.path)) continue;
 		if (isIgnoredPathByCache(r.path)) continue;
 		if (driveFilter && !r.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
 		if (extFilter && !String(r.path).toLowerCase().endsWith(extFilter)) continue;
@@ -196,6 +202,7 @@ export async function handleSearchFiles(
 		for (const it of items) {
 			const key = normalizeRecentKey(it.path);
 			if (!key || seen.has(key)) continue;
+			if (isShortcutPath(it.path)) continue;
 			if (isIgnoredPathByCache(it.path)) continue;
 			if (driveFilter && !it.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
 			if (extFilter && !String(it.path).toLowerCase().endsWith(extFilter)) continue;

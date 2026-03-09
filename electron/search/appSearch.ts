@@ -37,6 +37,12 @@ export async function searchApps(input: {
 
 	if (searchTypeId !== 'all' && searchTypeId !== 'file' && searchTypeId !== 'app') return [];
 
+	// 过滤快捷方式：.lnk/.url 往往只是指向目标应用，会导致结果重复
+	const isShortcutAppId = (appId: string) => {
+		const lower = String(appId || '').toLowerCase();
+		return lower.endsWith('.lnk') || lower.endsWith('.url');
+	};
+
 	const installedApps = getInstalledApps();
 	const actionTokens = ['卸载', 'uninstall', 'remove', '删除', '移除'];
 	const isActionQuery = actionTokens.some((t) => lowerQuery.includes(t));
@@ -46,6 +52,7 @@ export async function searchApps(input: {
 	const results: Array<{ name: string; path: string; type: string; icon?: string; score: number }> = [];
 
 	for (const appItem of installedApps) {
+		if (isShortcutAppId(appItem.AppID)) continue;
 		const legacyScore = scoreRecentName(appItem.Name);
 		const weighted = computeWeightedNameMatch(appItem.Name);
 		const nameMatchScore =
@@ -74,6 +81,7 @@ export async function searchApps(input: {
 		let added = 0;
 		const MAX_RELATED = 80;
 		for (const appItem of installedApps) {
+		if (isShortcutAppId(appItem.AppID)) continue;
 			if (added >= MAX_RELATED) break;
 			const appIdLower = String(appItem.AppID || '').toLowerCase();
 			if (!appIdLower) continue;
