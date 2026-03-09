@@ -595,11 +595,11 @@ export function useSearchController() {
       e.preventDefault();
       const idx = Math.max(
         0,
-        searchTypeOptions.findIndex((t) => t.id === searchTypeId),
+        enabledSearchTypeOptions.findIndex((t) => t.id === searchTypeId),
       );
       const delta = e.shiftKey ? -1 : 1;
-      const nextIdx = (idx + delta + searchTypeOptions.length) % searchTypeOptions.length;
-      const next = searchTypeOptions[nextIdx];
+      const nextIdx = (idx + delta + enabledSearchTypeOptions.length) % enabledSearchTypeOptions.length;
+      const next = enabledSearchTypeOptions[nextIdx];
       typeSwitchRequestedRef.current = true;
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
