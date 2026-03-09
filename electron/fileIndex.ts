@@ -2,14 +2,23 @@ import fs from 'node:fs/promises';
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
 import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
 import { toPinyinFull, toPinyinInitials } from './pinyin';
+import { shouldIndexFile, normalizeDrive, classifyKind, shouldSkipDirName } from './file/utils';
+import { RecursiveScanner } from './file/scanners/recursiveScanner';
+import { UsnScanner } from './file/scanners/usnScanner';
+import { SystemDetector } from './file/systemDetector';
 
 export interface FileIndexEntry {
 	path: string;
 	name: string;
 	isDirectory: boolean;
+    // 索引时使用的可选字段
+    kind?: string;
+    ext?: string;
+    drive?: string;
+    pinyin?: string;
+    initials?: string;
 }
 
 export interface FileIndexSearchResult extends FileIndexEntry {
@@ -88,62 +97,6 @@ const tokenizer = {
 	},
 };
 
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
-const SHORTCUT_EXTENSIONS = new Set(['.lnk', '.url']);
-
-function classifyKind(isDirectory: boolean, ext: string) {
-	if (isDirectory) return 'folder';
-	if (IMAGE_EXTENSIONS.has(ext)) return 'image';
-	if (VIDEO_EXTENSIONS.has(ext)) return 'video';
-	return 'file';
-}
-
-function shouldIndexFile(isDirectory: boolean, ext: string) {
-	// 快捷方式不参与索引与搜索结果：避免出现 .lnk/.url，且避免“快捷方式与真实文件”重复指向同一路径
-	if (isDirectory) return true;
-	return !SHORTCUT_EXTENSIONS.has(ext);
-}
-
-function normalizeDrive(p: string) {
-	const raw = typeof p === 'string' ? p.trim() : '';
-	const m = raw.match(/^([a-zA-Z]):/);
-	return m ? m[1].toLowerCase() : '';
-}
-
-function shouldSkipDirName(name: string) {
-	const lower = name.toLowerCase();
-	if (lower === 'node_modules') return true;
-	if (lower === '.git') return true;
-	if (lower === '.svn') return true;
-	if (lower === '.idea') return true;
-	if (lower === '$recycle.bin') return true;
-	if (lower === 'system volume information') return true;
-	// Allow Program Files and ProgramData as users might want to search for apps/files there
-	return false;
-}
-
-async function getWindowsFileSystemRoots(): Promise<string[]> {
-	return new Promise((resolve) => {
-		const ps = spawn('powershell', [
-			'-NoProfile',
-			'-Command',
-			'Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root',
-		]);
-		let out = '';
-		ps.stdout.on('data', (d) => (out += d.toString()));
-		ps.on('close', () => {
-			const roots = out
-				.split(/\r?\n/g)
-				.map((s) => s.trim())
-				.filter(Boolean)
-				.map((s) => (s.endsWith('\\') ? s : `${s}\\`));
-			resolve(Array.from(new Set(roots)));
-		});
-		ps.on('error', () => resolve(['C:\\']));
-	});
-}
-
 export class FileIndex {
 	private db: FileDB | null = null;
 	private pathToId = new Map<string, string>();
@@ -164,8 +117,6 @@ export class FileIndex {
 	}
 
 	reset() {
-		// clear:cache 等“强制清理”场景必须彻底复位索引状态：
-		// 否则 isIndexing 可能保持为 true，导致后续 buildIfEmpty()/rebuild() 直接 return，表现为“面板一直没有结果”
 		this.db = null;
 		this.pathToId.clear();
 		this.isIndexing = false;
@@ -183,7 +134,6 @@ export class FileIndex {
 	}
 
 	setSearchWindowVisible(visible: boolean) {
-		// 搜索窗口可见时降低索引优先级：让索引构建“默默”在后台进行，避免用户操作时感知卡顿
 		this.lowPriority = visible;
 		if (visible) this.pauseUntil = 0;
 	}
@@ -282,7 +232,6 @@ export class FileIndex {
 
 	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
-		// 严格校验路径格式：必须是绝对路径且包含盘符（Windows下），避免相对路径/缺失盘符导致无法打开
 		if (process.platform === 'win32') {
 			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\\\')) return;
 		} else {
@@ -292,7 +241,6 @@ export class FileIndex {
 		const db = await this.ensureDB();
 		const key = entryPath.toLowerCase();
 		if (this.pathToId.has(key)) return;
-		// Check ignore path
 		if (this.isIgnoredPath(entryPath)) return;
 
 		const name = path.basename(entryPath);
@@ -330,8 +278,6 @@ export class FileIndex {
 	async loadCache(): Promise<boolean> {
 		if (!existsSync(this.cachePath)) return false;
 
-		// Initialize DB
-		// 读取缓存期间也视为“索引进行中”：这样搜索时的 pauseIndexingFor() 能让加载任务让出时间片
 		this.isIndexing = true;
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
@@ -357,14 +303,15 @@ export class FileIndex {
 					isDirectory: e.isDirectory,
 					kind: e.kind,
 					ext: e.ext,
+					drive: e.drive
 				}));
 				const ids = await insertMultiple(this.db, docs);
-			for (let i = 0; i < docs.length; i++) {
-				const p = docs[i]?.path;
-				const id = (ids as any)[i];
-				if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p.toLowerCase(), id);
-			}
-			batch.length = 0;
+			    for (let i = 0; i < docs.length; i++) {
+				    const p = docs[i]?.path;
+				    const id = (ids as any)[i];
+				    if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p.toLowerCase(), id);
+			    }
+			    batch.length = 0;
 			};
 
 			let count = 0;
@@ -387,12 +334,10 @@ export class FileIndex {
 				}
 				p = typeof p === 'string' ? p.trim() : '';
 				if (!p) continue;
-				// 过滤无效路径（如缺失盘符）
 				if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(p) && !p.startsWith('\\\\')) continue;
 				
 				const key = p.toLowerCase();
 				if (this.pathToId.has(key)) continue;
-				// 快捷方式不参与索引与搜索：加载历史缓存时也过滤掉，避免旧缓存导致仍出现 .lnk/.url
 				if (!isDirectory) {
 					const ext = path.extname(p).toLowerCase();
 					if (!shouldIndexFile(false, ext)) continue;
@@ -418,7 +363,6 @@ export class FileIndex {
 			
 			return count > 0;
 		} catch {
-			// If load fails, ensure we have a valid empty db
 			if (!this.db) this.db = await create({ schema: SCHEMA });
 			return false;
 		} finally {
@@ -434,6 +378,18 @@ export class FileIndex {
 		await this.rebuild();
 	}
 
+	/**
+	 * 重建索引
+	 * 核心逻辑：基于文档的分级策略选择扫描器
+	 * 
+	 * 策略选择逻辑：
+	 * 1. 尝试使用 USN 扫描器 (UsnScanner)
+	 *    - 前置条件：hasNativeSupport (必须) + Admin (推荐) + NTFS (必须)
+	 *    - 如果检测失败或未集成，UsnScanner 会抛出异常
+	 * 2. 降级使用递归扫描器 (RecursiveScanner)
+	 *    - 场景：无原生插件、非 NTFS 分区、权限不足
+	 *    - 特性：使用并发队列优化 SSD 读取性能
+	 */
 	async rebuild(explicitRoots?: string[]) {
 		if (this.isIndexing) return;
 		this.isIndexing = true;
@@ -452,21 +408,24 @@ export class FileIndex {
 		let entryCount = 0;
 		const batch: FileIndexEntry[] = [];
 		const BATCH_SIZE = 2000;
+        let processedSinceYield = 0;
 
 		const flushBatch = async () => {
 			if (batch.length === 0) return;
 			const toWrite = batch.slice();
-			const docs = batch.map((e) => {
-				const ext = path.extname(e.name).toLowerCase();
+			batch.length = 0; // 立即清空，避免并发添加导致的重复或遗漏
+
+			const docs = toWrite.map((e) => {
+				const ext = e.ext || path.extname(e.name).toLowerCase();
 				return {
 					path: e.path,
 					name: e.name,
-					pinyin: toPinyinFull(e.name),
-					initials: toPinyinInitials(e.name),
+					pinyin: e.pinyin || toPinyinFull(e.name),
+					initials: e.initials || toPinyinInitials(e.name),
 					isDirectory: e.isDirectory,
-					kind: classifyKind(e.isDirectory, ext),
+					kind: e.kind || classifyKind(e.isDirectory, ext),
 					ext,
-					drive: normalizeDrive(e.path),
+					drive: e.drive || normalizeDrive(e.path),
 				};
 			});
 			const ids = await insertMultiple(nextDb, docs);
@@ -478,7 +437,6 @@ export class FileIndex {
 			for (const e of toWrite) {
 				cacheWs.write(`${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`);
 			}
-			batch.length = 0;
 		};
 
 		const maybePublishPartial = () => {
@@ -501,7 +459,6 @@ export class FileIndex {
 			if (entryCount >= this.maxEntries) return;
 			if (this.isIgnoredPath(entry.path)) return;
 			if (nextPathToId.has(entry.path.toLowerCase())) return;
-			// 快捷方式不参与索引：避免 .lnk/.url 出现在搜索结果里
 			if (!entry.isDirectory) {
 				const ext = path.extname(entry.name).toLowerCase();
 				if (!shouldIndexFile(false, ext)) return;
@@ -511,53 +468,48 @@ export class FileIndex {
 			entryCount++;
 		};
 
-		const roots = Array.isArray(explicitRoots) && explicitRoots.length > 0 
-            ? explicitRoots 
-            : await getWindowsFileSystemRoots();
+        // 确定扫描根目录
+		let roots = explicitRoots;
+        if (!roots || roots.length === 0) {
+            try {
+                const info = await SystemDetector.getInstance().detect();
+                // 优先扫描所有检测到的固定磁盘
+                roots = info.drives.map(d => d.mountPoint + '\\');
+            } catch {
+                // 兜底：仅扫描 C 盘
+                roots = ['C:\\'];
+            }
+        }
+
+        // 策略选择：尝试 USN -> 降级 Recursive
+        // 即使是 USN 模式，也可能因为部分盘符不支持而抛出异常，此时降级为全量递归
+        
+        try {
+            // 尝试使用 USN 扫描器
+            // UsnScanner 内部会检测 hasNativeSupport，若不支持会抛出异常
+            const usnScanner = new UsnScanner(this.isIgnoredPath.bind(this));
+            await usnScanner.scan(roots, addNext, () => entryCount >= this.maxEntries);
+        } catch (e) {
+            // 降级策略：使用递归扫描器
+            // 场景：无原生插件、非 NTFS、权限不足、或 USN 扫描失败
+            const recursiveScanner = new RecursiveScanner(this.isIgnoredPath.bind(this));
+            
+            // 包装进度回调以处理协作式让步 (Cooperative Yield)
+            // 避免主线程或 Worker 线程长时间阻塞
+            const wrappedProgress = async (entry: FileIndexEntry) => {
+                addNext(entry);
+                processedSinceYield++;
+                if (processedSinceYield % 250 === 0) {
+                     if (batch.length >= BATCH_SIZE) await flushBatch();
+                     await this.cooperativeYield(maybePublishPartial);
+                }
+            };
+            
+            await recursiveScanner.scan(roots, wrappedProgress, () => entryCount >= this.maxEntries);
+        }
 
 		try {
-			for (const root of roots) {
-				const queue: string[] = [root];
-				let q = 0;
-				while (q < queue.length && entryCount < this.maxEntries) {
-					const current = queue[q++];
-					if (!current) break;
-					if (this.isIgnoredPath(current)) continue;
-
-					let dir;
-					try {
-						dir = await fs.opendir(current);
-					} catch {
-						continue;
-					}
-
-					let processedInDir = 0;
-					for await (const dirent of dir) {
-						if (entryCount >= this.maxEntries) break;
-						if (dirent.isSymbolicLink()) continue;
-
-						const fullPath = path.join(current, dirent.name);
-						if (this.isIgnoredPath(fullPath)) continue;
-						if (dirent.isDirectory()) {
-							if (shouldSkipDirName(dirent.name)) continue;
-							addNext({ path: fullPath, name: dirent.name, isDirectory: true });
-							queue.push(fullPath);
-						} else {
-							addNext({ path: fullPath, name: dirent.name, isDirectory: false });
-						}
-
-						processedInDir += 1;
-						if (processedInDir % 250 === 0) {
-							if (batch.length >= BATCH_SIZE) await flushBatch();
-							await this.cooperativeYield(maybePublishPartial);
-						}
-					}
-                    
-                    if (batch.length >= BATCH_SIZE) await flushBatch();
-					await this.cooperativeYield(maybePublishPartial);
-				}
-			}
-
+			// 刷新剩余数据并完成构建
 			await flushBatch();
 			await new Promise<void>((resolve) => {
 				cacheWs.on('finish', () => resolve());
