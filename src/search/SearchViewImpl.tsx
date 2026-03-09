@@ -134,7 +134,11 @@ export function SearchViewImpl() {
         style={style}
         {...ariaAttributes}
         className={`result-item-wrapper ${isSelected ? "selected" : ""}`}
-        onClick={() => c.launchApp(item)}
+        onMouseDown={(e) => {
+          if (e.button === 0) {
+            c.launchApp(item);
+          }
+        }}
         onMouseEnter={() => {
           return;
         }}
@@ -190,12 +194,16 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       navigator.clipboard
                         .writeText(item.path)
                         .then(() => c.showToast("已复制路径", "success"))
                         .catch(() => c.showToast("复制失败", "error"));
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                     }}
                     title="复制路径"
                     aria-label="复制路径"
@@ -217,9 +225,13 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       c.runAsAdmin(item);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                     }}
                     title="以管理员身份运行"
                     aria-label="以管理员身份运行"
@@ -241,9 +253,13 @@ export function SearchViewImpl() {
                   <button
                     key={actionId}
                     className="action-btn delete-btn"
-                    onClick={(e) => {
+                    onMouseDown={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       void c.deleteHistoryItem(item.path);
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
                     }}
                     title="删除该历史"
                     aria-label="删除该历史"

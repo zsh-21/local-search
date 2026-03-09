@@ -981,6 +981,7 @@ function createWindow() {
 		minimizable: false,
 		fullscreenable: false,
 		alwaysOnTop: true,
+		acceptFirstMouse: true,
 		icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
