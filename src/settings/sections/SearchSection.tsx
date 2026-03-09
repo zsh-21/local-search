@@ -476,7 +476,7 @@ export function SearchSection({
                   opt.id === "all" ? null : (
                     <button
                       type="button"
-                      className={`type-toggle-btn ${isTypeDisabled(opt.id) ? "" : "on"}`}
+                      className={`type-toggle-btn ${isTypeDisabled(opt.id) ? "on" : ""}`}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -485,7 +485,7 @@ export function SearchSection({
                       aria-pressed={!isTypeDisabled(opt.id)}
                       aria-label={isTypeDisabled(opt.id) ? "启用该类型" : "禁用该类型"}
                     >
-                      {isTypeDisabled(opt.id) ? "关闭" : "开启"}
+                      {isTypeDisabled(opt.id) ? "开启" : "关闭"}
                     </button>
                   )
                 }

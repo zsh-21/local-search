@@ -84,13 +84,13 @@ export function GeneralSection({
             onClick={async () => {
               setError("");
               const ok = window.confirm(
-                "确定要清除所有历史记录吗？此操作不可恢复。",
+                "确定要清除历史记录吗？此操作不可恢复。",
               );
               if (!ok) return;
               await window.ipcRenderer?.invoke("clear-history");
             }}
           >
-            清除所有历史操作记录
+            清除历史操作记录
           </button>
         </div>
       </div>
