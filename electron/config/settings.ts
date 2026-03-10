@@ -175,14 +175,20 @@ export function loadSettings(): AppSettings {
 
       return {
         autoStart: Boolean(raw?.autoStart),
-        searchShortcut:
-          typeof raw?.searchShortcut === 'string' && raw.searchShortcut.trim()
-            ? raw.searchShortcut.trim()
-            : legacyShortcut || DEFAULT_SEARCH_SHORTCUT,
-        settingsShortcut:
-          typeof raw?.settingsShortcut === 'string' && raw.settingsShortcut.trim()
-            ? raw.settingsShortcut.trim()
-            : DEFAULT_SETTINGS_SHORTCUT,
+        searchShortcut: (() => {
+          const v =
+            typeof raw?.searchShortcut === 'string' && raw.searchShortcut.trim()
+              ? raw.searchShortcut.trim()
+              : legacyShortcut || DEFAULT_SEARCH_SHORTCUT;
+          return v.replace(/CommandOrControl/g, 'Ctrl').trim();
+        })(),
+        settingsShortcut: (() => {
+          const v =
+            typeof raw?.settingsShortcut === 'string' && raw.settingsShortcut.trim()
+              ? raw.settingsShortcut.trim()
+              : DEFAULT_SETTINGS_SHORTCUT;
+          return v.replace(/CommandOrControl/g, 'Ctrl').trim();
+        })(),
         theme,
         historyLimit:
           typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)

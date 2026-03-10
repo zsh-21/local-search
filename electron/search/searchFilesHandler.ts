@@ -155,14 +155,21 @@ export async function handleSearchFiles(
 		if (extFilter) and.push({ ext: { in: [extFilter] } });
 		if (driveFilter) and.push({ drive: { eq: driveFilter } });
 		if (searchTypeId === 'file') {
-			const excluded = new Set([...imageExts, ...videoExts, ...customExts]);
+			// “文档”类型需要排除可执行文件：避免在文档列表里搜到 .exe 等程序文件
+			const excluded = new Set([...imageExts, ...videoExts, ...customExts, '.exe']);
 			and.push({ ext: { nin: Array.from(excluded) } });
 		}
 		return and.length > 0 ? { and } : null;
 	})();
 
-	await fileIndex.buildIfEmpty();
-	const fileSearch = await fileIndex.search(query, fileSearchLimit, where ? { where } : undefined);
+	let fileSearch: any = null;
+	try {
+		await fileIndex.buildIfEmpty();
+		fileSearch = await fileIndex.search(query, fileSearchLimit, where ? { where } : undefined);
+	} catch {
+		// 索引 Worker 可能因内存不足退出：此时降级为“仅设置/应用/历史”结果，避免主进程产生未处理的 Promise rejection
+		fileSearch = { results: [], isIndexing: false, totalCount: 0 };
+	}
 	const fileResultsRaw: Array<{
 		path: string;
 		name: string;
@@ -178,6 +185,8 @@ export async function handleSearchFiles(
 		if (isIgnoredPathByCache(r.path)) continue;
 		if (driveFilter && !r.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
 		if (extFilter && !String(r.path).toLowerCase().endsWith(extFilter)) continue;
+		// 文档类型兜底过滤：防止旧索引/异常数据导致 .exe 泄漏到文档结果
+		if (searchTypeId === 'file' && String(r.path).toLowerCase().endsWith('.exe')) continue;
 		// 再次过滤无效路径（兜底）：FileIndex 层面已过滤，但为防止旧缓存/搜索结果泄漏，此处对文件类型再做一次校验
 		// 应用类型（App）不走此逻辑，因此 Microsoft.ScreenSketch... 等 AUMID 不受影响
 		if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(r.path) && !r.path.startsWith('\\\\')) continue;
@@ -206,6 +215,8 @@ export async function handleSearchFiles(
 			if (isIgnoredPathByCache(it.path)) continue;
 			if (driveFilter && !it.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
 			if (extFilter && !String(it.path).toLowerCase().endsWith(extFilter)) continue;
+			// 文档类型不应混入可执行文件：最近使用项也需要保持一致
+			if (searchTypeId === 'file' && String(it.path).toLowerCase().endsWith('.exe')) continue;
 			const weighted = computeWeightedNameMatch(it.name);
 			const legacy = scoreRecentName(it.name);
 			const baseWeighted =

@@ -308,6 +308,8 @@ export class FileIndex {
 
 	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
+		// 增量 ingest 需要遵守上限：否则长期运行会无限膨胀，最终导致 Worker OOM
+		if (this.pathToId.size >= this.maxEntries) return;
 		if (process.platform === 'win32') {
 			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\\\')) return;
 		} else {

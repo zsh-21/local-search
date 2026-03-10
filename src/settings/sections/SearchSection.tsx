@@ -141,13 +141,18 @@ export function SearchSection({
   const resultActionOptions: { id: AppSettings["resultActionButtons"][number]; label: string; note?: string }[] = [
     { id: "openFolder", label: "打开所在目录" },
     { id: "copyPath", label: "复制路径" },
-    { id: "runAsAdmin", label: "使用管理员权限打开" },
+    // 管理员运行仅对“应用”有意义：文件/文件夹等不展示该按钮
+    { id: "runAsAdmin", label: "使用管理员权限打开", note: "仅应用显示" },
     { id: "deleteHistory", label: "删除历史记录", note: "仅历史模式显示" },
   ];
   const selectedActionIds = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];
 
   // 勾选/取消按钮：限制最多三项，超限给出提示
   const toggleAction = (id: AppSettings["resultActionButtons"][number]) => {
+    if (!isMember) {
+      setError("该功能订阅可用");
+      return;
+    }
     const exists = selectedActionIds.includes(id);
     if (exists) {
       setDraft({
@@ -170,6 +175,10 @@ export function SearchSection({
 
   // 上下移动顺序：仅调整已选项的展示顺序
   const moveAction = (id: AppSettings["resultActionButtons"][number], dir: "up" | "down") => {
+    if (!isMember) {
+      setError("该功能订阅可用");
+      return;
+    }
     const idx = selectedActionIds.indexOf(id);
     if (idx < 0) return;
     const next = selectedActionIds.slice();
@@ -557,9 +566,14 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">结果右侧按钮</div>
+        <div className="settings-group-title">
+          <span>结果右侧按钮</span>
+          {membershipBadge}
+        </div>
         <div className="settings-hint">
-          最多显示 3 项，可调整顺序；后续新增按钮也在此处选择展示
+          {!isMember
+            ? "订阅后可自定义；非会员使用默认按钮"
+            : "最多显示 3 项，可调整顺序；后续新增按钮也在此处选择展示"}
         </div>
         <div className="action-config-list">
           {resultActionOptions.map((opt) => {
@@ -572,7 +586,7 @@ export function SearchSection({
                   <input
                     type="checkbox"
                     checked={checked}
-                    disabled={disableAdd}
+                    disabled={disableAdd || !isMember}
                     onChange={() => toggleAction(opt.id)}
                   />
                   <span className="action-config-label">
@@ -585,7 +599,7 @@ export function SearchSection({
                   <button
                     type="button"
                     className="small-btn ghost"
-                    disabled={!checked || order <= 1}
+                    disabled={!isMember || !checked || order <= 1}
                     onClick={() => moveAction(opt.id, "up")}
                     aria-label="上移"
                     title="上移"
@@ -595,7 +609,7 @@ export function SearchSection({
                   <button
                     type="button"
                     className="small-btn ghost"
-                    disabled={!checked || order >= selectedActionIds.length}
+                    disabled={!isMember || !checked || order >= selectedActionIds.length}
                     onClick={() => moveAction(opt.id, "down")}
                     aria-label="下移"
                     title="下移"

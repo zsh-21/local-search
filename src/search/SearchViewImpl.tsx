@@ -160,7 +160,9 @@ export function SearchViewImpl() {
           </div>
           <div className="action-group">
             {/* 右侧按钮按用户配置与模式渲染，保持最多三项 */}
-            {visibleActionIds.map((actionId) => {
+                {visibleActionIds.map((actionId) => {
+                  // 仅“应用”展示管理员运行：避免在文件/文件夹上出现无意义按钮
+                  if (actionId === "runAsAdmin" && item.type !== "app") return null;
               if (actionId === "openFolder") {
                 return (
                   <button

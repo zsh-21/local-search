@@ -117,7 +117,14 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
   // Worker 脚本由 vite-plugin-electron 构建到 dist-electron，同目录下直接加载
   // 注意：如果打包后 main.js 在 dist-electron 根目录，则此处路径正确
   const workerPath = path.join(__dirname, 'fileIndex.worker.js');
-  const worker = new Worker(workerPath);
+
+	// 限制/调整 Worker 堆大小：索引会占用较多内存，默认上限容易触发 OOM
+	// 这里按 Worker 数量做保守配置，避免多 Worker 同时把系统内存吃满
+	const worker = new Worker(workerPath, {
+		resourceLimits: {
+			maxOldGenerationSizeMb: WORKER_COUNT >= 4 ? 1536 : 2048,
+		},
+	});
   shard.worker = worker;
 
   worker.on('message', (msg: any) => {
@@ -134,9 +141,12 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
     shard.pending.clear();
   });
   
-  worker.on('exit', () => {
-    shard.worker = null;
-  });
+	worker.on('exit', () => {
+		// Worker 异常退出时需要清理 pending：否则调用方会一直挂起，并出现未处理的 Promise rejection
+		for (const [, waiter] of shard.pending) waiter.reject(new Error('Worker exited'));
+		shard.pending.clear();
+		shard.worker = null;
+	});
 
   // 初始化与状态同步：需要在 Worker 创建后立即下发，否则延迟创建会导致“设置不同步”
   const fireAndForget = (op: FileIndexWorkerOp, payload?: any) => {
@@ -164,18 +174,26 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
 
 function callShard<T>(shardIndex: number, op: FileIndexWorkerOp, payload?: any): Promise<T> {
   // 确保分片已初始化
-  const shard = ensureShard(shardIndex, { 
-    baseCachePath: FILE_INDEX_PATH, 
-    maxEntries: 2_000_000 
-  });
+	// 每个 Worker 的索引上限过大时非常容易 OOM：这里按 Worker 数控制总量，保证单 Worker 更稳定
+	const totalMaxEntries = Math.min(2_000_000, WORKER_COUNT * 400_000);
+	const shard = ensureShard(shardIndex, {
+		baseCachePath: FILE_INDEX_PATH,
+		maxEntries: totalMaxEntries,
+	});
   if (!shard.worker) return Promise.reject(new Error('Worker init failed'));
 
   shard.seq += 1;
   const id = shard.seq;
-  return new Promise<T>((resolve, reject) => {
-    shard.pending.set(id, { resolve, reject });
-    shard.worker?.postMessage({ id, op, payload });
-  });
+	return new Promise<T>((resolve, reject) => {
+		shard.pending.set(id, { resolve, reject });
+		try {
+			shard.worker?.postMessage({ id, op, payload });
+		} catch (err) {
+			shard.pending.delete(id);
+			shard.worker = null;
+			reject(err);
+		}
+	});
 }
 
 function getShardForPath(targetPath: string): number {
@@ -215,7 +233,7 @@ export const fileIndex = {
     // 仅对已创建的 Worker 下发，避免为了 UI 状态创建 Worker
     shards.forEach((shard, i) => {
       if (!shard.worker) return;
-      void callShard(i, 'setSearchWindowVisible', { visible });
+			void callShard(i, 'setSearchWindowVisible', { visible }).catch(() => {});
     });
   },
 
@@ -234,7 +252,7 @@ export const fileIndex = {
     // 仅对已创建的 Worker 生效，避免为了暂停任务创建 Worker
     shards.forEach((shard, i) => {
       if (!shard.worker) return;
-      void callShard(i, 'pauseIndexingFor', { ms });
+			void callShard(i, 'pauseIndexingFor', { ms }).catch(() => {});
     });
   },
 

@@ -45,6 +45,40 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 
+let isAdminProcessCache: boolean | null = null;
+
+async function isCurrentProcessAdminOnWindows(): Promise<boolean> {
+  if (process.platform !== 'win32') return false;
+  if (typeof isAdminProcessCache === 'boolean') return isAdminProcessCache;
+
+  const ok = await new Promise<boolean>((resolve) => {
+    try {
+      const ps = spawn(
+        'powershell',
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          '([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
+        ],
+        { windowsHide: true },
+      );
+      let out = '';
+      ps.stdout?.on('data', (d) => (out += String(d)));
+      ps.on('close', () => {
+        resolve(out.trim().toLowerCase() === 'true');
+      });
+      ps.on('error', () => resolve(false));
+    } catch {
+      resolve(false);
+    }
+  });
+
+  isAdminProcessCache = ok;
+  return ok;
+}
+
 export function registerIpcHandlers() {
   ipcMain.handle('get-device-id', () => {
     return getDeviceId();
@@ -377,29 +411,79 @@ export function registerIpcHandlers() {
   ipcMain.handle('run-as-admin', async (event, input: any) => {
     try {
       const p = typeof input === 'string' ? input : typeof input?.path === 'string' ? input.path : '';
-      if (!p) return false;
+      const t = typeof input?.type === 'string' ? input.type : '';
+      const n = typeof input?.name === 'string' ? input.name : '';
+      if (!p) return { ok: false, message: '路径为空，无法以管理员身份运行' };
 
       const resolved = resolveAppId(p);
 
       if (process.platform === 'win32') {
-        const escaped = resolved.replace(/'/g, "''");
-        const cmd = `Start-Process '${escaped}' -Verb RunAs`;
-        const ps = spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
-
-        const ok = await new Promise<boolean>((resolve) => {
-          ps.on('close', (code) => resolve(code === 0));
-          ps.on('error', () => resolve(false));
-        });
-        if (ok) {
-          BrowserWindow.fromWebContents(event.sender)?.hide();
+        const isAdmin = await isCurrentProcessAdminOnWindows();
+        if (!isAdmin) {
+          return { ok: false, message: '请以管理员身份运行 File Search' };
         }
-        return ok;
+      } else {
+        const ok = await openResolvedTarget(resolved);
+        if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+        return { ok: Boolean(ok) };
       }
-      const ok = await openResolvedTarget(resolved);
+
+      const looksLikePath = /^[a-zA-Z]:\\/.test(resolved) || resolved.startsWith('\\\\');
+
+      let targetToRun = resolved;
+      let shouldValidateFilePath = looksLikePath;
+
+      if (!looksLikePath && t === 'app') {
+        await ensureStartMenuShortcutIndex();
+        const shortcut = n ? findStartMenuShortcutByName(n) : '';
+        if (shortcut && existsSync(shortcut)) {
+          targetToRun = shortcut;
+          shouldValidateFilePath = true;
+        } else {
+          targetToRun = `shell:AppsFolder\\${resolved}`;
+          shouldValidateFilePath = false;
+        }
+      }
+
+      if (shouldValidateFilePath) {
+        try {
+          const st = statSync(targetToRun);
+          if (st.isDirectory()) {
+            return { ok: false, message: '文件夹不支持以管理员身份打开' };
+          }
+        } catch {
+          return { ok: false, message: '目标不存在或不可访问' };
+        }
+
+        const ext = path.extname(targetToRun).toLowerCase();
+        const allowedExts = new Set(['.exe', '.bat', '.cmd', '.com', '.msi', '.lnk']);
+        if (!allowedExts.has(ext)) {
+          return { ok: false, message: '仅支持可执行文件（.exe/.bat/.cmd/.com/.msi）' };
+        }
+      }
+
+      // 使用 args 传参，避免路径包含引号/特殊字符时被 PowerShell 误解析
+      const ps = spawn(
+        'powershell',
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-Command',
+          'try { Start-Process -Verb RunAs -FilePath $args[0]; exit 0 } catch { exit 1 }',
+          targetToRun,
+        ],
+        { windowsHide: true },
+      );
+
+      const ok = await new Promise<boolean>((resolve) => {
+        ps.on('close', (code) => resolve(code === 0));
+        ps.on('error', () => resolve(false));
+      });
       if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-      return ok;
+      return { ok, message: ok ? undefined : '已取消或启动失败（可能是 UAC 被拒绝）' };
     } catch {
-      return false;
+      return { ok: false, message: '以管理员身份运行失败' };
     }
   });
 
@@ -429,11 +513,16 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('rebuild-file-index', async (_event, options?: { ignoredPaths?: string[] }) => {
-    if (Array.isArray(options?.ignoredPaths)) {
-      await fileIndex.setIgnoredPaths(options.ignoredPaths);
+    try {
+      if (Array.isArray(options?.ignoredPaths)) {
+        await fileIndex.setIgnoredPaths(options.ignoredPaths);
+      }
+      await fileIndex.rebuild();
+      return await fileIndex.getStatus();
+    } catch {
+      // 索引 Worker 可能因内存不足退出：此处兜底返回状态，避免未处理的 Promise rejection
+      return { isIndexing: false };
     }
-    await fileIndex.rebuild();
-    return await fileIndex.getStatus();
   });
 
   ipcMain.handle('get-file-index-status', async () => {

@@ -5,14 +5,17 @@ import { useStoredMembership } from "./membership";
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
   const theme: AppSettings["theme"] = s?.theme === "light" ? "light" : "dark";
-  const searchShortcut =
+  const normalizeWinShortcut = (v: string) => v.replace(/CommandOrControl/g, "Ctrl").trim();
+  const searchShortcut = normalizeWinShortcut(
     typeof s?.searchShortcut === "string" && s.searchShortcut.trim()
       ? s.searchShortcut.trim()
-      : DEFAULT_SETTINGS.searchShortcut;
-  const settingsShortcut =
+      : DEFAULT_SETTINGS.searchShortcut,
+  );
+  const settingsShortcut = normalizeWinShortcut(
     typeof s?.settingsShortcut === "string" && s.settingsShortcut.trim()
       ? s.settingsShortcut.trim()
-      : DEFAULT_SETTINGS.settingsShortcut;
+      : DEFAULT_SETTINGS.settingsShortcut,
+  );
 
   const customSearchTypes: string[] = Array.isArray(s?.customSearchTypes)
     ? Array.from(
@@ -115,7 +118,7 @@ export function normalizeSettings(s: any): AppSettings {
   const safeDefaultSearchTypeId = disabledSearchTypeIds.includes(defaultSearchTypeId) ? "all" : defaultSearchTypeId;
 
   // 规范化结果操作按钮：只接受允许的 id、去重、最多三项，并保持原有顺序
-  const allowedActionIds = new Set<ResultActionButtonId>(["openFolder", "copyPath", "deleteHistory"]);
+  const allowedActionIds = new Set<ResultActionButtonId>(["openFolder", "copyPath", "deleteHistory", "runAsAdmin"]);
   const resultActionButtonsRaw: string[] = Array.isArray(s?.resultActionButtons)
     ? s.resultActionButtons
         .map((x: any) => (typeof x === "string" ? x.trim() : ""))
@@ -198,6 +201,7 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
     // 非会员不允许自定义背景图：统一回落到默认背景
     backgroundImagePath: DEFAULT_SETTINGS.backgroundImagePath,
     backgroundImageOpacity: DEFAULT_SETTINGS.backgroundImageOpacity,
+    resultActionButtons: DEFAULT_SETTINGS.resultActionButtons,
   });
 }
 
@@ -206,7 +210,7 @@ export function getSearchTypeOptions(customTypes: string[], order: string[] | un
     { id: "all", label: "所有类型" },
     // “应用”类型：仅展示已安装应用（不混入文件/文件夹），用于快速找程序
     { id: "app", label: "应用" },
-    { id: "file", label: "文件" },
+    { id: "file", label: "文档" },
     { id: "folder", label: "文件夹" },
     { id: "image", label: "图片" },
     { id: "video", label: "视频" },
@@ -252,10 +256,9 @@ function normalizeKey(key: string) {
 
 export function toAccelerator(e: React.KeyboardEvent) {
   const parts: string[] = [];
-  if (e.ctrlKey) parts.push("CommandOrControl");
+  if (e.ctrlKey) parts.push("Ctrl");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
-  if (e.metaKey) parts.push("Super");
 
   const mainKey = normalizeKey(e.key);
   if (!mainKey) return "";
@@ -281,11 +284,11 @@ export function useSettings() {
             defaultSearchTypeId: backup.defaultSearchTypeId ?? prev.defaultSearchTypeId,
             customSearchTypes: backup.customSearchTypes ?? prev.customSearchTypes,
             searchTypeOrder: backup.searchTypeOrder ?? prev.searchTypeOrder,
-            showResultPath: backup.showResultPath ?? prev.showResultPath,
             enableEffect: backup.enableEffect ?? prev.enableEffect,
             effectType: backup.effectType ?? prev.effectType,
             backgroundImagePath: backup.backgroundImagePath ?? prev.backgroundImagePath,
             backgroundImageOpacity: backup.backgroundImageOpacity ?? prev.backgroundImageOpacity,
+            resultActionButtons: backup.resultActionButtons ?? prev.resultActionButtons,
           };
           window.ipcRenderer?.invoke("save-settings", next);
           return next;
@@ -294,15 +297,16 @@ export function useSettings() {
       }
     } else {
       setBaseSettings((prev) => {
+        const arrEq = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
         const hasCustomSettings =
           prev.accentColor !== DEFAULT_SETTINGS.accentColor ||
           prev.defaultSearchTypeId !== DEFAULT_SETTINGS.defaultSearchTypeId ||
           (prev.customSearchTypes && prev.customSearchTypes.length > 0) ||
-          prev.showResultPath !== false ||
           prev.enableEffect !== false ||
           prev.effectType !== "particles" ||
           prev.backgroundImagePath !== DEFAULT_SETTINGS.backgroundImagePath ||
-          prev.backgroundImageOpacity !== DEFAULT_SETTINGS.backgroundImageOpacity;
+          prev.backgroundImageOpacity !== DEFAULT_SETTINGS.backgroundImageOpacity ||
+          !arrEq(prev.resultActionButtons || [], DEFAULT_SETTINGS.resultActionButtons || []);
 
         if (hasCustomSettings) {
           saveBackupSettings({
@@ -310,11 +314,11 @@ export function useSettings() {
             defaultSearchTypeId: prev.defaultSearchTypeId,
             customSearchTypes: prev.customSearchTypes,
             searchTypeOrder: prev.searchTypeOrder,
-            showResultPath: prev.showResultPath,
             enableEffect: prev.enableEffect,
             effectType: prev.effectType,
             backgroundImagePath: prev.backgroundImagePath,
             backgroundImageOpacity: prev.backgroundImageOpacity,
+            resultActionButtons: prev.resultActionButtons,
           });
 
           const reset = {
@@ -323,11 +327,11 @@ export function useSettings() {
             defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
             customSearchTypes: [],
             searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
-            showResultPath: false,
             enableEffect: false,
             effectType: "particles" as const,
             backgroundImagePath: DEFAULT_SETTINGS.backgroundImagePath,
             backgroundImageOpacity: DEFAULT_SETTINGS.backgroundImageOpacity,
+            resultActionButtons: DEFAULT_SETTINGS.resultActionButtons,
           };
           window.ipcRenderer?.invoke("save-settings", reset);
           return reset;

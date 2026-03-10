@@ -573,13 +573,33 @@ export function useSearchController() {
   };
 
   const runAsAdmin = (app: AppItem) => {
-    window.ipcRenderer?.invoke("run-as-admin", {
-      path: app.path,
-    });
+    // 以管理员身份运行可能失败（UAC 拒绝/不支持的类型）：这里用 toast 给出明确反馈，避免“点击没反应”
+    (async () => {
+      try {
+        const resp = (await window.ipcRenderer?.invoke("run-as-admin", {
+          path: app.path,
+          type: app.type,
+          name: app.name,
+        })) as { ok: boolean; message?: string } | boolean | undefined;
+
+        const ok = typeof resp === "boolean" ? resp : Boolean(resp?.ok);
+        const msg = typeof resp === "object" && resp ? (resp as any).message : "";
+        // toast 文案不换行：将可能出现的换行符压缩为一个空格，配合 CSS 省略号显示
+        const safeMsg = String(msg || "").replace(/\s*\r?\n\s*/g, " ").trim();
+
+        if (ok) {
+          showToast("已请求管理员运行", "success");
+        } else {
+          showToast(safeMsg || "管理员运行失败", "error");
+        }
+      } catch {
+        showToast("管理员运行失败", "error");
+      }
+    })();
   };
 
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === "l" || e.key === "k")) {
+    if (e.ctrlKey && (e.key === "l" || e.key === "k")) {
       e.preventDefault();
       e.stopPropagation();
       inputRef.current?.focus();
@@ -639,7 +659,7 @@ export function useSearchController() {
       setSelectedIndex((prev) => Math.max(0, prev - 10));
       e.preventDefault();
     } else if (e.key === "Enter") {
-      if (e.ctrlKey || e.metaKey) openFolder(results[selectedIndex]);
+      if (e.ctrlKey) openFolder(results[selectedIndex]);
       else launchApp(results[selectedIndex]);
     }
   };

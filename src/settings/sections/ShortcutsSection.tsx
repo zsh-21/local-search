@@ -74,7 +74,7 @@ export function ShortcutsSection({
           </div>
           <div className="shortcut-row">
             <div className="shortcut-label">打开目录</div>
-            <input className="shortcut-input" readOnly value="Ctrl/Cmd+Enter" />
+            <input className="shortcut-input" readOnly value="Ctrl+Enter" />
           </div>
           <div className="shortcut-row">
             <div className="shortcut-label">上下选择</div>

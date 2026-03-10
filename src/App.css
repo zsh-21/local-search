@@ -2443,12 +2443,13 @@ html[data-theme="light"] .settings-confirm {
   left: 50%;
   transform: translateX(-50%);
   z-index: 9999;
-  padding: 9px 16px;
+  padding: 7px 12px;
   border-radius: 6px;
   border: 1px solid var(--fs-border);
   background: var(--fs-surface);
   color: var(--fs-text);
-  font-size: 14px;
+  /* toast 文案更轻量：避免遮挡搜索内容 */
+  font-size: 12px;
   font-weight: 500;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18), 0 3px 6px -4px rgba(0, 0, 0, 0.2);
   max-width: min(420px, calc(100vw - 24px));
@@ -2471,7 +2472,12 @@ html[data-theme="light"] .settings-confirm {
 }
 
 .settings-toast-text {
-  line-height: 1.6;
+  /* toast 文案单行展示：超出窗口宽度时省略，避免换行挤占搜索区域 */
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .settings-toast.success {

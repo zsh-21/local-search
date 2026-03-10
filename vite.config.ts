@@ -6,6 +6,11 @@ export default defineConfig(({ command }) => {
 	const isServe = command === 'serve';
 
 	return {
+		server: {
+			watch: {
+				ignored: ['**/release-build/**', '**/dist-electron/**', '**/dist/**'],
+			},
+		},
 		plugins: [
 			react(),
 			electron([

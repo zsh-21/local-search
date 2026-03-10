@@ -115,7 +115,11 @@ export async function startUserDirectoryWatchers() {
             } catch {
               // stat 失败通常意味着文件被删除/无权限：按删除处理，保证索引尽快收敛
               recentIndex.delete(normalizeRecentKey(fullPath));
-              await fileIndex.removePath(fullPath);
+              try {
+                await fileIndex.removePath(fullPath);
+              } catch {
+                // 索引 Worker 可能异常退出：这里不影响 watcher 主流程，避免产生未处理的 Promise rejection
+              }
             }
           })();
         }, 80);

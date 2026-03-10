@@ -36,6 +36,8 @@ export async function searchApps(input: {
 	} = input;
 
 	if (searchTypeId !== 'all' && searchTypeId !== 'file' && searchTypeId !== 'app') return [];
+	// “文档(file)”类型不再混入应用结果：应用仅在“所有类型/应用”中展示
+	if (searchTypeId === 'file') return [];
 
 	// 过滤快捷方式：.lnk/.url 往往只是指向目标应用，会导致结果重复
 	const isShortcutAppId = (appId: string) => {
