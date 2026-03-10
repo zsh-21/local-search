@@ -87,21 +87,6 @@ export function useSearchController() {
     shouldEchoSelectedOnceRef.current = false;
   };
 
-  /**
-   * 重置搜索界面所有状态到初始状态
-   * 包括：清空搜索内容、关闭搜索类型下拉框、恢复默认搜索类型、重置索引与选中项等
-   */
-  const resetAllStates = useCallback(() => {
-    setQueryAndInputValue("");
-    setTypeMenuOpen(false);
-    setSearchTypeId(settings.defaultSearchTypeId || "all");
-    setSelectedIndex(0);
-    setSelectedActionIndex(-1);
-    setHoveredKey("");
-    setIsSearching(false);
-    setResults([]);
-  }, [settings.defaultSearchTypeId, setQueryAndInputValue]);
-
   const ITEM_HEIGHT = 52;
   const MAX_LIST_HEIGHT = 382;
   const TYPE_MENU_MIN_LIST_SPACE = 240;
@@ -288,21 +273,14 @@ export function useSearchController() {
   }, []);
 
   useEffect(() => {
-    // 窗口被隐藏时执行的操作（主进程主动 blur 或显式调用 hide-window 时都会发此事件）
     const handler = () => {
-      if (!settings.keepStateOnClose) {
-        // 关闭时重置状态：清空内容、关闭下拉、恢复默认类型
-        resetAllStates();
-      } else {
-        // 如果保留状态，则只确保下拉菜单已关闭
-        setTypeMenuOpen(false);
-      }
+      setTypeMenuOpen(false);
     };
     window.ipcRenderer?.on("search-window-hidden", handler as any);
     return () => {
       window.ipcRenderer?.off("search-window-hidden", handler as any);
     };
-  }, [settings.keepStateOnClose, resetAllStates]);
+  }, []);
 
   useEffect(() => {
     const handler = () => {
@@ -554,16 +532,10 @@ export function useSearchController() {
     }
   }, [selectedIndex, lastSelectedBy]);
 
-  const hideWindow = useCallback(() => {
-    if (!settings.keepStateOnClose) {
-      // 关闭时重置状态：清空内容、关闭下拉、恢复默认类型
-      resetAllStates();
-    } else {
-      // 保持状态时仅关闭下拉框，避免下次打开时遮挡
-      setTypeMenuOpen(false);
-    }
+  const hideWindow = () => {
+    setTypeMenuOpen(false);
     window.ipcRenderer?.invoke("hide-window");
-  }, [settings.keepStateOnClose, resetAllStates]);
+  };
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
