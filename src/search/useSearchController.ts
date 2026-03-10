@@ -582,6 +582,7 @@ export function useSearchController() {
           name: app.name,
         })) as { ok: boolean; message?: string } | boolean | undefined;
 
+        if (!resp) return;
         const ok = typeof resp === "boolean" ? resp : Boolean(resp?.ok);
         const msg = typeof resp === "object" && resp ? (resp as any).message : "";
         // toast 文案不换行：将可能出现的换行符压缩为一个空格，配合 CSS 省略号显示

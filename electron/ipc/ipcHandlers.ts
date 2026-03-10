@@ -45,6 +45,46 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 
+let sudoPromptModule: any | null = null;
+
+async function getSudoPrompt(): Promise<any> {
+  if (sudoPromptModule) return sudoPromptModule;
+  const m: any = await import('sudo-prompt');
+  sudoPromptModule = m?.default ?? m;
+  return sudoPromptModule;
+}
+
+function quoteCmdArg(v: string) {
+  const s = String(v ?? '');
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+async function sudoExec(commandLine: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    const sudoPrompt = await getSudoPrompt();
+    return await new Promise((resolve) => {
+      sudoPrompt.exec(
+        commandLine,
+        { name: 'File Search' },
+        (error: any, _stdout: any, _stderr: any) => {
+          if (!error) {
+            resolve({ ok: true });
+            return;
+          }
+          const msg = typeof error?.message === 'string' ? error.message.trim() : '';
+          if (msg.toLowerCase().includes('user did not grant permission')) {
+            resolve({ ok: false, message: '已取消或启动失败（可能是 UAC 被拒绝）' });
+            return;
+          }
+          resolve({ ok: false, message: msg || '已取消或启动失败（可能是 UAC 被拒绝）' });
+        },
+      );
+    });
+  } catch {
+    return { ok: false, message: '已取消或启动失败（可能是 UAC 被拒绝）' };
+  }
+}
+
 let isAdminProcessCache: boolean | null = null;
 
 async function isCurrentProcessAdminOnWindows(): Promise<boolean> {
@@ -418,10 +458,7 @@ export function registerIpcHandlers() {
       const resolved = resolveAppId(p);
 
       if (process.platform === 'win32') {
-        const isAdmin = await isCurrentProcessAdminOnWindows();
-        if (!isAdmin) {
-          return { ok: false, message: '请以管理员身份运行 File Search' };
-        }
+        // 允许在非管理员模式下直接触发 UAC 弹窗：由 sudo-prompt 负责权限提升
       } else {
         const ok = await openResolvedTarget(resolved);
         if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
@@ -462,26 +499,10 @@ export function registerIpcHandlers() {
         }
       }
 
-      // 使用 args 传参，避免路径包含引号/特殊字符时被 PowerShell 误解析
-      const ps = spawn(
-        'powershell',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          'try { Start-Process -Verb RunAs -FilePath $args[0]; exit 0 } catch { exit 1 }',
-          targetToRun,
-        ],
-        { windowsHide: true },
-      );
-
-      const ok = await new Promise<boolean>((resolve) => {
-        ps.on('close', (code) => resolve(code === 0));
-        ps.on('error', () => resolve(false));
-      });
-      if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-      return { ok, message: ok ? undefined : '已取消或启动失败（可能是 UAC 被拒绝）' };
+      const commandLine = `cmd.exe /c start "" ${quoteCmdArg(targetToRun)}`;
+      const resp = await sudoExec(commandLine);
+      if (resp.ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+      return false;
     } catch {
       return { ok: false, message: '以管理员身份运行失败' };
     }
