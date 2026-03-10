@@ -546,6 +546,11 @@ export function registerIpcHandlers() {
     }
   });
 
+  ipcMain.handle('abort-file-index', async () => {
+    await fileIndex.abortRebuild();
+    return await fileIndex.getStatus();
+  });
+
   ipcMain.handle('get-file-index-status', async () => {
     return await fileIndex.getStatus();
   });

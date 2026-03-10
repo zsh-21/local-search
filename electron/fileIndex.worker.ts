@@ -59,7 +59,14 @@ parentPort?.on('message', async (msg: any) => {
 			return;
 		}
 		if (req.op === 'rebuild') {
-			await fileIndex.rebuild(req.payload?.roots);
+			// req.payload 可能是 RebuildRoot[] 数组，也可能是旧版的 { roots: string[] }
+			const roots = Array.isArray(req.payload) ? req.payload : req.payload?.roots;
+			await fileIndex.rebuild(roots);
+			reply({ id: req.id, ok: true });
+			return;
+		}
+		if (req.op === 'abortRebuild') {
+			fileIndex.abortRebuild();
 			reply({ id: req.id, ok: true });
 			return;
 		}

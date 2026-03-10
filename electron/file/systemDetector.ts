@@ -8,6 +8,7 @@ export interface DriveInfo {
   mountPoint: string; // 例如 'C:', 'D:'
   fileSystem: 'NTFS' | 'FAT32' | 'ExFAT' | 'Unknown';
   isSystemDrive: boolean;
+  isSSD: boolean; // 是否为 SSD (固态硬盘)
 }
 
 export interface SystemInfo {
@@ -78,9 +79,11 @@ export class SystemDetector {
     if (platform() !== 'win32') return [];
     
     try {
-      // 使用 PowerShell 获取磁盘信息，一次性获取盘符、文件系统类型
+      // 使用 PowerShell 组合命令：
+      // 1. Get-Volume 获取卷信息
+      // 2. 映射到 PhysicalDisk 获取 MediaType (判断是否为 SSD)
       const { stdout } = await execAsync(
-        'powershell -NoProfile -Command "Get-Volume | Select-Object DriveLetter,FileSystem,DriveType | ConvertTo-Json"'
+        'powershell -NoProfile -Command "Get-Volume | Where-Object DriveLetter -ne $null | ForEach-Object { $v = $_; $p = Get-Partition -DriveLetter $v.DriveLetter; $d = Get-Disk -Number $p.DiskNumber; [PSCustomObject]@{DriveLetter=$v.DriveLetter;FileSystem=$v.FileSystem;DriveType=$v.DriveType;IsSSD=($d.Model -match \'SSD\' -or $d.BusType -eq \'NVMe\')}} | ConvertTo-Json"'
       );
       
       const volumes = JSON.parse(stdout);
@@ -90,8 +93,7 @@ export class SystemDetector {
       
       for (const vol of list) {
         if (!vol.DriveLetter) continue;
-        // DriveType 3 = Fixed (本地硬盘), 4 = Remote (网络驱动器)
-        // 我们主要关注本地固定磁盘
+        // DriveType 3 = Fixed (本地硬盘)
         if (vol.DriveType !== 3) continue;
 
         const driveLetter = `${vol.DriveLetter}:`;
@@ -99,13 +101,14 @@ export class SystemDetector {
           mountPoint: driveLetter,
           fileSystem: vol.FileSystem || 'Unknown',
           isSystemDrive: driveLetter.toUpperCase() === 'C:',
+          isSSD: Boolean(vol.IsSSD),
         });
       }
       
       return drives;
     } catch (e) {
-      // 兜底：如果 PowerShell 失败，至少返回 C 盘
-      return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true }];
+      // 兜底：如果 PowerShell 失败，至少返回 C 盘（默认非 SSD 以保安全）
+      return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true, isSSD: false }];
     }
   }
 

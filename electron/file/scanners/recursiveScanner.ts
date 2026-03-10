@@ -23,9 +23,12 @@ export class RecursiveScanner implements Scanner {
   async scan(
     roots: string[], 
     onProgress: (entry: FileIndexEntry) => void | Promise<void>,
-    shouldStop: () => boolean
+    shouldStop: () => boolean,
+    isSSD: boolean = true // 默认假设为 SSD 以启用较高并发，针对 HDD 会降级
   ): Promise<void> {
-    const CONCURRENCY = 8; // 并发读取目录数，针对 SSD 优化
+    // 动态并发控制：SSD 推荐 10-14，HDD 推荐 2-4
+    // 在索引期间，过高的并发在 HDD 上会导致机械磁头频繁寻道，反而变慢并导致系统卡顿
+    const CONCURRENCY = isSSD ? 12 : 3; 
     const queue: string[] = [...roots];
     let active = 0;
     let completed = false;

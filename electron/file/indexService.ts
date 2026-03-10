@@ -3,7 +3,7 @@ import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
-import { getWindowsFileSystemRoots } from './watcher';
+import { SystemDetector } from './systemDetector';
 
 export const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
 export const FILE_INDEX_META_PATH = path.join(app.getPath('userData'), 'file-index-meta.json');
@@ -19,6 +19,7 @@ type FileIndexWorkerOp =
   | 'loadCache'
   | 'buildIfEmpty'
   | 'rebuild'
+  | 'abortRebuild'
   | 'ingestPath'
   | 'removePath'
   | 'search';
@@ -266,25 +267,42 @@ export const fileIndex = {
   },
 
   rebuild: async () => {
-    // 1. 获取所有盘符
-    const allRoots = await getWindowsFileSystemRoots();
+    // 1. 获取所有本地盘符及其类型（SSD/HDD）
+    const info = await SystemDetector.getInstance().detect();
+    const allRoots = info.drives;
 
-    // 2. Roots 分配给 Workers：按盘符轮询分配，保持实现简单稳定
-    const assignments: string[][] = Array.from({ length: WORKER_COUNT }, () => []);
-    allRoots.forEach((root, idx) => {
-      assignments[idx % WORKER_COUNT].push(root);
+    // 2. Roots 分配给 Workers：按盘符轮询分配，并携带性能标识
+    const assignments: Array<Array<{ path: string; isSSD: boolean }>> = Array.from(
+      { length: WORKER_COUNT },
+      () => []
+    );
+    allRoots.forEach((drive, idx) => {
+      assignments[idx % WORKER_COUNT].push({
+        path: drive.mountPoint + '\\',
+        isSSD: drive.isSSD,
+      });
     });
 
     // 更新分片状态
     assignments.forEach((roots, i) => {
-      shards[i].roots = roots;
+      shards[i].roots = roots.map((r) => r.path);
     });
 
     // 并行执行重建
-    await Promise.all(assignments.map((roots, i) => {
-      if (roots.length === 0) return Promise.resolve(); // 该 Worker 空闲
-      return callShard(i, 'rebuild', { roots });
-    }));
+    await Promise.all(
+      assignments.map((roots, i) => {
+        if (roots.length === 0) return Promise.resolve();
+        return callShard(i, 'rebuild', roots);
+      })
+    );
+  },
+
+  abortRebuild: async () => {
+    await Promise.all(
+      shards.map((shard, i) =>
+        shard.worker ? callShard(i, 'abortRebuild') : Promise.resolve()
+      )
+    );
   },
 
   ingestPath: async (p: string, isDirectory: boolean) => {

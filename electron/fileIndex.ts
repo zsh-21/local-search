@@ -108,34 +108,46 @@ const tokenizer = {
 	},
 };
 
+export interface RebuildRoot {
+  path: string;
+  isSSD: boolean;
+}
+
 export class FileIndex {
-	private db: FileDB | null = null;
-	private pathToId = new Map<string, string>();
-	private readonly cachePath: string;
-	private readonly maxEntries: number;
-	private isIndexing = false;
-	private pauseUntil = 0;
-	private lowPriority = true;
-	private rebuildStartedAt = 0;
-	private partialPublished = false;
-	private lastYieldAt = 0;
-	private ignoredPrefixes: Array<{ prefix: string; prefixWithSep: string }> = [];
-	private ignoredAnyDirNames = new Set<string>();
+  private db: FileDB | null = null;
+  private pathToId = new Map<string, string>();
+  private readonly cachePath: string;
+  private readonly maxEntries: number;
+  private isIndexing = false;
+  private abortRequested = false; // 用于中止索引任务
+  private pauseUntil = 0;
+  private lowPriority = true;
+  private rebuildStartedAt = 0;
+  private partialPublished = false;
+  private lastYieldAt = 0;
+  private ignoredPrefixes: Array<{ prefix: string; prefixWithSep: string }> = [];
+  private ignoredAnyDirNames = new Set<string>();
 
-	constructor(options: { cachePath: string; maxEntries?: number }) {
-		this.cachePath = options.cachePath;
-		this.maxEntries = options.maxEntries ?? 750_000;
-	}
+  constructor(options: { cachePath: string; maxEntries?: number }) {
+    this.cachePath = options.cachePath;
+    this.maxEntries = options.maxEntries ?? 750_000;
+  }
 
-	reset() {
-		this.db = null;
-		this.pathToId.clear();
-		this.isIndexing = false;
-		this.pauseUntil = 0;
-		this.rebuildStartedAt = 0;
-		this.partialPublished = false;
-		this.lastYieldAt = 0;
-	}
+  reset() {
+    this.db = null;
+    this.pathToId.clear();
+    this.isIndexing = false;
+    this.abortRequested = false;
+    this.pauseUntil = 0;
+    this.rebuildStartedAt = 0;
+    this.partialPublished = false;
+    this.lastYieldAt = 0;
+  }
+
+  // 显式中止当前索引任务
+  abortRebuild() {
+    if (this.isIndexing) this.abortRequested = true;
+  }
 
 	async getStatus(): Promise<FileIndexStatus> {
 		return {
@@ -471,9 +483,10 @@ export class FileIndex {
 	 *    - 场景：无原生插件、非 NTFS 分区、权限不足
 	 *    - 特性：使用并发队列优化 SSD 读取性能
 	 */
-	async rebuild(explicitRoots?: string[]) {
+	async rebuild(explicitRoots?: (string | RebuildRoot)[]) {
 		if (this.isIndexing) return;
 		this.isIndexing = true;
+		this.abortRequested = false;
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
@@ -553,44 +566,47 @@ export class FileIndex {
 			entryCount++;
 		};
 
-        // 确定扫描根目录
-		let roots = explicitRoots;
-        if (!roots || roots.length === 0) {
+        const shouldStop = () => this.abortRequested || entryCount >= this.maxEntries;
+
+        // 确定扫描根目录及性能配置
+		let roots: string[] = [];
+        let isSSD = true;
+
+        if (explicitRoots && explicitRoots.length > 0) {
+            roots = explicitRoots.map(r => typeof r === 'string' ? r : r.path);
+            // 如果显式传入的根路径中有任何一个不是 SSD，则采取更稳健的并发策略
+            isSSD = explicitRoots.every(r => typeof r === 'string' ? true : r.isSSD);
+        } else {
             try {
                 const info = await SystemDetector.getInstance().detect();
-                // 优先扫描所有检测到的固定磁盘
                 roots = info.drives.map(d => d.mountPoint + '\\');
+                isSSD = info.drives.every(d => d.isSSD);
             } catch {
-                // 兜底：仅扫描 C 盘
                 roots = ['C:\\'];
+                isSSD = false;
             }
         }
 
         // 策略选择：尝试 USN -> 降级 Recursive
-        // 即使是 USN 模式，也可能因为部分盘符不支持而抛出异常，此时降级为全量递归
-        
         try {
-            // 尝试使用 USN 扫描器
-            // UsnScanner 内部会检测 hasNativeSupport，若不支持会抛出异常
             const usnScanner = new UsnScanner(this.isIgnoredPath.bind(this));
-            await usnScanner.scan(roots, addNext, () => entryCount >= this.maxEntries);
+            await usnScanner.scan(roots, addNext, shouldStop);
         } catch (e) {
-            // 降级策略：使用递归扫描器
-            // 场景：无原生插件、非 NTFS、权限不足、或 USN 扫描失败
             const recursiveScanner = new RecursiveScanner(this.isIgnoredPath.bind(this));
             
-            // 包装进度回调以处理协作式让步 (Cooperative Yield)
-            // 避免主线程或 Worker 线程长时间阻塞
+            // 包装进度回调以处理协作式让步
             const wrappedProgress = async (entry: FileIndexEntry) => {
                 addNext(entry);
                 processedSinceYield++;
-                if (processedSinceYield % 250 === 0) {
+                // 索引过程中更细粒度的控制：每处理 200 个文件（或根据负载调整）执行一次让步
+                const yieldBatch = this.lowPriority ? 150 : 300;
+                if (processedSinceYield % yieldBatch === 0) {
                      if (batch.length >= BATCH_SIZE) await flushBatch();
                      await this.cooperativeYield(maybePublishPartial);
                 }
             };
             
-            await recursiveScanner.scan(roots, wrappedProgress, () => entryCount >= this.maxEntries);
+            await recursiveScanner.scan(roots, wrappedProgress, shouldStop, isSSD);
         }
 
 		try {
