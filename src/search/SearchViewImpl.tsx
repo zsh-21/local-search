@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { List } from "react-window";
 import { BackgroundImage } from "../components/BackgroundImage";
 import { ParticleBackground } from "../components/ParticleBackground";
@@ -11,19 +11,129 @@ export function SearchViewImpl() {
 
   const isHistoryMode = c.query.trim().length === 0;
 
-  // 根据用户配置与当前模式筛选右侧按钮：最多展示三项，避免右侧区域拥挤
-  const visibleActionIds = useMemo(() => {
+  const [actionTooltip, setActionTooltip] = useState<
+    null | { text: string; x: number; y: number; placement: "top" | "bottom"; anchorX: number; arrowLeftPx: number }
+  >(null);
+
+  useEffect(() => {
+    window.addEventListener("keydown", c.handleWindowKeyDownCapture, true);
+    return () => {
+      window.removeEventListener("keydown", c.handleWindowKeyDownCapture, true);
+    };
+  }, [c.handleWindowKeyDownCapture]);
+
+  useEffect(() => {
+    if (!c.selectedActionId) {
+      setActionTooltip(null);
+      return;
+    }
+
+    const labelMap: Record<string, string> = {
+      openFolder: "打开所在目录",
+      copyPath: "复制路径",
+      runAsAdmin: "以管理员身份运行",
+      deleteHistory: "删除该历史",
+    };
+    const text = labelMap[c.selectedActionId] || "";
+    if (!text) {
+      setActionTooltip(null);
+      return;
+    }
+
+    const el = document.querySelector(
+      `.results li.selected .action-btn[data-action-id="${c.selectedActionId}"]`,
+    ) as HTMLElement | null;
+    if (!el) {
+      setActionTooltip(null);
+      return;
+    }
+
+    const r = el.getBoundingClientRect();
+    const centerX = r.left + r.width / 2;
+    const gap = 8;
+    const yTop = r.top - gap;
+    const yBottom = r.bottom + gap;
+    const placement = yTop < 36 ? "bottom" : "top";
+
+    // tooltip 先按近似宽度做初始定位；最终会在 layout 阶段按实际宽度微调，并让箭头指向按钮
+    const approxW = 260;
+    const margin = 12;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const x = clamp(centerX, margin + approxW / 2, window.innerWidth - margin - approxW / 2);
+    setActionTooltip({
+      text,
+      x: Math.round(x),
+      y: Math.round(placement === "top" ? yTop : yBottom),
+      placement,
+      anchorX: Math.round(centerX),
+      arrowLeftPx: 0,
+    });
+  }, [c.selectedActionId]);
+
+  useLayoutEffect(() => {
+    if (!actionTooltip) return;
+
+    const tipEl = document.querySelector(`.fs-tooltip-pop[data-tooltip="action"]`) as HTMLElement | null;
+    const btnEl = document.querySelector(
+      `.results li.selected .action-btn[data-action-id="${c.selectedActionId}"]`,
+    ) as HTMLElement | null;
+    if (!tipEl || !btnEl) return;
+
+    const margin = 12;
+    const gap = 8;
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+    const tipRect = tipEl.getBoundingClientRect();
+    const btnRect = btnEl.getBoundingClientRect();
+    const anchorX = btnRect.left + btnRect.width / 2;
+
+    let placement: "top" | "bottom" = actionTooltip.placement;
+    if (placement === "top" && btnRect.top - gap - tipRect.height < margin) placement = "bottom";
+    if (placement === "bottom" && btnRect.bottom + gap + tipRect.height > window.innerHeight - margin) placement = "top";
+
+    const x = clamp(anchorX, margin + tipRect.width / 2, window.innerWidth - margin - tipRect.width / 2);
+
+    const arrowLeft = clamp(anchorX - (x - tipRect.width / 2), 12, tipRect.width - 12);
+
+    let y = actionTooltip.y;
+    if (placement === "top") {
+      y = Math.max(margin + tipRect.height, btnRect.top - gap);
+    } else {
+      y = Math.min(window.innerHeight - margin - tipRect.height, btnRect.bottom + gap);
+      y = Math.max(margin, y);
+    }
+
+    const next = {
+      ...actionTooltip,
+      x: Math.round(x),
+      y: Math.round(y),
+      placement,
+      anchorX: Math.round(anchorX),
+      arrowLeftPx: Math.round(arrowLeft),
+    };
+    if (
+      next.x !== actionTooltip.x ||
+      next.y !== actionTooltip.y ||
+      next.placement !== actionTooltip.placement ||
+      next.arrowLeftPx !== actionTooltip.arrowLeftPx
+    ) {
+      setActionTooltip(next);
+    }
+  }, [actionTooltip, c.selectedActionId]);
+
+  const getVisibleActionIdsForItem = (item: AppItem) => {
     const raw = Array.isArray(c.settings.resultActionButtons) ? c.settings.resultActionButtons : [];
     const out: string[] = [];
     for (const id of raw) {
       if (id === "deleteHistory" && !isHistoryMode) continue;
-      if (!["openFolder", "copyPath", "deleteHistory", "runAsAdmin"].includes(id)) continue;
+      if (id === "runAsAdmin" && item.type !== "app") continue;
+      if (!["openFolder", "copyPath", "deleteHistory", "runAsAdmin"].includes(id as any)) continue;
       if (out.includes(id)) continue;
       out.push(id);
       if (out.length >= 3) break;
     }
     return out;
-  }, [c.settings.resultActionButtons, isHistoryMode]);
+  };
 
   // 仅在输入较稳定时高亮，避免短字符导致过度高亮与误匹配
   const highlightQuery = useMemo(() => {
@@ -118,6 +228,8 @@ export function SearchViewImpl() {
     const isImg = item.type === "file" && isImageFile(item.path);
     const lowerPath = (item.path || "").toLowerCase();
     const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
+
+    const actionIds = getVisibleActionIdsForItem(item);
     const badgeText =
       item.type === "folder"
         ? "文件夹"
@@ -159,15 +271,14 @@ export function SearchViewImpl() {
             ) : null}
           </div>
           <div className="action-group">
-            {/* 右侧按钮按用户配置与模式渲染，保持最多三项 */}
-                {visibleActionIds.map((actionId) => {
-                  // 仅“应用”展示管理员运行：避免在文件/文件夹上出现无意义按钮
-                  if (actionId === "runAsAdmin" && item.type !== "app") return null;
+            {actionIds.map((actionId) => {
+              const selectedBtn = isSelected && c.selectedActionId === actionId;
               if (actionId === "openFolder") {
                 return (
                   <button
                     key={actionId}
-                    className="action-btn"
+                    className={selectedBtn ? "action-btn kbd-selected" : "action-btn"}
+                    data-action-id={actionId}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -195,14 +306,12 @@ export function SearchViewImpl() {
                 return (
                   <button
                     key={actionId}
-                    className="action-btn"
+                    className={selectedBtn ? "action-btn kbd-selected" : "action-btn"}
+                    data-action-id={actionId}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      navigator.clipboard
-                        .writeText(item.path)
-                        .then(() => c.showToast("已复制路径", "success"))
-                        .catch(() => c.showToast("复制失败", "error"));
+                      c.copyPath(item);
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -226,7 +335,8 @@ export function SearchViewImpl() {
                 return (
                   <button
                     key={actionId}
-                    className="action-btn"
+                    className={selectedBtn ? "action-btn kbd-selected" : "action-btn"}
+                    data-action-id={actionId}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -254,7 +364,8 @@ export function SearchViewImpl() {
                 return (
                   <button
                     key={actionId}
-                    className="action-btn delete-btn"
+                    className={selectedBtn ? "action-btn delete-btn kbd-selected" : "action-btn delete-btn"}
+                    data-action-id={actionId}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -311,7 +422,6 @@ export function SearchViewImpl() {
     <div
       className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""}`}
       ref={c.containerRef}
-      onKeyDownCapture={c.handleKeyDownCapture}
       onMouseDownCapture={(e) => {
         if (e.target !== e.currentTarget) return;
         c.hideWindow();
@@ -319,6 +429,25 @@ export function SearchViewImpl() {
     >
       <BackgroundImage path={c.settings.backgroundImagePath} opacity={c.settings.backgroundImageOpacity} />
       <ParticleBackground enabled={c.settings.enableEffect} type={c.settings.effectType} />
+      {actionTooltip ? (
+        <div
+          className="fs-tooltip-pop"
+          data-placement={actionTooltip.placement}
+          data-tooltip="action"
+          style={{
+            left: actionTooltip.x,
+            top: actionTooltip.y,
+            transform: actionTooltip.placement === "top" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+            ["--fs-tooltip-arrow-left" as any]: `${actionTooltip.arrowLeftPx || 0}px`,
+            maxWidth: 260,
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="fs-tooltip-text">{actionTooltip.text}</div>
+          <div className="fs-tooltip-arrow" />
+        </div>
+      ) : null}
       {c.toast ? (
         <div className={`settings-toast ${c.toast.kind}`} role="status" aria-live="polite">
           <span className="settings-toast-icon" aria-hidden="true">

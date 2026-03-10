@@ -1166,6 +1166,22 @@ html[data-theme="light"] .results li.selected {
   box-shadow: none;
 }
 
+.results li.selected .action-btn.kbd-selected {
+  background: var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+  color: var(--fs-accent);
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--fs-accent-soft);
+}
+
+.results li.selected .action-btn.delete-btn.kbd-selected {
+  background: rgba(255, 77, 79, 0.14);
+  border-color: rgba(255, 77, 79, 0.55);
+  color: rgba(255, 77, 79, 1);
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.14);
+}
+
 .action-btn.delete-btn {
   color: var(--fs-muted);
 }
@@ -2095,11 +2111,12 @@ html[data-theme="light"] .settings-nav-item:hover {
 }
 
 .fs-tooltip-text {
-  font-size: 12px;
+  font-size: 8px;
   font-weight: 700;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
 }
 
 .fs-tooltip-arrow {

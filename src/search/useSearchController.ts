@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getSearchTypeOptions, normalizeSettings, useSettings } from "../settingsStore";
@@ -33,6 +33,7 @@ export function useSearchController() {
   const [searchTypeId, setSearchTypeId] = useState<string>(settings.defaultSearchTypeId || "all");
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedActionIndex, setSelectedActionIndex] = useState(-1);
   const [lastSelectedBy, setLastSelectedBy] = useState<"keyboard" | "mouse">("keyboard");
   const [results, setResults] = useState<AppItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -599,6 +600,132 @@ export function useSearchController() {
     })();
   };
 
+  const copyPath = (item: AppItem) => {
+    if (!item?.path) return;
+    navigator.clipboard
+      .writeText(item.path)
+      .then(() => showToast("已复制路径", "success"))
+      .catch(() => showToast("复制失败", "error"));
+  };
+
+  const isHistoryMode = query.trim().length === 0;
+
+  const getVisibleActionIdsForItem = useCallback(
+    (item: AppItem | undefined) => {
+      if (!item) return [] as AppSettings["resultActionButtons"]; 
+      const raw = Array.isArray(settings.resultActionButtons) ? settings.resultActionButtons : [];
+      const out: AppSettings["resultActionButtons"][number][] = [];
+      for (const id of raw) {
+        if (id === "deleteHistory" && !isHistoryMode) continue;
+        if (id === "runAsAdmin" && item.type !== "app") continue;
+        if (!(["openFolder", "copyPath", "deleteHistory", "runAsAdmin"] as const).includes(id as any)) continue;
+        if (out.includes(id)) continue;
+        out.push(id);
+        if (out.length >= 3) break;
+      }
+      return out;
+    },
+    [settings.resultActionButtons, isHistoryMode],
+  );
+
+  const selectedActionIds = useMemo(() => {
+    return getVisibleActionIdsForItem(results[selectedIndex]);
+  }, [getVisibleActionIdsForItem, results, selectedIndex]);
+
+  const selectedActionId =
+    selectedActionIndex >= 0 && selectedActionIndex < selectedActionIds.length
+      ? selectedActionIds[selectedActionIndex]
+      : "";
+
+  useEffect(() => {
+    setSelectedActionIndex(-1);
+  }, [selectedIndex]);
+
+  const handleKeyDownCore = useCallback(
+    (e: {
+      key: string;
+      ctrlKey: boolean;
+      altKey: boolean;
+      shiftKey: boolean;
+      metaKey: boolean;
+      preventDefault: () => void;
+      stopPropagation: () => void;
+      isComposing?: boolean;
+    }) => {
+      if ((e as any).isComposing) return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (results.length === 0) return;
+        const item = results[selectedIndex];
+        const ids = getVisibleActionIdsForItem(item);
+        if (ids.length === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setLastSelectedBy("keyboard");
+        setSelectedActionIndex((prev) => {
+          const nextPrev = typeof prev === "number" ? prev : -1;
+
+          // 第一次左右切换：必须先选中第一个按钮，再根据方向继续切
+          if (nextPrev < 0) return 0;
+
+          const delta = e.key === "ArrowRight" ? 1 : -1;
+          const next = (nextPrev + delta + ids.length) % ids.length;
+          return next;
+        });
+        return;
+      }
+
+      if (e.key === "Enter" && selectedActionIndex >= 0) {
+        if (results.length === 0) return;
+        const item = results[selectedIndex];
+        const ids = getVisibleActionIdsForItem(item);
+        const id = selectedActionIndex >= 0 && selectedActionIndex < ids.length ? ids[selectedActionIndex] : "";
+        if (!id) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedActionIndex(-1);
+
+        if (id === "openFolder") openFolder(item);
+        else if (id === "copyPath") copyPath(item);
+        else if (id === "runAsAdmin") runAsAdmin(item);
+        else if (id === "deleteHistory") void deleteHistoryItem(item.path);
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        if (selectedActionIndex >= 0) setSelectedActionIndex(-1);
+      } else if (e.key === "ArrowUp") {
+        if (selectedActionIndex >= 0) setSelectedActionIndex(-1);
+      }
+
+      handleKeyDownCapture(e as any);
+    },
+    [
+      results,
+      selectedIndex,
+      selectedActionIndex,
+      getVisibleActionIdsForItem,
+      openFolder,
+      runAsAdmin,
+      deleteHistoryItem,
+    ],
+  );
+
+  const handleWindowKeyDownCapture = useCallback(
+    (e: KeyboardEvent) => {
+      handleKeyDownCore(e as any);
+    },
+    [handleKeyDownCore],
+  );
+
+  const handleReactKeyDownCapture = useCallback(
+    (e: React.KeyboardEvent) => {
+      handleKeyDownCore(e as any);
+    },
+    [handleKeyDownCore],
+  );
+
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && (e.key === "l" || e.key === "k")) {
       e.preventDefault();
@@ -791,12 +918,14 @@ export function useSearchController() {
     typeSelectRef,
     typeMenuRef,
     containerRef,
-    handleKeyDownCapture,
+    handleKeyDownCapture: handleReactKeyDownCapture,
+    handleWindowKeyDownCapture,
     startResizing,
     openSettings,
     openFolder,
     launchApp,
     runAsAdmin,
+    copyPath,
     hideWindow,
     refreshHistory,
     deleteHistoryItem,
@@ -808,5 +937,6 @@ export function useSearchController() {
     setHoveredKey,
     toast,
     showToast,
+    selectedActionId,
   };
 }

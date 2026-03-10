@@ -11,7 +11,7 @@ node_modules
 dist
 dist-electron
 release
-release-build
+release-build*
 *.local
 
 # Editor directories and files
