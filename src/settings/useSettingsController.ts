@@ -212,6 +212,24 @@ export function useSettingsController() {
   const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
   const toastTimerRef = useRef<number | null>(null);
 
+  const clearAvatarSettingIfNeeded = async () => {
+    // 未登录时清空头像：头像属于“账号相关展示”，避免退出登录后仍显示上次账号的头像
+    try {
+      setDraft((prev) => {
+        if (!prev.customAvatarPath) return prev;
+        return { ...prev, customAvatarPath: "" };
+      });
+
+      // 仅当已保存的 settings 里有头像路径时才写盘，避免无意义的设置写入
+      if (!settings.customAvatarPath) return;
+
+      const next = { ...settings, customAvatarPath: "" };
+      await window.ipcRenderer?.invoke("save-settings", next);
+    } catch {
+      // 清理头像属于兜底行为：失败时不阻塞主流程
+    }
+  };
+
   function showToast(message: string, kind: "success" | "error" | "info" = "info") {
     // toast 只保留一个：重复触发时先清理旧定时器，避免叠加闪烁
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -240,7 +258,18 @@ export function useSettingsController() {
     localStorage.removeItem("fs_user");
     localStorage.removeItem("fs_token");
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
+
+    // 退出登录后同步清空头像：避免“未登录仍显示头像”的困惑
+    void clearAvatarSettingIfNeeded();
   };
+
+  useEffect(() => {
+    // 启动兜底：如果没有 token 但 settings 里残留头像路径，则自动清理
+    if (!loaded) return;
+    if (getStoredTokenFromLocalStorage()) return;
+    if (!settings.customAvatarPath) return;
+    void clearAvatarSettingIfNeeded();
+  }, [loaded, settings.customAvatarPath]);
 
   const doRefreshStatus = async () => {
     // 防并发刷新：避免重复点击导致多次请求与状态覆盖

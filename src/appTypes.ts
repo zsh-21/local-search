@@ -59,7 +59,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   disabledSearchTypeIds: [],
   ignoredPaths: [],
   keepStateOnClose: false,
-  showResultPath: false,
+  // 默认显示路径：便于区分同名文件，且不再作为会员功能限制
+  showResultPath: true,
   enableHistory: true,
   accentColor: "#38bdf8",
   enableEffect: false,

@@ -35,6 +35,8 @@ const SCHEMA = {
 	pinyin: 'string',
 	initials: 'string',
 	path: 'string',
+	// 用于“路径分词搜索”：把完整路径拆成更适合分词的文本，支持用目录名/数字/扩展名组合检索
+	pathText: 'string',
 	isDirectory: 'boolean',
 	kind: 'enum',
 	ext: 'enum',
@@ -51,7 +53,8 @@ const tokenizer = {
 		if (!s) return [];
 
 		const out: string[] = [];
-		const MAX_TOKENS = 12;
+		// token 上限：过低会导致“路径组合查询”丢关键 token（如 26-3 中的 3、扩展名 doc 等）
+		const MAX_TOKENS = 24;
 		let seen: Set<string> | null = null;
 		const push = (t: string) => {
 			if (!t) return;
@@ -88,7 +91,15 @@ const tokenizer = {
 			}
 
 			push(seg);
-			if (seg.length <= 4) {
+
+			// 中文分词增强：支持“前缀组合检索”（例如：目录名“杂七杂八”，搜索“杂七”也能命中）
+			// 控制 token 数量：只添加 2/3 字前缀，避免 tokens 爆炸
+			if (seg.length >= 2) push(seg.slice(0, 2));
+			if (seg.length >= 3) push(seg.slice(0, 3));
+
+			// 单字匹配会显著增加 token 数量，且容易带来噪声。
+			// 这里仅对“极短中文词”（长度<=2）启用逐字 token，满足常用检索（如“简 历”）
+			if (seg.length <= 2) {
 				for (let i = 0; i < seg.length; i++) push(seg[i]);
 			}
 		}
@@ -230,6 +241,71 @@ export class FileIndex {
 		return this.db;
 	}
 
+	private buildPathText(entryPath: string) {
+		// 将路径拆分为更适合搜索的文本：
+		// - 统一分隔符为 '\\'
+		// - 用空格拼接各级目录与文件名
+		// - 保留扩展名（如 doc/docx）与数字片段（如 26-3 -> 26 3）
+		const raw = typeof entryPath === 'string' ? entryPath.trim() : '';
+		if (!raw) return '';
+		const normalized = raw.replace(/\//g, '\\').replace(/\\+/g, '\\');
+		const parts = normalized.split('\\').filter(Boolean);
+		return parts.join(' ');
+	}
+
+	private extractSearchTokens(rawQuery: string) {
+		// 从用户输入中提取“更可能有效”的检索 token：
+		// - 支持用户把一段总结/说明直接粘贴到搜索框
+		// - 丢弃大量无意义停用词，保留目录名/数字/扩展名/英文缩写等
+		const s = (rawQuery || '').toLowerCase();
+		if (!s) return [];
+		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
+		const stop = new Set([
+			'比如',
+			'例如',
+			'那么',
+			'可以',
+			'通过',
+			'或者',
+			'又',
+			'方式',
+			'搜索',
+			'文件',
+			'这个',
+			'总结',
+			'复制',
+			'进去',
+			'还是',
+			'不行',
+			'怎么',
+			'我要',
+			'我',
+		]);
+		const out: string[] = [];
+		const seen = new Set<string>();
+		for (const seg of segs) {
+			const token = String(seg || '').trim();
+			if (!token) continue;
+			if (stop.has(token)) continue;
+
+			const isDigits = /^[0-9]+$/.test(token);
+			const isAscii = /^[a-z0-9]+$/.test(token);
+			if (isAscii) {
+				// 过滤掉无意义的单字符英文，但保留数字（如 3）
+				if (!isDigits && token.length <= 1) continue;
+			} else {
+				// 中文 token 太短往往噪声较大：长度为 1 的中文默认跳过
+				if (token.length <= 1) continue;
+			}
+
+			if (seen.has(token)) continue;
+			seen.add(token);
+			out.push(token);
+			if (out.length >= 10) break;
+		}
+		return out;
+	}
+
 	async ingestPath(entryPath: string, isDirectory: boolean) {
 		if (!entryPath) return;
 		if (process.platform === 'win32') {
@@ -250,11 +326,13 @@ export class FileIndex {
 		const drive = normalizeDrive(entryPath);
 		const pinyinFull = toPinyinFull(name);
 		const initials = toPinyinInitials(name);
+		const pathText = this.buildPathText(entryPath);
 		const id = await insert(db, {
 			path: entryPath,
 			name,
 			pinyin: pinyinFull,
 			initials,
+			pathText,
 			isDirectory,
 			kind,
 			ext,
@@ -300,6 +378,7 @@ export class FileIndex {
 					name: e.name,
 					pinyin: toPinyinFull(e.name),
 					initials: toPinyinInitials(e.name),
+					pathText: this.buildPathText(e.path),
 					isDirectory: e.isDirectory,
 					kind: e.kind,
 					ext: e.ext,
@@ -422,6 +501,7 @@ export class FileIndex {
 					name: e.name,
 					pinyin: e.pinyin || toPinyinFull(e.name),
 					initials: e.initials || toPinyinInitials(e.name),
+					pathText: this.buildPathText(e.path),
 					isDirectory: e.isDirectory,
 					kind: e.kind || classifyKind(e.isDirectory, ext),
 					ext,
@@ -543,17 +623,58 @@ export class FileIndex {
 		const queryLower = query.trim().toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0 };
 
-		const searchResult = await search(db, {
-			term: queryLower,
-			properties: ['name', 'pinyin', 'initials'],
-			limit: limit * 2,
-			threshold: 1,
-			boost: { name: 2, pinyin: 1.4, initials: 1.2 },
-			where: options?.where,
-		});
+		// 允许用户粘贴一整段文本：这里先提取 token 再组合为搜索词
+		const tokens = this.extractSearchTokens(queryLower);
+		const normalizedTerm = tokens.length > 0 ? tokens.join(' ') : queryLower;
+
+		const doSearch = async (term: string, l: number) => {
+			return await search(db, {
+				term,
+				// 搜索字段：支持“目录 + 文件名 + 扩展名”组合检索
+				properties: ['name', 'pinyin', 'initials', 'pathText'],
+				limit: l,
+				threshold: 1,
+				boost: { name: 2, pinyin: 1.4, initials: 1.2, pathText: 1.35 },
+				where: options?.where,
+			});
+		};
+
+		const searchResult = await doSearch(normalizedTerm, limit * 2);
+
+		// 如果“整句搜索”没有命中且 token 较多，则降级为“按 token 合并”
+		const hitsRaw = (searchResult as any).hits || [];
+		let mergedHits = hitsRaw;
+		if (mergedHits.length === 0 && tokens.length >= 2) {
+			const merged = new Map<string, { doc: any; scoreSum: number; hitCount: number }>();
+			const tokenList = tokens.slice(0, 6);
+			for (const t of tokenList) {
+				const r = await doSearch(t, Math.max(limit, 120));
+				for (const hit of (r as any).hits || []) {
+					const p = hit?.document?.path as string;
+					if (!p) continue;
+					const key = p.toLowerCase();
+					const prev = merged.get(key);
+					const score = typeof hit?.score === 'number' ? hit.score : 0;
+					if (prev) {
+						prev.scoreSum += score;
+						prev.hitCount += 1;
+					} else {
+						merged.set(key, { doc: hit.document, scoreSum: score, hitCount: 1 });
+					}
+				}
+			}
+			mergedHits = Array.from(merged.values())
+				.map((x) => ({
+					document: x.doc,
+					// 命中多个 token 的结果优先：在累计分数上做轻微加成
+					score: x.scoreSum + x.hitCount * 0.15,
+				}))
+				.sort((a, b) => (b.score || 0) - (a.score || 0))
+				.slice(0, limit * 2);
+		}
 
 		const results: FileIndexSearchResult[] = [];
-		for (const hit of (searchResult as any).hits || []) {
+		for (const hit of mergedHits || []) {
 			const doc = hit.document;
 			const score = hit.score;
 			const p = doc?.path as string;
@@ -568,7 +689,9 @@ export class FileIndex {
 			if (results.length >= limit) break;
 		}
 
-		return { results, isIndexing: this.isIndexing, totalCount: (searchResult as any).count || 0 };
+		// totalCount 在“按 token 合并”模式下不再可信，这里以实际结果数量作为兜底
+		const totalCount = typeof (searchResult as any).count === 'number' ? (searchResult as any).count : results.length;
+		return { results, isIndexing: this.isIndexing, totalCount };
 	}
 
 	async countMatches(query: string, options?: { where?: any }) {
@@ -577,7 +700,8 @@ export class FileIndex {
 		if (!queryLower) return { totalCount: 0, isIndexing: this.isIndexing };
 		const resp = await search(db, {
 			term: queryLower,
-			properties: ['name'],
+			// 计数逻辑与 search 对齐，否则会出现“结果能搜到但 totalCount 不一致”
+			properties: ['name', 'pinyin', 'initials', 'pathText'],
 			where: options?.where,
 			preflight: true,
 		});

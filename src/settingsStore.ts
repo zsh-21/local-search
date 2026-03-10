@@ -147,7 +147,8 @@ export function normalizeSettings(s: any): AppSettings {
     disabledSearchTypeIds,
     ignoredPaths,
     keepStateOnClose: Boolean(s?.keepStateOnClose),
-    showResultPath: Boolean(s?.showResultPath),
+    // 默认显示路径：当配置缺失时回落到默认值，避免 Boolean(undefined) 误判为 false
+    showResultPath: typeof s?.showResultPath === "boolean" ? s.showResultPath : DEFAULT_SETTINGS.showResultPath,
     enableHistory: s?.enableHistory !== false,
     accentColor: typeof s?.accentColor === "string" ? s.accentColor : DEFAULT_SETTINGS.accentColor,
     enableEffect: Boolean(s?.enableEffect),
@@ -191,7 +192,7 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
     defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
     customSearchTypes: [],
     searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
-    showResultPath: false,
+    // 列表显示路径不再作为会员限制：非会员也允许使用，且默认开启
     enableEffect: false,
     effectType: "particles",
     // 非会员不允许自定义背景图：统一回落到默认背景

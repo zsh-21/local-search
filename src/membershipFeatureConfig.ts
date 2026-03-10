@@ -1,7 +1,6 @@
 export type MembershipControlledFeatureKey =
   | "themeColor"
   | "defaultSearchType"
-  | "resultPathDisplay"
   | "customSuffix"
   | "searchTypeOrder";
 
@@ -22,11 +21,6 @@ export const MEMBERSHIP_CONTROLLED_FEATURES: MembershipControlledFeature[] = [
     key: "defaultSearchType",
     label: "默认类型的指定",
     description: "设置默认搜索类型（例如：所有文件/文件/自定义类型）",
-  },
-  {
-    key: "resultPathDisplay",
-    label: "列表文件地址的显示",
-    description: "控制列表中是否显示文件路径",
   },
   {
     key: "customSuffix",

@@ -305,13 +305,11 @@ export function SearchSection({
       <div className="settings-group">
         <div className="settings-group-title">
           <span>列表显示</span>
-          {membershipBadge}
         </div>
         <label className="setting-row">
           <input
             type="checkbox"
             checked={draft.showResultPath}
-            disabled={!isMember}
             onChange={(e) => {
               setDraft({ ...draft, showResultPath: e.target.checked });
               setError("");
@@ -410,6 +408,7 @@ export function SearchSection({
           <span>自定义类型</span>
           {membershipBadge}
         </div>
+        {/* 自定义类型作为高级功能：非会员保持禁用，但支持回车提交，提高录入效率 */}
         <div className="form-row">
           <div className="form-label">新增后缀</div>
           <div className="input-with-btn">
@@ -421,6 +420,33 @@ export function SearchSection({
               disabled={!isMember}
               onChange={(e) => {
                 setNewTypeExt(e.target.value);
+                setError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isMember) return;
+                const ext = newTypeExt.trim().toLowerCase();
+                if (!/^\.[a-z0-9]{1,10}$/i.test(ext)) {
+                  setError("后缀格式不合法（例如 .docx）");
+                  return;
+                }
+                if (draft.customSearchTypes.includes(ext)) {
+                  setError("该类型已存在");
+                  return;
+                }
+                const nextCustom = [...draft.customSearchTypes, ext];
+                const nextOrder = getSearchTypeOptions(nextCustom, [
+                  ...(draft.searchTypeOrder || []),
+                  `ext:${ext}`,
+                ]).map((x) => x.id);
+                setDraft({
+                  ...draft,
+                  customSearchTypes: nextCustom,
+                  searchTypeOrder: nextOrder,
+                });
+                setNewTypeExt("");
                 setError("");
               }}
             />

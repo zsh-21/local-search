@@ -194,7 +194,8 @@ export function loadSettings(): AppSettings {
         disabledSearchTypeIds,
         ignoredPaths,
         keepStateOnClose: Boolean(raw?.keepStateOnClose),
-        showResultPath: Boolean(raw?.showResultPath),
+        // 结果路径默认显示：当用户未显式配置时，默认开启
+        showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : true,
         enableHistory: raw?.enableHistory !== false,
         accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : '#38bdf8',
         enableEffect: Boolean(raw?.enableEffect),
@@ -218,7 +219,8 @@ export function loadSettings(): AppSettings {
     disabledSearchTypeIds: [],
     ignoredPaths: [],
     keepStateOnClose: false,
-    showResultPath: false,
+    // 默认显示路径：便于区分同名文件
+    showResultPath: true,
     enableHistory: true,
     accentColor: '#38bdf8',
     enableEffect: false,

@@ -10,6 +10,7 @@ import {
   getSearchWindow,
   hideSearchWindow,
 } from '../window/windowManager';
+import { registerShortcutsForSettings } from '../window/windowManager';
 import { loadSettings, saveSettings, AppSettings } from '../config/settings';
 import { fileIndex, isIgnoredPathByCache } from '../file/indexService';
 import { handleSearchFiles } from '../search/searchFilesHandler';
@@ -224,7 +225,7 @@ export function registerIpcHandlers() {
     await fileIndex.setIgnoredPaths(next.ignoredPaths);
     
     // Re-register shortcuts
-    const { registerShortcutsForSettings } = require('../window/windowManager');
+    // 重新注册快捷键：使用静态 import，避免打包后运行期 require 路径失效
     registerShortcutsForSettings({ searchShortcut: next.searchShortcut, settingsShortcut: next.settingsShortcut });
     
     // Notify windows
