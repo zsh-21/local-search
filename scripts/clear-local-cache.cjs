@@ -6,6 +6,20 @@ const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const prodMode = args.includes("--prod");
 
+// userData 下的关键落盘文件名：
+// 这里需要与 electron/constants/storagePaths.ts 的 USER_DATA_FILENAMES 保持一致，避免出现“脚本清理”和“应用内清理”不一致
+const USER_DATA_FILENAMES = {
+  windowConfig: "window-config.json",
+  settingsWindowConfig: "settings-window-config.json",
+  settings: "settings.json",
+  deviceId: "device-id.json",
+  history: "history.json",
+  historyStats: "history-stats.json",
+  installedApps: "installed-apps.json",
+  fileIndex: "file-index.txt",
+  fileIndexMeta: "file-index-meta.json",
+};
+
 function readProjectPackageJson() {
   try {
     const root = path.resolve(__dirname, "..");
@@ -57,9 +71,15 @@ function pickUserDataBase(appDataDir, pkg) {
   for (const base of baseCandidates) {
     const devDir = path.join(base, "dev");
     if (
-      existsFile(path.join(devDir, "settings.json")) ||
-      existsFile(path.join(devDir, "window-config.json")) ||
-      existsFile(path.join(devDir, "settings-window-config.json"))
+      // 通过关键落盘文件“猜测”正确的 userData 目录：避免误删其他应用的数据
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.settings)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.windowConfig)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.settingsWindowConfig)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.fileIndex)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.fileIndexMeta)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.history)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.historyStats)) ||
+      existsFile(path.join(devDir, USER_DATA_FILENAMES.installedApps))
     ) {
       return base;
     }
@@ -94,12 +114,8 @@ async function main() {
     app.quit();
     return;
   }
-  const keepNames = new Set([
-    // clear:cache 只保留用户设置与窗口布局：其余内容（索引/历史/统计/Electron 存储）都清空，确保“所有索引都清空”
-    "settings.json",
-    "window-config.json",
-    "settings-window-config.json",
-  ]);
+  // clear:cache 清空所有配置/索引/缓存：用于一键恢复到“全新安装”的状态
+  const keepNames = new Set([]);
 
   const entries = listEntries(resolvedUserData);
   const removed = [];
@@ -107,10 +123,15 @@ async function main() {
   
   // 关键文件列表，用于向用户报告状态
   const keyFiles = [
-    "file-index.txt",
-    "file-index-meta.json", 
-    "history.json",
-    "history-stats.json"
+    USER_DATA_FILENAMES.fileIndex,
+    USER_DATA_FILENAMES.fileIndexMeta,
+    USER_DATA_FILENAMES.history,
+    USER_DATA_FILENAMES.historyStats,
+    USER_DATA_FILENAMES.installedApps,
+    USER_DATA_FILENAMES.deviceId,
+    USER_DATA_FILENAMES.settings,
+    USER_DATA_FILENAMES.windowConfig,
+    USER_DATA_FILENAMES.settingsWindowConfig,
   ];
   const keyFilesStatus = {};
 

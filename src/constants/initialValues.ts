@@ -1,4 +1,5 @@
-import type { AppSettings } from "../appTypes";
+import type { ResultActionButtonId } from "../appTypes";
+import { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS } from "../../shared/initialValues";
 
 // 这里集中维护“项目内可调的初始值/默认值”：
 // - 便于你后续只改一处就能影响全局行为
@@ -30,45 +31,13 @@ export const FS_LAST_LOGIN_PASSWORD_KEY = "fs_last_login_password";
 export const FS_BACKUP_SETTINGS_KEY = "fs_backup_settings";
 
 // =========================
-// 设置默认值（渲染端唯一默认来源）
+// 设置默认值（跨进程统一入口）
 // =========================
 
-// 内置基础搜索类型：用于排序、禁用、下拉展示等逻辑的允许值集合
-export const BASE_SEARCH_TYPE_IDS = ["all", "app", "file", "folder", "image", "video", "settings"] as const;
-
-// 应用侧默认设置：当主进程未返回/配置缺失时统一回落到这里
-export const DEFAULT_SETTINGS = {
-  autoStart: false,
-  searchShortcut: "Alt+T",
-  settingsShortcut: "Alt+Shift+T",
-  theme: "dark",
-  historyLimit: 5,
-  defaultSearchTypeId: "all",
-  customSearchTypes: [],
-  // 默认类型顺序：包含“应用”类型，便于 Tab/Shift+Tab 快速切换
-  searchTypeOrder: [...BASE_SEARCH_TYPE_IDS],
-  disabledSearchTypeIds: [],
-  ignoredPaths: [],
-  keepStateOnClose: false,
-  // 默认显示路径：便于区分同名文件，且不再作为会员功能限制
-  showResultPath: true,
-  enableHistory: true,
-  accentColor: "#38bdf8",
-  enableEffect: false,
-  effectType: "particles",
-  backgroundImagePath: "",
-  backgroundImageOpacity: 0.25,
-  // 自定义头像：存储本地图片路径（通过主进程转换为 dataUrl 显示），空字符串表示未自定义
-  customAvatarPath: "",
-  // 搜索结果右侧操作按钮：最多展示三项，用户可在设置里选择与排序
-  resultActionButtons: ["openFolder", "copyPath", "deleteHistory"],
-  // 搜索窗口尺寸：初始宽高（最小/最大限制由系统内部固定）
-  searchWindowInitialWidth: 720,
-  searchWindowMaxHeight: 760,
-  // 搜索结果最大展示条数：用于限制 UI 列表渲染与交互成本
-  searchDisplayLimit: 50,
-  compactMode: false,
-} satisfies AppSettings;
+// 说明：
+// - BASE_SEARCH_TYPE_IDS / DEFAULT_SETTINGS 属于“渲染进程 + 主进程必须一致”的默认值
+// - 统一从 shared/initialValues.ts 引入，避免维护两份导致漂移
+export { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS };
 
 // =========================
 // 设置页可选项（用于下拉/按钮渲染）
@@ -90,7 +59,7 @@ export const THEME_COLOR_OPTIONS: Array<{ name: string; color: string }> = [
 
 // 搜索结果右侧按钮配置：新增按钮时，只需追加选项与对应渲染逻辑
 export const RESULT_ACTION_OPTIONS: Array<{
-  id: AppSettings["resultActionButtons"][number];
+  id: ResultActionButtonId;
   label: string;
   note?: string;
 }> = [

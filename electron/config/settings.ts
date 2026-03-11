@@ -2,6 +2,8 @@ import { app } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { getSettingsPath, getSettingsWindowConfigPath, getWindowConfigPath } from '../constants/storagePaths';
+import type { AppSettings, ResultActionButtonId } from '../../shared/settingsTypes';
+export type { AppSettings, ResultActionButtonId } from '../../shared/settingsTypes';
 import {
   BASE_SEARCH_TYPE_IDS,
   DEFAULT_RESULT_ACTION_BUTTONS,
@@ -23,40 +25,6 @@ if (!app.isPackaged) {
 export const CONFIG_PATH = getWindowConfigPath();
 export const SETTINGS_PATH = getSettingsPath();
 export const SETTINGS_WINDOW_CONFIG_PATH = getSettingsWindowConfigPath();
-
-export type ResultActionButtonId = 'openFolder' | 'copyPath' | 'deleteHistory' | 'runAsAdmin';
-
-export interface AppSettings {
-  autoStart: boolean;
-  searchShortcut: string;
-  settingsShortcut: string;
-  theme: 'dark' | 'light';
-  historyLimit: number;
-  defaultSearchTypeId: string;
-  customSearchTypes: string[];
-  searchTypeOrder: string[];
-  disabledSearchTypeIds: string[];
-  ignoredPaths: string[];
-  keepStateOnClose: boolean;
-  showResultPath: boolean;
-  enableHistory: boolean;
-  accentColor: string;
-  enableEffect: boolean;
-  effectType: 'particles' | 'warp' | 'waves';
-  backgroundImagePath: string;
-  backgroundImageOpacity: number;
-  // 自定义头像：本地图片路径；渲染侧通过 get-image-data-url 转为可展示的 dataUrl
-  customAvatarPath: string;
-  resultActionButtons: ResultActionButtonId[];
-
-  // 搜索窗口尺寸：初始宽高（最小/最大限制由系统内部固定）
-  searchWindowInitialWidth: number;
-  searchWindowMaxHeight: number;
-
-  searchDisplayLimit: number;
-
-  compactMode: boolean;
-}
 
 // 默认值已抽离到单独文件：便于你集中调整主进程侧默认行为
 export { DEFAULT_SEARCH_SHORTCUT, DEFAULT_SETTINGS_SHORTCUT, DEFAULT_RESULT_ACTION_BUTTONS };

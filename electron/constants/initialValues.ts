@@ -1,5 +1,3 @@
-import type { AppSettings, ResultActionButtonId } from "../config/settings";
-
 // 这里集中维护“主进程侧可调的初始值/默认值”：
 // - 主进程涉及窗口尺寸、快捷键、索引策略等，初始值散落会导致改动容易漏
 // - 严格保持与现有逻辑一致：仅抽离常量，不改变原有功能
@@ -8,43 +6,16 @@ import type { AppSettings, ResultActionButtonId } from "../config/settings";
 // 设置默认值（主进程侧）
 // =========================
 
-// 内置基础搜索类型：用于排序/禁用等允许值集合
-export const BASE_SEARCH_TYPE_IDS = ["all", "app", "file", "folder", "image", "video", "settings"] as const;
-
-// 默认快捷键（Windows）：用于首次安装/配置缺失时回落
-export const DEFAULT_SEARCH_SHORTCUT = "Alt+T";
-export const DEFAULT_SETTINGS_SHORTCUT = "Alt+Shift+T";
-
-// 默认右侧按钮顺序：用于配置缺失时回落
-export const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ["openFolder", "copyPath", "deleteHistory"];
-
-// 主进程侧默认设置：loadSettings 读盘失败或字段缺失时的最终回落
-export const DEFAULT_SETTINGS = {
-  autoStart: false,
-  searchShortcut: DEFAULT_SEARCH_SHORTCUT,
-  settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
-  theme: "dark",
-  historyLimit: 5,
-  defaultSearchTypeId: "all",
-  customSearchTypes: [],
-  searchTypeOrder: [...BASE_SEARCH_TYPE_IDS],
-  disabledSearchTypeIds: [],
-  ignoredPaths: [],
-  keepStateOnClose: false,
-  showResultPath: true,
-  enableHistory: true,
-  accentColor: "#38bdf8",
-  enableEffect: false,
-  effectType: "particles",
-  backgroundImagePath: "",
-  backgroundImageOpacity: 0.25,
-  customAvatarPath: "",
-  resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
-  searchWindowInitialWidth: 720,
-  searchWindowMaxHeight: 760,
-  searchDisplayLimit: 50,
-  compactMode: false,
-} satisfies AppSettings;
+// 说明：
+// - BASE_SEARCH_TYPE_IDS / DEFAULT_SETTINGS 属于“渲染进程 + 主进程必须一致”的默认值
+// - 统一从 shared/initialValues.ts 引入，避免维护两份导致漂移
+export {
+  BASE_SEARCH_TYPE_IDS,
+  DEFAULT_RESULT_ACTION_BUTTONS,
+  DEFAULT_SEARCH_SHORTCUT,
+  DEFAULT_SETTINGS,
+  DEFAULT_SETTINGS_SHORTCUT,
+} from "../../shared/initialValues";
 
 // =========================
 // 窗口初始值（主进程侧）

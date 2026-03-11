@@ -36,7 +36,7 @@ import { getInstalledAppsCache } from '../apps/installedApps';
 import { iconDataCache, isTooSmallAppIconDataUrl } from '../icon/iconCache';
 import { getAppIconDataStable, getFileIconData, getHistoryIconForPath } from '../icon/iconService';
 import { normalizeAppGroupKey } from '../utils/normalize';
-import { clearLocalCacheButKeepAccountAndSettings } from '../utils/cacheCleaner';
+import { clearLocalCacheAll } from '../utils/cacheCleaner';
 import { resolveAppId } from '../win/resolveAppId';
 import { openResolvedTarget } from '../utils/open';
 import { readUrlShortcut, openLnkShortcut } from '../win/shortcuts';
@@ -378,14 +378,14 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('clear-cache', async () => {
-    await clearLocalCacheButKeepAccountAndSettings();
+    await clearLocalCacheAll();
     return { ok: true };
   });
 
   ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
     try {
       if (item?.type === 'command' && typeof item?.path === 'string' && item.path.trim().toLowerCase() === 'clear:cache') {
-        await clearLocalCacheButKeepAccountAndSettings();
+        await clearLocalCacheAll();
         return true;
       }
       if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
