@@ -69,7 +69,7 @@ export const DEFAULT_SETTINGS = {
   // 搜索窗口最大高度：渲染端自适应 resize 时会受该值限制
   searchWindowMaxHeight: 360,
   // 搜索结果最大展示条数：用于限制 UI 列表渲染成本
-  searchDisplayLimit: 50,
+  searchDisplayLimit: 100,
   // 是否启用紧凑模式：影响列表项高度与整体密度
   compactMode: false,
 } satisfies AppSettings;

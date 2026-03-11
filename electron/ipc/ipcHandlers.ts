@@ -17,8 +17,6 @@ import { handleSearchFiles } from '../search/searchFilesHandler';
 import {
   reconcileRecentIndex,
   recentIndex,
-  shouldSkipWatchPath,
-  getWindowsFileSystemRoots,
   normalizeRecentKey,
 } from '../file/watcher';
 import {
@@ -591,8 +589,6 @@ export function registerIpcHandlers() {
         isIgnoredPathByCache,
         normalizeRecentKey,
         recentIndex,
-        shouldSkipWatchPath,
-        getWindowsFileSystemRoots,
       });
     }
   );

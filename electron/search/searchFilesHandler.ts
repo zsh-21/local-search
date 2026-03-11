@@ -1,34 +1,14 @@
 import { createNameScorer, createScoreComputer } from './scoring';
-import { getWindowsSettingsItems, searchSettingsItems } from './settingsSearch';
-import { searchApps } from './appSearch';
 import { prefetchIconsInBackground } from './iconPrefetch';
+import { appsStrategy } from './strategies/appsStrategy';
+import { fileIndexStrategy } from './strategies/fileIndexStrategy';
+import { createRecentIndexStrategy } from './strategies/recentIndexStrategy';
+import { settingsStrategy } from './strategies/settingsStrategy';
+import type { SearchContext, SearchStrategyDeps } from './strategies/types';
 
 type SearchFilesOptions = { searchTypeId?: string; searchSessionId?: string; drive?: string };
 
-export type SearchFilesDeps = {
-	fileIndex: {
-		getStatus: () => Promise<{ isIndexing: boolean }>;
-		pauseIndexingFor: (ms: number) => void | Promise<void>;
-		search: (query: string, limit: number, options?: { where?: any }) => Promise<any>;
-		buildIfEmpty: () => Promise<void>;
-	};
-	reconcileRecentIndex: () => void;
-	loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[] };
-	loadHistoryStats: () => any;
-	normalizeHistoryKey: (rawPath: string) => string;
-	normalizeExtKey: (rawPath: string) => string;
-	getInstalledApps: () => Array<{ Name: string; AppID: string }>;
-	normalizeAppGroupKey: (name: string) => string;
-	iconDataCache: Map<string, string>;
-	isTooSmallAppIconDataUrl: (value: string) => boolean;
-	getAppIconDataStable: (appName: string, appId: string, maxAttempts?: number) => Promise<string>;
-	getFileIconData: (filePath: string) => Promise<string>;
-	isIgnoredPathByCache: (targetPath: string) => boolean;
-	normalizeRecentKey: (rawPath: string) => string;
-	recentIndex: Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>;
-	shouldSkipWatchPath: (fullPath: string) => boolean;
-	getWindowsFileSystemRoots: () => Promise<string[]>;
-};
+export type SearchFilesDeps = Omit<SearchStrategyDeps, 'getCurrentIconPrefetchToken' | 'currentIconPrefetchToken'>;
 
 let iconPrefetchToken = 0;
 
@@ -38,23 +18,7 @@ export async function handleSearchFiles(
 	options: SearchFilesOptions | undefined,
 	deps: SearchFilesDeps
 ) {
-	const {
-		fileIndex,
-		reconcileRecentIndex,
-		loadSettings,
-		loadHistoryStats,
-		normalizeHistoryKey,
-		normalizeExtKey,
-		getInstalledApps,
-		normalizeAppGroupKey,
-		iconDataCache,
-		isTooSmallAppIconDataUrl,
-		getAppIconDataStable,
-		getFileIconData,
-		isIgnoredPathByCache,
-		normalizeRecentKey,
-		recentIndex,
-	} = deps;
+	const { fileIndex, reconcileRecentIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey, iconDataCache } = deps;
 	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
 	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
@@ -71,7 +35,7 @@ export async function handleSearchFiles(
 			? options.searchSessionId.trim()
 			: `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-	// 内置命令：通过搜索框触发“清空缓存与索引”，保留登录态与设置
+	// 内置命令：通过搜索框触发“清空所有配置/缓存/索引”
 	if (lowerQuery === 'clear:cache') {
 		return {
 			results: [
@@ -79,7 +43,7 @@ export async function handleSearchFiles(
 					name: '清空缓存并重新建立索引',
 					path: 'clear:cache',
 					type: 'command',
-					description: '保留登录账户与设置；下次呼出面板会自动重建索引',
+					description: '清空所有配置/缓存/索引；下次启动会重新生成',
 				},
 			],
 			isIndexing: false,
@@ -101,137 +65,44 @@ export async function handleSearchFiles(
 		normalizeHistoryKey,
 		normalizeExtKey,
 	});
-	const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
-	const videoExts = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
-	// 过滤快捷方式：.lnk/.url 往往只是指向目标文件/应用，会导致结果重复
-	const isShortcutPath = (p: string) => {
-		const lower = String(p || '').toLowerCase();
-		return lower.endsWith('.lnk') || lower.endsWith('.url');
-	};
-	const settingsItems = getWindowsSettingsItems();
-	const { settingsResults, settingsOnly } = searchSettingsItems({
-		searchTypeId,
-		settingsItems,
-		computeWeightedNameMatch,
-		computeCombinedScore,
-		getLastUsedMs,
-	});
-	if (settingsOnly) return { results: settingsOnly.results, isIndexing: false, hasMore: false, searchSessionId, totalCount: settingsOnly.totalCount };
 
 	const getCurrentIconPrefetchToken = () => iconPrefetchToken;
-	const appResults: any[] = await searchApps({
-		searchTypeId,
-		lowerQuery,
-		getInstalledApps,
-		normalizeAppGroupKey,
-		iconDataCache,
-		isTooSmallAppIconDataUrl,
-		getAppIconDataStable,
-		scoreRecentName,
-		computeWeightedNameMatch,
-		computeCombinedScore,
-		getLastUsedMs,
+	const ctx: SearchContext = {
 		event,
 		query,
+		lowerQuery,
+		searchTypeId,
 		searchSessionId,
-		iconPrefetchToken: currentIconPrefetchToken,
+		driveFilter,
+		extFilter,
+		now,
+		nameScorer: { computeWeightedNameMatch, scoreRecentName },
+		scoreComputer: { getLastUsedMs, computeCombinedScore },
+	};
+	const strategyDeps: SearchStrategyDeps = {
+		...(deps as any),
 		getCurrentIconPrefetchToken,
-	});
-	if (searchTypeId === 'app') {
-		const isIndexing = (await fileIndex.getStatus()).isIndexing;
-		return { results: appResults, isIndexing, hasMore: false, searchSessionId, totalCount: appResults.length };
-	}
+		currentIconPrefetchToken,
+	};
 
-	const fileSearchLimit = searchTypeId === 'all' || searchTypeId === 'file' ? 500 : 5000;
-	const currentSettings = loadSettings();
-	const customExts = Array.isArray(currentSettings.customSearchTypes)
-		? currentSettings.customSearchTypes.map((x) => (typeof x === 'string' ? x.trim().toLowerCase() : '')).filter(Boolean)
-		: [];
-	const where = (() => {
-		const and: any[] = [];
-		if (searchTypeId === 'folder') and.push({ isDirectory: true });
-		if (searchTypeId === 'image') and.push({ ext: { in: Array.from(imageExts) } });
-		if (searchTypeId === 'video') and.push({ ext: { in: Array.from(videoExts) } });
-		if (extFilter) and.push({ ext: { in: [extFilter] } });
-		if (driveFilter) and.push({ drive: { eq: driveFilter } });
-		if (searchTypeId === 'file') {
-			// “文档”类型需要排除可执行文件：避免在文档列表里搜到 .exe 等程序文件
-			const excluded = new Set([...imageExts, ...videoExts, ...customExts, '.exe']);
-			and.push({ ext: { nin: Array.from(excluded) } });
-		}
-		return and.length > 0 ? { and } : null;
-	})();
+	const resultFromSettings = await settingsStrategy.execute(ctx, strategyDeps);
+	if (resultFromSettings.kind === 'return') return resultFromSettings.response;
+	const settingsResults = resultFromSettings.items;
 
-	let fileSearch: any = null;
-	try {
-		await fileIndex.buildIfEmpty();
-		fileSearch = await fileIndex.search(query, fileSearchLimit, where ? { where } : undefined);
-	} catch {
-		// 索引 Worker 可能因内存不足退出：此时降级为“仅设置/应用/历史”结果，避免主进程产生未处理的 Promise rejection
-		fileSearch = { results: [], isIndexing: false, totalCount: 0 };
-	}
-	const fileResultsRaw: Array<{
-		path: string;
-		name: string;
-		isDirectory: boolean;
-		timeMs: number;
-		size?: number;
-	}> = Array.isArray((fileSearch as any)?.results) ? (fileSearch as any).results : [];
+	const resultFromApps = await appsStrategy.execute(ctx, strategyDeps);
+	if (resultFromApps.kind === 'return') return resultFromApps.response;
+	const appResults = resultFromApps.items;
 
-	const filteredFiles: Array<any> = [];
-	for (const r of fileResultsRaw) {
-		if (!r?.path) continue;
-		if (isShortcutPath(r.path)) continue;
-		if (isIgnoredPathByCache(r.path)) continue;
-		if (driveFilter && !r.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
-		if (extFilter && !String(r.path).toLowerCase().endsWith(extFilter)) continue;
-		// 文档类型兜底过滤：防止旧索引/异常数据导致 .exe 泄漏到文档结果
-		if (searchTypeId === 'file' && String(r.path).toLowerCase().endsWith('.exe')) continue;
-		// 再次过滤无效路径（兜底）：FileIndex 层面已过滤，但为防止旧缓存/搜索结果泄漏，此处对文件类型再做一次校验
-		// 应用类型（App）不走此逻辑，因此 Microsoft.ScreenSketch... 等 AUMID 不受影响
-		if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(r.path) && !r.path.startsWith('\\\\')) continue;
-		filteredFiles.push(r);
-	}
+	const resultFromFileIndex = await fileIndexStrategy.execute(ctx, strategyDeps);
+	if (resultFromFileIndex.kind === 'return') return resultFromFileIndex.response;
+	const scoredFiles = resultFromFileIndex.items;
+	const isIndexing = Boolean(resultFromFileIndex.meta?.isIndexing);
 
-	const scoredFiles: Array<any> = [];
-	for (const r of filteredFiles) {
-		const type = r.isDirectory ? 'folder' : 'file';
-		const { weightedScore, matchIndex, nameLen } = computeWeightedNameMatch(r.name);
-		const baseScore = weightedScore * 100 + (matchIndex <= 2 ? 300 : 0) - Math.min(80, Math.floor(nameLen / 10));
-		const timeMs = typeof r.timeMs === 'number' ? r.timeMs : 0;
-		const score = computeCombinedScore(baseScore, type, r.path, timeMs);
-		scoredFiles.push({ ...r, type, score, weightedScore, matchIndex, nameLen });
-	}
-
-	const recentBoostCandidates = (() => {
-		const seen = new Set(filteredFiles.map((x) => normalizeRecentKey(x.path)));
-		const items = Array.from(recentIndex.values());
-		items.sort((a, b) => (b.timeMs || 0) - (a.timeMs || 0));
-		const out: Array<any> = [];
-		for (const it of items) {
-			const key = normalizeRecentKey(it.path);
-			if (!key || seen.has(key)) continue;
-			if (isShortcutPath(it.path)) continue;
-			if (isIgnoredPathByCache(it.path)) continue;
-			if (driveFilter && !it.path.toLowerCase().startsWith(`${driveFilter}:\\`)) continue;
-			if (extFilter && !String(it.path).toLowerCase().endsWith(extFilter)) continue;
-			// 文档类型不应混入可执行文件：最近使用项也需要保持一致
-			if (searchTypeId === 'file' && String(it.path).toLowerCase().endsWith('.exe')) continue;
-			// 兜底过滤无效 Windows 路径：防止 watcher 误写入 “\\foo\\bar”（缺盘符）导致前端出现不可用路径
-			if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(it.path) && !it.path.startsWith('\\\\')) continue;
-			const weighted = computeWeightedNameMatch(it.name);
-			const legacy = scoreRecentName(it.name);
-			const baseWeighted =
-				legacy > 0 ? legacy / 25 : weighted.weightedScore > 0 ? weighted.weightedScore : 0;
-			if (baseWeighted <= 0) continue;
-			const type = it.isDirectory ? 'folder' : 'file';
-			const score = computeCombinedScore(baseWeighted * 100, type, it.path, it.timeMs || 0);
-			out.push({ name: it.name, path: it.path, type, score, timeMs: it.timeMs || 0 });
-			seen.add(key);
-			if (out.length >= 350) break;
-		}
-		return out;
-	})();
+	const seen = new Set(scoredFiles.map((x: any) => deps.normalizeRecentKey(x.path)));
+	const recentStrategy = createRecentIndexStrategy(seen);
+	const resultFromRecent = await recentStrategy.execute(ctx, strategyDeps);
+	if (resultFromRecent.kind === 'return') return resultFromRecent.response;
+	const recentBoostCandidates = resultFromRecent.items;
 
 	const candidates = [
 		...settingsResults,
@@ -258,16 +129,17 @@ export async function handleSearchFiles(
 	const firstBatch = top500.slice(0, initialLimit);
 	const remainingBatch = top500.slice(initialLimit);
 
-	const merged = firstBatch.map(({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }) => rest);
+	const stripMeta = ({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }: any) => rest;
+	const merged = firstBatch.map(stripMeta);
 	prefetchIconsInBackground({
 		event,
 		query,
 		searchTypeId,
 		searchSessionId,
-		items: top500.map(({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }) => rest),
+		items: top500.map(stripMeta),
 		iconDataCache,
-		getFileIconData,
-		getAppIconDataStable,
+		getFileIconData: deps.getFileIconData,
+		getAppIconDataStable: deps.getAppIconDataStable,
 		getCurrentIconPrefetchToken,
 		iconPrefetchToken: currentIconPrefetchToken,
 	});
@@ -283,16 +155,13 @@ export async function handleSearchFiles(
 					.map((r: any) => {
 						if (r.type === 'file' || r.type === 'folder') {
 							const cached = iconDataCache.get(`file:${r.path}`) || '';
-							const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = cached ? { ...r, icon: cached } : r;
-							return rest;
+							return stripMeta(cached ? { ...r, icon: cached } : r);
 						}
 						if (r.type === 'app') {
 							const cached = iconDataCache.get(`app:${r.path}`) || '';
-							const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = cached ? { ...r, icon: cached } : r;
-							return rest;
+							return stripMeta(cached ? { ...r, icon: cached } : r);
 						}
-						const { score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest } = r;
-						return rest;
+						return stripMeta(r);
 					});
 
 				if (backgroundResults.length > 0) {
@@ -308,7 +177,6 @@ export async function handleSearchFiles(
 		})();
 	}
 
-	const isIndexing = (fileSearch as any)?.isIndexing ?? (await fileIndex.getStatus()).isIndexing;
 	return {
 		results: merged,
 		isIndexing,
