@@ -217,6 +217,8 @@ export async function handleSearchFiles(
 			if (extFilter && !String(it.path).toLowerCase().endsWith(extFilter)) continue;
 			// 文档类型不应混入可执行文件：最近使用项也需要保持一致
 			if (searchTypeId === 'file' && String(it.path).toLowerCase().endsWith('.exe')) continue;
+			// 兜底过滤无效 Windows 路径：防止 watcher 误写入 “\\foo\\bar”（缺盘符）导致前端出现不可用路径
+			if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(it.path) && !it.path.startsWith('\\\\')) continue;
 			const weighted = computeWeightedNameMatch(it.name);
 			const legacy = scoreRecentName(it.name);
 			const baseWeighted =

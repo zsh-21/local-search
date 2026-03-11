@@ -100,8 +100,22 @@ export async function startUserDirectoryWatchers() {
     try {
       const w = watch(normalized, { recursive: true }, (_eventType, filename) => {
         if (!filename) return;
-        const raw = filename.toString();
-        const fullPath = path.isAbsolute(raw) ? raw : path.join(normalized, raw);
+        const raw = filename.toString().replace(/\//g, '\\');
+        // Windows 的 fs.watch 可能返回以单反斜杠开头的路径（例如 \Users\...\a.txt）：
+        // - path.isAbsolute('\\Users\\...') === true，但它缺少盘符，无法用于打开/索引
+        // - 这里以 watcher 根目录的盘符进行补齐，确保 recentIndex 与索引写入始终是“可用的绝对路径”
+        const fullPath = (() => {
+          if (process.platform !== 'win32') return path.isAbsolute(raw) ? raw : path.join(normalized, raw);
+          const isWinFullAbs = /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\');
+          if (isWinFullAbs) return raw;
+          if (raw.startsWith('\\')) {
+            const drive = normalized.slice(0, 2);
+            if (/^[a-zA-Z]:$/.test(drive)) return `${drive}${raw}`;
+            // 非盘符根（例如 UNC 根）时，去掉开头的反斜杠再拼接，避免 path.join 被“绝对段”覆盖
+            return path.join(normalized, raw.replace(/^\\+/, ''));
+          }
+          return path.join(normalized, raw);
+        })();
         if (shouldSkipWatchPath(fullPath)) return;
         setTimeout(() => {
           // 事件回调处尽量避免同步 IO（existsSync/statSync），降低主进程卡顿概率
