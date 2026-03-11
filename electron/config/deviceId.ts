@@ -1,8 +1,7 @@
-import { app } from 'electron';
-import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
+import { getDeviceIdPath } from '../constants/storagePaths';
 
 /**
  * 获取硬件级唯一标识符
@@ -43,7 +42,8 @@ function getMachineId(): string {
   return '';
 }
 
-const DEVICE_ID_PATH = path.join(app.getPath('userData'), 'device-id.json');
+// 设备标识落盘路径已抽离：便于你统一调整所有缓存/配置文件的落盘位置
+const DEVICE_ID_PATH = getDeviceIdPath();
 
 /**
  * 获取设备 ID

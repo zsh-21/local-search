@@ -1,11 +1,11 @@
-import { app } from 'electron';
-import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolveAppId } from '../win/resolveAppId';
 import { ensureStartMenuShortcutIndex } from '../win/startMenuShortcutIndex';
+import { getInstalledAppsCachePath } from '../constants/storagePaths';
 
-const INSTALLED_APPS_CACHE_PATH = path.join(app.getPath('userData'), 'installed-apps.json');
+// 已安装应用缓存落盘路径已抽离：便于你统一调整缓存文件的位置与文件名
+const INSTALLED_APPS_CACHE_PATH = getInstalledAppsCachePath();
 const INSTALLED_APPS_CACHE_VERSION = 1;
 
 export interface InstalledApp {

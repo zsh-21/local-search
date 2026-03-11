@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { AppSettings, DEFAULT_SETTINGS, ResultActionButtonId, SearchTypeOption } from "./appTypes";
+import { BASE_SEARCH_TYPE_IDS, FS_BACKUP_SETTINGS_KEY } from "./constants/initialValues";
 import { useStoredMembership } from "./membership";
 
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
@@ -49,7 +50,7 @@ export function normalizeSettings(s: any): AppSettings {
   // 规范化搜索类型顺序：过滤非法值并补齐内置/自定义类型
   const normalizeSearchTypeOrder = (order: any) => {
     // 基础类型顺序：新增“应用”类型后需要同步进来，保证排序/禁用逻辑一致
-    const baseIds = ["all", "app", "file", "folder", "image", "video", "settings"];
+    const baseIds = [...BASE_SEARCH_TYPE_IDS];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
     const allowed = new Set<string>([...baseIds, ...customIds]);
     const raw: string[] = Array.isArray(order)
@@ -70,7 +71,7 @@ export function normalizeSettings(s: any): AppSettings {
   };
 
   const allowedTypeIdsForDisable = (() => {
-    const baseIds = ["all", "app", "file", "folder", "image", "video", "settings"];
+    const baseIds = [...BASE_SEARCH_TYPE_IDS];
     const customIds = customSearchTypes.map((ext) => `ext:${ext}`);
     return new Set<string>([...baseIds, ...customIds]);
   })();
@@ -183,8 +184,8 @@ export function normalizeSettings(s: any): AppSettings {
   };
 }
 
-// 备份配置的存储 Key：用于会员状态变化时保留用户高级配置
-const BACKUP_SETTINGS_KEY = "fs_backup_settings";
+// 备份配置的存储 Key 已抽离：便于你统一调整 localStorage 的命名与迁移策略
+const BACKUP_SETTINGS_KEY = FS_BACKUP_SETTINGS_KEY;
 
 function getBackupSettings(): Partial<AppSettings> | null {
   try {

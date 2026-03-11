@@ -10,6 +10,15 @@ import {
   DEFAULT_SEARCH_SHORTCUT,
   DEFAULT_SETTINGS_SHORTCUT,
 } from '../config/settings';
+import {
+  DEFAULT_SETTINGS,
+  SEARCH_WINDOW_INITIAL_HEIGHT,
+  SETTINGS_WINDOW_INITIAL_HEIGHT,
+  SETTINGS_WINDOW_INITIAL_WIDTH,
+  SETTINGS_WINDOW_MIN_HEIGHT,
+  SETTINGS_WINDOW_MIN_WIDTH,
+  WINDOW_BACKGROUND_COLOR,
+} from '../constants/initialValues';
 import { fileIndex } from '../file/indexService';
 import { reconcileRecentIndex } from '../file/watcher';
 import { recordHistoryItem } from '../history/history';
@@ -50,8 +59,12 @@ export function createWindow() {
   const config = loadConfig();
   const bounds = config?.bounds;
   const settings = loadSettings();
-  const width = typeof settings?.searchWindowInitialWidth === 'number' ? settings.searchWindowInitialWidth : 720;
-  const height = 76;
+  // 窗口初始尺寸已抽离：便于你统一调整首次展示的高度与默认宽度
+  const width =
+    typeof settings?.searchWindowInitialWidth === 'number'
+      ? settings.searchWindowInitialWidth
+      : DEFAULT_SETTINGS.searchWindowInitialWidth;
+  const height = SEARCH_WINDOW_INITIAL_HEIGHT;
 
   const useBounds =
     bounds &&
@@ -67,7 +80,7 @@ export function createWindow() {
     show: false,
     frame: false,
     transparent: false,
-    backgroundColor: '#0f172a',
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     roundedCorners: true,
     hasShadow: true,
     skipTaskbar: true,
@@ -142,8 +155,9 @@ export function createWindow() {
 export function createSettingsWindow() {
   const config = loadSettingsWindowConfig();
   const bounds = config?.bounds;
-  const width = 680;
-  const height = 520;
+  // 设置窗口初始尺寸已抽离：便于你统一调整设置面板的默认大小与最小限制
+  const width = SETTINGS_WINDOW_INITIAL_WIDTH;
+  const height = SETTINGS_WINDOW_INITIAL_HEIGHT;
 
   settingsReadyToShow = false;
   settingsWin = new BrowserWindow({
@@ -154,13 +168,13 @@ export function createSettingsWindow() {
     show: false,
     frame: false,
     transparent: false,
-    backgroundColor: '#0f172a',
+    backgroundColor: WINDOW_BACKGROUND_COLOR,
     roundedCorners: true,
     hasShadow: true,
     skipTaskbar: false,
     resizable: true,
-    minWidth: 560,
-    minHeight: 520,
+    minWidth: SETTINGS_WINDOW_MIN_WIDTH,
+    minHeight: SETTINGS_WINDOW_MIN_HEIGHT,
     maximizable: true,
     minimizable: true,
     icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),

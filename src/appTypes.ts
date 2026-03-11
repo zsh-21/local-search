@@ -55,34 +55,8 @@ export interface AppSettings {
 // 搜索结果右侧操作按钮：最多展示三项，用户可在设置里选择与排序
 export type ResultActionButtonId = "openFolder" | "copyPath" | "deleteHistory" | "runAsAdmin";
 
-export const DEFAULT_SETTINGS: AppSettings = {
-  autoStart: false,
-  searchShortcut: "Alt+T",
-  settingsShortcut: "Alt+Shift+T",
-  theme: "dark",
-  historyLimit: 5,
-  defaultSearchTypeId: "all",
-  customSearchTypes: [],
-  // 默认类型顺序：包含“应用”类型，便于 Tab/Shift+Tab 快速切换
-  searchTypeOrder: ["all", "app", "file", "folder", "image", "video", "settings"],
-  disabledSearchTypeIds: [],
-  ignoredPaths: [],
-  keepStateOnClose: false,
-  // 默认显示路径：便于区分同名文件，且不再作为会员功能限制
-  showResultPath: true,
-  enableHistory: true,
-  accentColor: "#38bdf8",
-  enableEffect: false,
-  effectType: "particles",
-  backgroundImagePath: "",
-  backgroundImageOpacity: 0.25,
-  customAvatarPath: "",
-  resultActionButtons: ["openFolder", "copyPath", "deleteHistory"],
-  searchWindowInitialWidth: 720,
-  searchWindowMaxHeight: 760,
-  searchDisplayLimit: 50,
-  compactMode: false,
-};
+// 默认设置已抽离到单独文件：便于你后续集中调整
+export { DEFAULT_SETTINGS } from "./constants/initialValues";
 
 export type SearchTypeOption = { id: string; label: string };
 

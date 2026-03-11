@@ -4,10 +4,22 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
 import { SystemDetector } from './systemDetector';
+import { getFileIndexMetaPath, getFileIndexPath, getFileIndexShardPath } from '../constants/storagePaths';
+import {
+  FILE_INDEX_ENTRIES_PER_WORKER,
+  FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
+  FILE_INDEX_VERSION,
+  FILE_INDEX_WORKER_HEAP_MB_DEFAULT,
+  FILE_INDEX_WORKER_HEAP_MB_FOR_4,
+  FILE_INDEX_WORKER_MAX,
+  FILE_INDEX_WORKER_MIN,
+} from '../constants/initialValues';
 
-export const FILE_INDEX_PATH = path.join(app.getPath('userData'), 'file-index.txt');
-export const FILE_INDEX_META_PATH = path.join(app.getPath('userData'), 'file-index-meta.json');
-export const FILE_INDEX_VERSION = 5;
+// 索引落盘路径已抽离：便于你统一维护所有缓存/索引文件的落盘位置
+export const FILE_INDEX_PATH = getFileIndexPath();
+export const FILE_INDEX_META_PATH = getFileIndexMetaPath();
+// 索引版本已抽离：便于你集中管理“结构变更触发重建”的开关
+export { FILE_INDEX_VERSION };
 
 type FileIndexWorkerOp =
   | 'init'
@@ -38,7 +50,7 @@ interface IndexShard {
 }
 
 // 限制 Worker 数量，避免过多线程竞争
-const WORKER_COUNT = Math.max(2, Math.min(4, cpus().length));
+const WORKER_COUNT = Math.max(FILE_INDEX_WORKER_MIN, Math.min(FILE_INDEX_WORKER_MAX, cpus().length));
 
 // 预分配分片结构：避免在未初始化 Worker 时，shards.map(...) 变成空数组
 const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
@@ -108,12 +120,12 @@ export function isIgnoredPathByCache(targetPath: string) {
   return false;
 }
 
-function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEntries: number }) {
+function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   const shard = shards[shardIndex];
   if (shard?.worker) return shard;
 
   // 为每个分片分配独立的缓存文件
-  const cachePath = `${options.baseCachePath.replace(/\.txt$/, '')}-${shardIndex}.txt`;
+  const cachePath = getFileIndexShardPath(shardIndex);
   
   // Worker 脚本由 vite-plugin-electron 构建到 dist-electron，同目录下直接加载
   // 注意：如果打包后 main.js 在 dist-electron 根目录，则此处路径正确
@@ -123,7 +135,7 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
 	// 这里按 Worker 数量做保守配置，避免多 Worker 同时把系统内存吃满
 	const worker = new Worker(workerPath, {
 		resourceLimits: {
-			maxOldGenerationSizeMb: WORKER_COUNT >= 4 ? 1536 : 2048,
+			maxOldGenerationSizeMb: WORKER_COUNT >= 4 ? FILE_INDEX_WORKER_HEAP_MB_FOR_4 : FILE_INDEX_WORKER_HEAP_MB_DEFAULT,
 		},
 	});
   shard.worker = worker;
@@ -176,9 +188,9 @@ function ensureShard(shardIndex: number, options: { baseCachePath: string; maxEn
 function callShard<T>(shardIndex: number, op: FileIndexWorkerOp, payload?: any): Promise<T> {
   // 确保分片已初始化
 	// 每个 Worker 的索引上限过大时非常容易 OOM：这里按 Worker 数控制总量，保证单 Worker 更稳定
-	const totalMaxEntries = Math.min(2_000_000, WORKER_COUNT * 400_000);
+	// 索引容量上限已抽离：便于你统一调整“最大条目数”与“每 Worker 分配”
+	const totalMaxEntries = Math.min(FILE_INDEX_TOTAL_MAX_ENTRIES_CAP, WORKER_COUNT * FILE_INDEX_ENTRIES_PER_WORKER);
 	const shard = ensureShard(shardIndex, {
-		baseCachePath: FILE_INDEX_PATH,
 		maxEntries: totalMaxEntries,
 	});
   if (!shard.worker) return Promise.reject(new Error('Worker init failed'));

@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppSettings } from "../../appTypes";
+import { RESULT_ACTION_OPTIONS } from "../../constants/initialValues";
 import { getSearchTypeOptions } from "../../settingsStore";
 import { TypeOrderItem } from "../../TypeOrderItem";
 
@@ -155,12 +156,9 @@ export function SearchSection({
   };
 
   // 搜索结果右侧按钮配置：保持未来可扩展（新增按钮只需追加选项与渲染逻辑）
+  // 按钮候选项已抽离：便于你集中增删/改文案/调整 note
   const resultActionOptions: { id: AppSettings["resultActionButtons"][number]; label: string; note?: string }[] = [
-    { id: "openFolder", label: "打开所在目录" },
-    { id: "copyPath", label: "复制路径" },
-    // 管理员运行仅对“应用”有意义：文件/文件夹等不展示该按钮
-    { id: "runAsAdmin", label: "使用管理员权限打开", note: "仅应用显示" },
-    { id: "deleteHistory", label: "删除历史记录", note: "仅历史模式显示" },
+    ...RESULT_ACTION_OPTIONS,
   ];
   const selectedActionIds = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];
 

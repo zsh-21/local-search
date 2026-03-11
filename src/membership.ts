@@ -2,19 +2,22 @@ import { useEffect, useState } from "react";
 import { refreshUserByToken, User } from "./api";
 
 // 会员/订阅状态：本地 token/user 读取、静默刷新、跨窗口同步事件
-export const MEMBERSHIP_CHANGED_EVENT = "fs-membership-changed";
+import { FS_TOKEN_KEY, FS_USER_KEY, MEMBERSHIP_CHANGED_EVENT } from "./constants/initialValues";
+
+// 事件名已抽离：便于你统一管理跨窗口事件与避免字符串散落
+export { MEMBERSHIP_CHANGED_EVENT };
 
 export function getStoredTokenFromLocalStorage(): string {
-  return (localStorage.getItem("fs_token") || "").trim();
+  return (localStorage.getItem(FS_TOKEN_KEY) || "").trim();
 }
 
 export async function refreshUserStatusSilently(opts?: { onUser?: (user: User) => void }): Promise<void> {
   const clearAuth = () => {
-    const hasUser = !!localStorage.getItem("fs_user");
-    const hasToken = !!localStorage.getItem("fs_token");
+    const hasUser = !!localStorage.getItem(FS_USER_KEY);
+    const hasToken = !!localStorage.getItem(FS_TOKEN_KEY);
     if (!hasUser && !hasToken) return;
-    localStorage.removeItem("fs_user");
-    localStorage.removeItem("fs_token");
+    localStorage.removeItem(FS_USER_KEY);
+    localStorage.removeItem(FS_TOKEN_KEY);
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
   };
 
@@ -30,8 +33,8 @@ export async function refreshUserStatusSilently(opts?: { onUser?: (user: User) =
       clearAuth();
       return;
     }
-    localStorage.setItem("fs_user", JSON.stringify(next.user));
-    localStorage.setItem("fs_token", next.token);
+    localStorage.setItem(FS_USER_KEY, JSON.stringify(next.user));
+    localStorage.setItem(FS_TOKEN_KEY, next.token);
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
     opts?.onUser?.(next.user);
   } catch {
@@ -42,7 +45,7 @@ export async function refreshUserStatusSilently(opts?: { onUser?: (user: User) =
 
 export function getStoredUserFromLocalStorage(): User | null {
   try {
-    const raw = localStorage.getItem("fs_user");
+    const raw = localStorage.getItem(FS_USER_KEY);
     return raw ? (JSON.parse(raw) as User) : null;
   } catch {
     return null;

@@ -1,5 +1,7 @@
+import { API_BASE_URL } from "./constants/initialValues";
 
-export const API_BASE_URL = "http://localhost:3001";
+// 默认后端地址已抽离：便于你集中调整与后续做环境切换
+export { API_BASE_URL };
 
 // 用户结构：由后端返回，前端仅做展示与会员判断
 export interface User {

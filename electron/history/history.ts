@@ -1,11 +1,12 @@
-import { app } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { loadSettings } from '../config/settings';
 import { resolveAppId } from '../win/resolveAppId';
+import { getHistoryPath, getHistoryStatsPath } from '../constants/storagePaths';
 
-const HISTORY_PATH = path.join(app.getPath('userData'), 'history.json');
-const HISTORY_STATS_PATH = path.join(app.getPath('userData'), 'history-stats.json');
+// 历史记录落盘路径已抽离：便于你统一调整缓存/历史文件的路径与文件名
+const HISTORY_PATH = getHistoryPath();
+const HISTORY_STATS_PATH = getHistoryStatsPath();
 
 export type HistoryItem = { name: string; path: string; type: string; lastUsed: number };
 

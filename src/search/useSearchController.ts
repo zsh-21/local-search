@@ -2,6 +2,16 @@ import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getSearchTypeOptions, normalizeSettings, useSettings } from "../settingsStore";
+import {
+  DEFAULT_SETTINGS,
+  SEARCH_ITEM_HEIGHT_COMPACT,
+  SEARCH_ITEM_HEIGHT_NORMAL,
+  SEARCH_LIST_MIN_HEIGHT,
+  SEARCH_WINDOW_BOTTOM_BAR_HEIGHT,
+  SEARCH_WINDOW_MIN_HEIGHT,
+  SEARCH_WINDOW_TOP_BAR_HEIGHT,
+  TYPE_MENU_MIN_LIST_SPACE,
+} from "../constants/initialValues";
 import { useWindowResizeHandles } from "./useWindowResizeHandles";
 import {
   dedupeResults,
@@ -88,14 +98,17 @@ export function useSearchController() {
     setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
   };
 
-  const ITEM_HEIGHT = settings.compactMode ? 44 : 52;
+  // 搜索列表的单项高度已抽离：便于你统一调整紧凑/普通模式的布局密度
+  const ITEM_HEIGHT = settings.compactMode ? SEARCH_ITEM_HEIGHT_COMPACT : SEARCH_ITEM_HEIGHT_NORMAL;
   const deviceMaxHeight = Math.floor((window.screen as any)?.availHeight || 0);
   const maxWindowHeight = Math.min(
-    typeof settings.searchWindowMaxHeight === "number" ? settings.searchWindowMaxHeight : 760,
+    typeof settings.searchWindowMaxHeight === "number" ? settings.searchWindowMaxHeight : DEFAULT_SETTINGS.searchWindowMaxHeight,
     deviceMaxHeight > 0 ? deviceMaxHeight : Number.POSITIVE_INFINITY,
   );
-  const MAX_LIST_HEIGHT = Math.max(120, Math.round(maxWindowHeight) - 76 - 90);
-  const TYPE_MENU_MIN_LIST_SPACE = 240;
+  const MAX_LIST_HEIGHT = Math.max(
+    SEARCH_LIST_MIN_HEIGHT,
+    Math.round(maxWindowHeight) - SEARCH_WINDOW_TOP_BAR_HEIGHT - SEARCH_WINDOW_BOTTOM_BAR_HEIGHT,
+  );
   const DISPLAY_LIMIT = settings.searchDisplayLimit;
   const lastVisibleStartIndexRef = useRef(0);
 
@@ -271,7 +284,10 @@ export function useSearchController() {
           requestAnimationFrame(() => {
             const c = containerRef.current;
             if (!c) return;
-            const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
+            const nextHeight = Math.max(
+              SEARCH_WINDOW_MIN_HEIGHT,
+              Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
+            );
             if (nextHeight !== lastResizeHeightRef.current) {
               lastResizeHeightRef.current = nextHeight;
               window.ipcRenderer?.invoke("resize-window", nextHeight);
@@ -317,7 +333,10 @@ export function useSearchController() {
         requestAnimationFrame(() => {
           const c = containerRef.current;
           if (!c) return;
-          const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
+          const nextHeight = Math.max(
+            SEARCH_WINDOW_MIN_HEIGHT,
+            Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
+          );
           if (nextHeight !== lastResizeHeightRef.current) {
             lastResizeHeightRef.current = nextHeight;
             window.ipcRenderer?.invoke("resize-window", nextHeight);
@@ -873,7 +892,7 @@ export function useSearchController() {
         nextHeight = Math.max(nextHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
       }
 
-      nextHeight = Math.max(nextHeight, 76);
+      nextHeight = Math.max(nextHeight, SEARCH_WINDOW_MIN_HEIGHT);
       if (nextHeight !== lastResizeHeightRef.current) {
         lastResizeHeightRef.current = nextHeight;
         window.ipcRenderer?.invoke("resize-window", nextHeight);
@@ -895,7 +914,10 @@ export function useSearchController() {
     const ro = new ResizeObserver(() => {
       const c = containerRef.current;
       if (!c) return;
-      const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
+      const nextHeight = Math.max(
+        SEARCH_WINDOW_MIN_HEIGHT,
+        Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
+      );
       if (nextHeight !== lastResizeHeightRef.current) {
         lastResizeHeightRef.current = nextHeight;
         window.ipcRenderer?.invoke("resize-window", nextHeight);

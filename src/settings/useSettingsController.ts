@@ -2,12 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { login, refreshUserByToken, User } from "../api";
 import { AppSettings } from "../appTypes";
 import { MEMBERSHIP_CHANGED_EVENT, getStoredTokenFromLocalStorage, isUserMember, refreshUserStatusSilently } from "../membership";
+import {
+  FS_LAST_LOGIN_ACCOUNT_KEY,
+  FS_LAST_LOGIN_PASSWORD_KEY,
+  FS_TOKEN_KEY,
+  FS_USER_KEY,
+  THEME_COLOR_OPTIONS,
+} from "../constants/initialValues";
 import { applyMembershipRestrictionsToSettings, getSearchTypeOptions, useSettings } from "../settingsStore";
 
 // 设置页控制器：集中管理 draft/保存、会员与登录态、toast，以及默认类型下拉等复杂交互状态
 export type SettingsTabKey = "general" | "search" | "shortcuts" | "appearance" | "account";
-const LAST_LOGIN_ACCOUNT_KEY = "fs_last_login_account";
-const LAST_LOGIN_PASSWORD_KEY = "fs_last_login_password";
+// 账号缓存 key 已抽离：便于你统一管理 localStorage 命名与后续迁移
+const LAST_LOGIN_ACCOUNT_KEY = FS_LAST_LOGIN_ACCOUNT_KEY;
+const LAST_LOGIN_PASSWORD_KEY = FS_LAST_LOGIN_PASSWORD_KEY;
 
 function getLastLoginAccount() {
   try {
@@ -223,7 +231,7 @@ export function useSettingsController() {
   };
 
   const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem("fs_user");
+    const saved = localStorage.getItem(FS_USER_KEY);
     return saved ? JSON.parse(saved) : null;
   });
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
@@ -278,8 +286,8 @@ export function useSettingsController() {
   const clearLoginState = () => {
     // 清理本地登录态并广播：用于跨窗口刷新会员状态
     setUser(null);
-    localStorage.removeItem("fs_user");
-    localStorage.removeItem("fs_token");
+    localStorage.removeItem(FS_USER_KEY);
+    localStorage.removeItem(FS_TOKEN_KEY);
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
     setLoginForm((prev) => ({ ...prev, account: getLastLoginAccount(), password: getLastLoginPassword() }));
 
@@ -289,7 +297,7 @@ export function useSettingsController() {
 
   useEffect(() => {
     const handler = () => {
-      const saved = localStorage.getItem("fs_user");
+      const saved = localStorage.getItem(FS_USER_KEY);
       const nextUser = saved ? (JSON.parse(saved) as User) : null;
       setUser(nextUser);
       if (!nextUser) {
@@ -325,8 +333,8 @@ export function useSettingsController() {
         return;
       }
       setUser(next.user);
-      localStorage.setItem("fs_user", JSON.stringify(next.user));
-      localStorage.setItem("fs_token", next.token);
+      localStorage.setItem(FS_USER_KEY, JSON.stringify(next.user));
+      localStorage.setItem(FS_TOKEN_KEY, next.token);
       window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
       showToast("已更新", "success");
     } catch {
@@ -357,8 +365,8 @@ export function useSettingsController() {
     try {
       const data = await login(account, loginForm.password);
       setUser(data.user);
-      localStorage.setItem("fs_user", JSON.stringify(data.user));
-      localStorage.setItem("fs_token", data.token);
+      localStorage.setItem(FS_USER_KEY, JSON.stringify(data.user));
+      localStorage.setItem(FS_TOKEN_KEY, data.token);
       window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
       setLoginForm((prev) => ({ ...prev, account, password: getLastLoginPassword() || loginForm.password }));
       showToast("登录成功", "success");
@@ -383,18 +391,8 @@ export function useSettingsController() {
     }
   };
 
-  const themeColors = [
-    { name: "天际蓝", color: "#38bdf8" },
-    { name: "罗兰紫", color: "#818cf8" },
-    { name: "极光绿", color: "#34d399" },
-    { name: "珊瑚红", color: "#fb7185" },
-    { name: "琥珀橙", color: "#fbbf24" },
-    { name: "翡翠绿", color: "#10b981" },
-    { name: "深海蓝", color: "#2563eb" },
-    { name: "丁香紫", color: "#a855f7" },
-    { name: "玫瑰金", color: "#f43f5e" },
-    { name: "钛金灰", color: "#64748b" },
-  ];
+  // 主题色列表已抽离：便于你集中调整颜色、命名或增加新主题色
+  const themeColors = THEME_COLOR_OPTIONS;
 
   const formatDateTime = (value: unknown) => {
     if (!value) return "";

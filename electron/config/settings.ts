@@ -1,6 +1,14 @@
 import { app } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { getSettingsPath, getSettingsWindowConfigPath, getWindowConfigPath } from '../constants/storagePaths';
+import {
+  BASE_SEARCH_TYPE_IDS,
+  DEFAULT_RESULT_ACTION_BUTTONS,
+  DEFAULT_SEARCH_SHORTCUT,
+  DEFAULT_SETTINGS,
+  DEFAULT_SETTINGS_SHORTCUT,
+} from '../constants/initialValues';
 
 // 确保在开发环境下修正 userData 路径
 if (!app.isPackaged) {
@@ -11,9 +19,10 @@ if (!app.isPackaged) {
   }
 }
 
-export const CONFIG_PATH = path.join(app.getPath('userData'), 'window-config.json');
-export const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
-export const SETTINGS_WINDOW_CONFIG_PATH = path.join(app.getPath('userData'), 'settings-window-config.json');
+// 落盘文件路径已抽离：便于你统一维护“配置/缓存/索引/历史”等文件的落盘位置
+export const CONFIG_PATH = getWindowConfigPath();
+export const SETTINGS_PATH = getSettingsPath();
+export const SETTINGS_WINDOW_CONFIG_PATH = getSettingsWindowConfigPath();
 
 export type ResultActionButtonId = 'openFolder' | 'copyPath' | 'deleteHistory' | 'runAsAdmin';
 
@@ -49,15 +58,8 @@ export interface AppSettings {
   compactMode: boolean;
 }
 
-export const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
-export const DEFAULT_SETTINGS_SHORTCUT = 'Alt+Shift+T';
-export const DEFAULT_THEME: AppSettings['theme'] = 'dark';
-export const DEFAULT_HISTORY_LIMIT = 5;
-export const DEFAULT_SEARCH_TYPE_ID = 'all';
-export const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'copyPath', 'deleteHistory'];
-export const DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH = 720;
-export const DEFAULT_SEARCH_WINDOW_MAX_HEIGHT = 760;
-export const DEFAULT_SEARCH_DISPLAY_LIMIT = 50;
+// 默认值已抽离到单独文件：便于你集中调整主进程侧默认行为
+export { DEFAULT_SEARCH_SHORTCUT, DEFAULT_SETTINGS_SHORTCUT, DEFAULT_RESULT_ACTION_BUTTONS };
 
 export function loadConfig() {
   try {
@@ -91,12 +93,15 @@ export function loadSettings(): AppSettings {
       const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
       const theme = raw?.theme === 'light' ? 'light' : 'dark';
       const effectType = raw?.effectType === 'warp' ? 'warp' : raw?.effectType === 'waves' ? 'waves' : 'particles';
-      const backgroundImagePath = typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : '';
-      const customAvatarPath = typeof raw?.customAvatarPath === 'string' ? raw.customAvatarPath.trim() : '';
-      const backgroundImageOpacityRaw = typeof raw?.backgroundImageOpacity === 'number' ? raw.backgroundImageOpacity : 0.25;
+      const backgroundImagePath =
+        typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
+      const customAvatarPath =
+        typeof raw?.customAvatarPath === 'string' ? raw.customAvatarPath.trim() : DEFAULT_SETTINGS.customAvatarPath;
+      const backgroundImageOpacityRaw =
+        typeof raw?.backgroundImageOpacity === 'number' ? raw.backgroundImageOpacity : DEFAULT_SETTINGS.backgroundImageOpacity;
       const backgroundImageOpacity = Number.isFinite(backgroundImageOpacityRaw)
         ? Math.min(1, Math.max(0, backgroundImageOpacityRaw))
-        : 0.25;
+        : DEFAULT_SETTINGS.backgroundImageOpacity;
       const legacyShortcut =
         typeof raw?.shortcut === 'string' && raw.shortcut.trim() ? raw.shortcut.trim() : undefined;
       const customSearchTypes: string[] = Array.isArray(raw?.customSearchTypes)
@@ -123,9 +128,9 @@ export function loadSettings(): AppSettings {
           /^\.[a-z0-9]{1,10}$/i.test(defaultSearchTypeIdRaw.slice(4)) &&
           customSearchTypes.includes(defaultSearchTypeIdRaw.slice(4).toLowerCase()))
           ? defaultSearchTypeIdRaw
-          : DEFAULT_SEARCH_TYPE_ID;
+          : DEFAULT_SETTINGS.defaultSearchTypeId;
 
-      const baseTypeIds = ['all', 'app', 'file', 'folder', 'image', 'video', 'settings'];
+      const baseTypeIds = [...BASE_SEARCH_TYPE_IDS];
       const customTypeIds = customSearchTypes.map((ext) => `ext:${ext}`);
       const allowedTypeIds = new Set<string>([...baseTypeIds, ...customTypeIds]);
       const rawOrder: string[] = Array.isArray(raw?.searchTypeOrder)
@@ -190,10 +195,15 @@ export function loadSettings(): AppSettings {
         return Math.min(max, Math.max(min, Math.round(n)));
       };
 
-      const searchWindowInitialWidth = clampInt(raw?.searchWindowInitialWidth, DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH, 450, 1000);
+      const searchWindowInitialWidth = clampInt(
+        raw?.searchWindowInitialWidth,
+        DEFAULT_SETTINGS.searchWindowInitialWidth,
+        450,
+        1000
+      );
       const rawMaxHeight = raw?.searchWindowMaxHeight ?? raw?.searchWindowInitialHeight;
-      const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SEARCH_WINDOW_MAX_HEIGHT, 200, 10000);
-      const searchDisplayLimit = clampInt(raw?.searchDisplayLimit, DEFAULT_SEARCH_DISPLAY_LIMIT, 20, 100);
+      const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SETTINGS.searchWindowMaxHeight, 200, 10000);
+      const searchDisplayLimit = clampInt(raw?.searchDisplayLimit, DEFAULT_SETTINGS.searchDisplayLimit, 20, 100);
 
       return {
         autoStart: Boolean(raw?.autoStart),
@@ -215,7 +225,7 @@ export function loadSettings(): AppSettings {
         historyLimit:
           typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)
             ? Math.min(50, Math.max(0, Math.floor(raw.historyLimit)))
-            : DEFAULT_HISTORY_LIMIT,
+            : DEFAULT_SETTINGS.historyLimit,
         defaultSearchTypeId: safeDefaultSearchTypeId,
         customSearchTypes,
         searchTypeOrder,
@@ -223,9 +233,9 @@ export function loadSettings(): AppSettings {
         ignoredPaths,
         keepStateOnClose: Boolean(raw?.keepStateOnClose),
         // 结果路径默认显示：当用户未显式配置时，默认开启
-        showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : true,
+        showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : DEFAULT_SETTINGS.showResultPath,
         enableHistory: raw?.enableHistory !== false,
-        accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : '#38bdf8',
+        accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : DEFAULT_SETTINGS.accentColor,
         enableEffect: Boolean(raw?.enableEffect),
         effectType,
         backgroundImagePath,
@@ -239,32 +249,14 @@ export function loadSettings(): AppSettings {
       };
     }
   } catch {}
+  // 读盘失败/配置不存在时：回落到主进程侧默认设置（返回新对象避免被外部误改影响全局默认）
   return {
-    autoStart: false,
-    searchShortcut: DEFAULT_SEARCH_SHORTCUT,
-    settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
-    theme: DEFAULT_THEME,
-    historyLimit: DEFAULT_HISTORY_LIMIT,
-    defaultSearchTypeId: DEFAULT_SEARCH_TYPE_ID,
+    ...DEFAULT_SETTINGS,
     customSearchTypes: [],
-    searchTypeOrder: ['all', 'app', 'file', 'folder', 'image', 'video', 'settings'],
+    searchTypeOrder: [...DEFAULT_SETTINGS.searchTypeOrder],
     disabledSearchTypeIds: [],
     ignoredPaths: [],
-    keepStateOnClose: false,
-    // 默认显示路径：便于区分同名文件
-    showResultPath: true,
-    enableHistory: true,
-    accentColor: '#38bdf8',
-    enableEffect: false,
-    effectType: 'particles',
-    backgroundImagePath: '',
-    backgroundImageOpacity: 0.25,
-    customAvatarPath: '',
-    resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
-    searchWindowInitialWidth: DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH,
-    searchWindowMaxHeight: DEFAULT_SEARCH_WINDOW_MAX_HEIGHT,
-    searchDisplayLimit: DEFAULT_SEARCH_DISPLAY_LIMIT,
-    compactMode: false,
+    resultActionButtons: [...DEFAULT_SETTINGS.resultActionButtons],
   };
 }
 

@@ -1,9 +1,7 @@
-// 图片文件扩展名集合
-export const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
-// 视频文件扩展名集合
-export const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
-// 快捷方式扩展名集合
-export const SHORTCUT_EXTENSIONS = new Set(['.lnk', '.url']);
+import { IMAGE_EXTENSIONS, SHORTCUT_EXTENSIONS, SKIP_DIR_NAMES, VIDEO_EXTENSIONS } from '../constants/initialValues';
+
+// 文件扩展名集合已抽离：便于你统一调整“分类/是否索引”的策略
+export { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, SHORTCUT_EXTENSIONS };
 
 /**
  * 根据文件类型分类
@@ -43,15 +41,9 @@ export function normalizeDrive(p: string) {
  */
 export function shouldSkipDirName(name: string) {
 	const lower = name.toLowerCase();
-	// 过滤开发依赖与版本控制目录
-	if (lower === 'node_modules') return true;
-	if (lower === '.git') return true;
-	if (lower === '.svn') return true;
-	if (lower === '.idea') return true;
-	// 过滤系统回收站与卷信息
-	if (lower === '$recycle.bin') return true;
-	if (lower === 'system volume information') return true;
-	
+	// 目录跳过规则已抽离：便于你集中增删“需要跳过的目录名”
+	if (SKIP_DIR_NAMES.has(lower)) return true;
+
 	// 保留 Program Files 和 ProgramData，因为用户可能需要搜索其中的应用或配置文件
 	return false;
 }
