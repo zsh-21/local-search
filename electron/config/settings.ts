@@ -44,6 +44,8 @@ export interface AppSettings {
   searchWindowInitialWidth: number;
   searchWindowMaxHeight: number;
 
+  searchDisplayLimit: number;
+
   compactMode: boolean;
 }
 
@@ -55,6 +57,7 @@ export const DEFAULT_SEARCH_TYPE_ID = 'all';
 export const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'copyPath', 'deleteHistory'];
 export const DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH = 720;
 export const DEFAULT_SEARCH_WINDOW_MAX_HEIGHT = 760;
+export const DEFAULT_SEARCH_DISPLAY_LIMIT = 50;
 
 export function loadConfig() {
   try {
@@ -190,6 +193,7 @@ export function loadSettings(): AppSettings {
       const searchWindowInitialWidth = clampInt(raw?.searchWindowInitialWidth, DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH, 450, 1000);
       const rawMaxHeight = raw?.searchWindowMaxHeight ?? raw?.searchWindowInitialHeight;
       const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SEARCH_WINDOW_MAX_HEIGHT, 200, 10000);
+      const searchDisplayLimit = clampInt(raw?.searchDisplayLimit, DEFAULT_SEARCH_DISPLAY_LIMIT, 20, 100);
 
       return {
         autoStart: Boolean(raw?.autoStart),
@@ -230,6 +234,7 @@ export function loadSettings(): AppSettings {
         resultActionButtons,
         searchWindowInitialWidth,
         searchWindowMaxHeight,
+        searchDisplayLimit,
         compactMode: raw?.compactMode === true,
       };
     }
@@ -258,6 +263,7 @@ export function loadSettings(): AppSettings {
     resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
     searchWindowInitialWidth: DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH,
     searchWindowMaxHeight: DEFAULT_SEARCH_WINDOW_MAX_HEIGHT,
+    searchDisplayLimit: DEFAULT_SEARCH_DISPLAY_LIMIT,
     compactMode: false,
   };
 }

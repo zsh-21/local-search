@@ -106,20 +106,18 @@
 
 /* 主题变量：深色/浅色模式统一从这里派生，组件尽量只使用 CSS 变量 */
 html[data-theme="dark"] {
-  --fs-bg: #0f172a;
-  /* 更深邃的蓝黑背景 */
-  --fs-surface: #1e293b;
-  /* 磁性表面色 */
-  --fs-surface-2: rgba(255, 255, 255, 0.05);
-  --fs-border: rgba(255, 255, 255, 0.08);
-  --fs-text: #f1f5f9;
-  --fs-search-text: #ffffff;
-  --fs-muted: #94a3b8;
-  --fs-accent: #38bdf8;
-  --fs-accent-soft: rgba(56, 189, 248, 0.1);
-  --fs-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
-  --fs-dots: rgba(56, 189, 248, 1);
-  --fs-glow: 0 0 20px rgba(56, 189, 248, 0.15);
+  --fs-bg: #070b14;
+  --fs-surface: #0b1424;
+  --fs-surface-2: rgba(34, 211, 238, 0.08);
+  --fs-border: rgba(56, 189, 248, 0.24);
+  --fs-text: #dbeafe;
+  --fs-search-text: #ecfeff;
+  --fs-muted: #7f97b8;
+  --fs-accent: #22d3ee;
+  --fs-accent-soft: rgba(34, 211, 238, 0.16);
+  --fs-shadow: 0 24px 50px -16px rgba(2, 6, 23, 0.82);
+  --fs-dots: rgba(34, 211, 238, 0.75);
+  --fs-glow: 0 0 24px rgba(34, 211, 238, 0.22);
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
 }
 
@@ -682,12 +680,12 @@ html[data-theme="light"] .container.settings-container {
 
 .type-select-item:hover {
   background: var(--fs-surface-2);
-  border-color: var(--fs-border-soft);
+  /* border-color: var(--fs-border-soft); */
 }
 
 .type-select-item.kbd-active:not(.active) {
   background: var(--fs-surface-2);
-  border-color: var(--fs-border-soft);
+  /* border-color: var(--fs-border-soft); */
 }
 
 .type-select-item:hover .type-item-icon {
@@ -963,7 +961,7 @@ input::placeholder {
 }
 
 .result-item-wrapper {
-  padding: 0 4px;
+  padding: 2px 4px;
   box-sizing: border-box;
 }
 
@@ -2064,15 +2062,27 @@ html[data-theme="light"] .settings-nav-item:hover {
 
 /* 设置页分组卡片样式 */
 .settings-group {
-  background: var(--fs-surface);
+  background: rgba(11, 20, 36, 0.62);
   border: 1px solid var(--fs-border);
   border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="light"] .settings-group {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.settings-group:focus-within {
+  z-index: 30;
 }
 
 .settings-group-title {

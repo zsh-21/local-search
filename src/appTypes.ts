@@ -46,6 +46,9 @@ export interface AppSettings {
   searchWindowInitialWidth: number;
   searchWindowMaxHeight: number;
 
+  // 搜索结果最大展示条数：用于限制 UI 列表渲染与交互成本
+  searchDisplayLimit: number;
+
   compactMode: boolean;
 }
 
@@ -77,6 +80,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resultActionButtons: ["openFolder", "copyPath", "deleteHistory"],
   searchWindowInitialWidth: 720,
   searchWindowMaxHeight: 760,
+  searchDisplayLimit: 50,
   compactMode: false,
 };
 

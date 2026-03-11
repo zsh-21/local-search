@@ -4,6 +4,7 @@ import { BackgroundImage } from "../components/BackgroundImage";
 import { ParticleBackground } from "../components/ParticleBackground";
 import { AppItem } from "../appTypes";
 import { useSearchController } from "./useSearchController";
+import { normalizeResultKey } from "./searchResultUtils";
 
 // 搜索页渲染层：纯 UI/交互展示，状态与副作用集中在 useSearchController
 export function SearchViewImpl() {
@@ -252,10 +253,10 @@ export function SearchViewImpl() {
           }
         }}
         onMouseEnter={() => {
-          return;
+          c.setHoveredKey(normalizeResultKey(item));
         }}
       >
-        <li className={isSelected ? "selected" : ""}>
+        <li className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}>
           <span className="result-index">{index + 1}</span>
           {renderResultIcon(item, isImg)}
           <div className="result-meta">
@@ -404,8 +405,8 @@ export function SearchViewImpl() {
       <div className="list-bottom-info">
         {isHistoryMode ? (
           <div className="no-more-results">{`已显示全部 ${c.results.length} 条历史记录`}</div>
-        ) : c.totalCount > 500 ? (
-          <div className="no-more-results">由于内容太多，展示最匹配的前500</div>
+        ) : c.totalCount > c.settings.searchDisplayLimit ? (
+          <div className="no-more-results">{`由于内容太多，展示最匹配的前${c.settings.searchDisplayLimit}`}</div>
         ) : (
           <div className="no-more-results">{`共 ${c.totalCount} 个结果`}</div>
         )}

@@ -6,6 +6,24 @@ import { applyMembershipRestrictionsToSettings, getSearchTypeOptions, useSetting
 
 // 设置页控制器：集中管理 draft/保存、会员与登录态、toast，以及默认类型下拉等复杂交互状态
 export type SettingsTabKey = "general" | "search" | "shortcuts" | "appearance" | "account";
+const LAST_LOGIN_ACCOUNT_KEY = "fs_last_login_account";
+const LAST_LOGIN_PASSWORD_KEY = "fs_last_login_password";
+
+function getLastLoginAccount() {
+  try {
+    return localStorage.getItem(LAST_LOGIN_ACCOUNT_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function getLastLoginPassword() {
+  try {
+    return localStorage.getItem(LAST_LOGIN_PASSWORD_KEY) || "";
+  } catch {
+    return "";
+  }
+}
 
 export function useSettingsController() {
   const { settings, loaded } = useSettings();
@@ -154,6 +172,11 @@ export function useSettingsController() {
   const defaultTypeSelectRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // 切换设置面板时，自动关闭下拉菜单
+    setDefaultTypeMenuOpen(false);
+  }, [activeKey]);
+
+  useEffect(() => {
     if (!defaultTypeMenuOpen) return;
     // 菜单打开时将键盘高亮定位到当前默认类型，便于上下键操作
     const idx = typeOptions.findIndex((x) => x.id === (draft.defaultSearchTypeId || "all"));
@@ -205,7 +228,7 @@ export function useSettingsController() {
   });
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const isMember = useMemo(() => isUserMember(user), [user]);
-  const [loginForm, setLoginForm] = useState({ account: "", password: "" });
+  const [loginForm, setLoginForm] = useState(() => ({ account: getLastLoginAccount(), password: getLastLoginPassword() }));
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -258,10 +281,24 @@ export function useSettingsController() {
     localStorage.removeItem("fs_user");
     localStorage.removeItem("fs_token");
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
+    setLoginForm((prev) => ({ ...prev, account: getLastLoginAccount(), password: getLastLoginPassword() }));
 
     // 退出登录后同步清空头像：避免“未登录仍显示头像”的困惑
     void clearAvatarSettingIfNeeded();
   };
+
+  useEffect(() => {
+    const handler = () => {
+      const saved = localStorage.getItem("fs_user");
+      const nextUser = saved ? (JSON.parse(saved) as User) : null;
+      setUser(nextUser);
+      if (!nextUser) {
+        setLoginForm((prev) => ({ ...prev, account: getLastLoginAccount(), password: getLastLoginPassword() }));
+      }
+    };
+    window.addEventListener(MEMBERSHIP_CHANGED_EVENT, handler as EventListener);
+    return () => window.removeEventListener(MEMBERSHIP_CHANGED_EVENT, handler as EventListener);
+  }, []);
 
   useEffect(() => {
     // 启动兜底：如果没有 token 但 settings 里残留头像路径，则自动清理
@@ -302,7 +339,14 @@ export function useSettingsController() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginForm.account || !loginForm.password) {
+    const account = (loginForm.account || "").trim();
+    if (account) {
+      localStorage.setItem(LAST_LOGIN_ACCOUNT_KEY, account);
+    }
+    if (loginForm.password) {
+      localStorage.setItem(LAST_LOGIN_PASSWORD_KEY, loginForm.password);
+    }
+    if (!account || !loginForm.password) {
       setLoginError("请输入账号和密码");
       showToast("请输入账号和密码", "info");
       return;
@@ -311,12 +355,12 @@ export function useSettingsController() {
     setLoginError("");
 
     try {
-      const data = await login(loginForm.account, loginForm.password);
+      const data = await login(account, loginForm.password);
       setUser(data.user);
       localStorage.setItem("fs_user", JSON.stringify(data.user));
       localStorage.setItem("fs_token", data.token);
       window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
-      setLoginForm({ account: "", password: "" });
+      setLoginForm((prev) => ({ ...prev, account, password: getLastLoginPassword() || loginForm.password }));
       showToast("登录成功", "success");
     } catch (err: any) {
       const msg = err?.message || "登录失败";

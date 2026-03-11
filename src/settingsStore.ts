@@ -149,6 +149,7 @@ export function normalizeSettings(s: any): AppSettings {
   );
   const rawMaxHeight = s?.searchWindowMaxHeight ?? s?.searchWindowInitialHeight;
   const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SETTINGS.searchWindowMaxHeight, 200, 10000);
+  const searchDisplayLimit = clampInt(s?.searchDisplayLimit, DEFAULT_SETTINGS.searchDisplayLimit, 20, 100);
 
   return {
     autoStart: Boolean(s?.autoStart),
@@ -177,6 +178,7 @@ export function normalizeSettings(s: any): AppSettings {
     resultActionButtons,
     searchWindowInitialWidth,
     searchWindowMaxHeight,
+    searchDisplayLimit,
     compactMode: typeof s?.compactMode === "boolean" ? s.compactMode : DEFAULT_SETTINGS.compactMode,
   };
 }

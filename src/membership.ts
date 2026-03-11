@@ -9,17 +9,33 @@ export function getStoredTokenFromLocalStorage(): string {
 }
 
 export async function refreshUserStatusSilently(opts?: { onUser?: (user: User) => void }): Promise<void> {
+  const clearAuth = () => {
+    const hasUser = !!localStorage.getItem("fs_user");
+    const hasToken = !!localStorage.getItem("fs_token");
+    if (!hasUser && !hasToken) return;
+    localStorage.removeItem("fs_user");
+    localStorage.removeItem("fs_token");
+    window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
+  };
+
   const token = getStoredTokenFromLocalStorage();
-  if (!token) return;
+  if (!token) {
+    clearAuth();
+    return;
+  }
 
   try {
     const next = await refreshUserByToken(token);
-    if (!next) return;
+    if (!next) {
+      clearAuth();
+      return;
+    }
     localStorage.setItem("fs_user", JSON.stringify(next.user));
     localStorage.setItem("fs_token", next.token);
     window.dispatchEvent(new Event(MEMBERSHIP_CHANGED_EVENT));
     opts?.onUser?.(next.user);
   } catch {
+    clearAuth();
     return;
   }
 }

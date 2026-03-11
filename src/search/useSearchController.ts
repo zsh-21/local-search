@@ -96,7 +96,7 @@ export function useSearchController() {
   );
   const MAX_LIST_HEIGHT = Math.max(120, Math.round(maxWindowHeight) - 76 - 90);
   const TYPE_MENU_MIN_LIST_SPACE = 240;
-  const DISPLAY_LIMIT = 500;
+  const DISPLAY_LIMIT = settings.searchDisplayLimit;
   const lastVisibleStartIndexRef = useRef(0);
 
   useEffect(() => {

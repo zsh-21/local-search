@@ -246,7 +246,7 @@ export function SearchSection({
 
   return (
     <div className="settings-content">
-      <div className="settings-group">
+      <div className="settings-group" style={{ zIndex: defaultTypeMenuOpen ? 100 : undefined }}>
         <div className="settings-group-title">
           <span>默认类型</span>
           {membershipBadge}
@@ -338,6 +338,31 @@ export function SearchSection({
         <div className="settings-group-title">
           <span>列表显示</span>
         </div>
+          <div className="settings-hint">
+            搜索结果列表最多展示多少条（仅影响列表展示，不影响实际命中数量）。范围 20-100，默认 50。
+          </div>
+          <div className="form-row">
+            <div className="form-label">展示条数</div>
+            <input
+              type="text"
+              className="text-input"
+              inputMode="numeric"
+              value={String(draft.searchDisplayLimit)}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                const n = raw === "" ? NaN : Number(raw);
+                if (!Number.isFinite(n)) return;
+                const next = Math.min(100, Math.max(20, Math.round(n)));
+                setDraft({ ...draft, searchDisplayLimit: next });
+                setError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+            />
+          </div>
         <label className="setting-row">
           <input
             type="checkbox"
