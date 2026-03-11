@@ -48,7 +48,7 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     const initialSettings = loadSettings();
     // 初始化时同步设置忽略规则（主进程缓存 + Worker 内索引规则）
-    await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths);
+    await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths, initialSettings.preferredFileExtensions);
     createWindow();
     ensureTray({
       getIconPath: getDefaultTrayIconPath,

@@ -64,6 +64,7 @@ const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
 // 运行期状态缓存：用于延迟创建 Worker 时仍能保持行为一致
 let searchWindowVisibleCache = false;
 let ignoredPathsCacheForWorkers: string[] = [];
+let preferredFileExtensionsCacheForWorkers: string[] = [];
 
 function setIgnoredPathsCache(paths: string[]) {
   const raw: string[] = Array.isArray(paths) ? paths : [];
@@ -178,8 +179,11 @@ function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   fireAndForget('setSearchWindowVisible', { visible: searchWindowVisibleCache });
 
   // 3) 同步忽略路径：避免后创建的 Worker 未应用忽略规则
-  if (ignoredPathsCacheForWorkers.length > 0) {
-    fireAndForget('setIgnoredPaths', { paths: ignoredPathsCacheForWorkers });
+  if (ignoredPathsCacheForWorkers.length > 0 || preferredFileExtensionsCacheForWorkers.length > 0) {
+    fireAndForget('setIgnoredPaths', {
+      paths: ignoredPathsCacheForWorkers,
+      preferredFileExtensions: preferredFileExtensionsCacheForWorkers,
+    });
   }
 
   return shard;
@@ -250,14 +254,17 @@ export const fileIndex = {
     });
   },
 
-  setIgnoredPaths: async (paths: string[]) => {
+  setIgnoredPaths: async (paths: string[], preferredFileExtensions?: string[]) => {
     setIgnoredPathsCache(paths);
     // 缓存状态：用于延迟创建 Worker 后的状态同步
     ignoredPathsCacheForWorkers = Array.isArray(paths) ? paths : [];
+    preferredFileExtensionsCacheForWorkers = Array.isArray(preferredFileExtensions) ? preferredFileExtensions : [];
     // 对已创建的 Worker 批量下发，避免触发未必要的 Worker 初始化
+    // 同时携带“常用扩展名优先”配置，让索引阶段能优先处理高频文档类型
     await Promise.all(
-      shards
-        .map((shard, i) => (shard.worker ? callShard(i, 'setIgnoredPaths', { paths }) : Promise.resolve()))
+      shards.map((shard, i) =>
+        shard.worker ? callShard(i, 'setIgnoredPaths', { paths, preferredFileExtensions: preferredFileExtensionsCacheForWorkers }) : Promise.resolve()
+      )
     );
   },
 
@@ -281,14 +288,26 @@ export const fileIndex = {
   rebuild: async () => {
     // 1. 获取所有本地盘符及其类型（SSD/HDD）
     const info = await SystemDetector.getInstance().detect();
-    const allRoots = info.drives;
+    // 索引优先级：优先处理非 C 盘（避免系统盘占用 IO 影响使用体验）
+    const allRoots = info.drives
+      .slice()
+      .sort((a, b) => {
+        const da = String(a?.mountPoint || '').toUpperCase();
+        const db = String(b?.mountPoint || '').toUpperCase();
+        const pa = da === 'C:' ? 1 : 0;
+        const pb = db === 'C:' ? 1 : 0;
+        if (pa !== pb) return pa - pb;
+        return da.localeCompare(db);
+      });
+    // 防御性兜底：极端情况下系统探测返回空，仍然强制扫描 C 盘，避免“重建秒结束”
+    const rootsForRebuild = allRoots.length > 0 ? allRoots : [{ mountPoint: 'C:', isSSD: false }];
 
     // 2. Roots 分配给 Workers：按盘符轮询分配，并携带性能标识
     const assignments: Array<Array<{ path: string; isSSD: boolean }>> = Array.from(
       { length: WORKER_COUNT },
       () => []
     );
-    allRoots.forEach((drive, idx) => {
+    rootsForRebuild.forEach((drive, idx) => {
       assignments[idx % WORKER_COUNT].push({
         path: drive.mountPoint + '\\',
         isSSD: drive.isSSD,

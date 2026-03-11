@@ -311,7 +311,7 @@ export function registerIpcHandlers() {
     saveSettings(next);
     
     // Update Ignored Paths in fileIndex
-    await fileIndex.setIgnoredPaths(next.ignoredPaths);
+    await fileIndex.setIgnoredPaths(next.ignoredPaths, next.preferredFileExtensions);
     
     // Re-register shortcuts
     // 重新注册快捷键：使用静态 import，避免打包后运行期 require 路径失效

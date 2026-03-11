@@ -151,6 +151,24 @@ export function normalizeSettings(s: any): AppSettings {
   const rawMaxHeight = s?.searchWindowMaxHeight ?? s?.searchWindowInitialHeight;
   const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SETTINGS.searchWindowMaxHeight, 200, 10000);
   const searchDisplayLimit = clampInt(s?.searchDisplayLimit, DEFAULT_SETTINGS.searchDisplayLimit, 20, 100);
+  const preferredFileExtensions = (() => {
+    const rawList = Array.isArray((s as any)?.preferredFileExtensions)
+      ? (s as any).preferredFileExtensions
+      : DEFAULT_SETTINGS.preferredFileExtensions;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const it of rawList) {
+      const rawExt = typeof it === "string" ? it.trim().toLowerCase() : "";
+      if (!rawExt) continue;
+      const ext = rawExt.startsWith(".") ? rawExt : `.${rawExt}`;
+      if (ext.length < 2 || ext.length > 12) continue;
+      if (seen.has(ext)) continue;
+      seen.add(ext);
+      out.push(ext);
+      if (out.length >= 80) break;
+    }
+    return out.length > 0 ? out : DEFAULT_SETTINGS.preferredFileExtensions;
+  })();
 
   return {
     autoStart: Boolean(s?.autoStart),
@@ -181,6 +199,7 @@ export function normalizeSettings(s: any): AppSettings {
     searchWindowMaxHeight,
     searchDisplayLimit,
     compactMode: typeof s?.compactMode === "boolean" ? s.compactMode : DEFAULT_SETTINGS.compactMode,
+    preferredFileExtensions,
   };
 }
 

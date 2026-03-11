@@ -37,4 +37,9 @@ export interface AppSettings {
   searchDisplayLimit: number;
 
   compactMode: boolean;
+
+  // 常用文件扩展名（带点号，例如 ".docx"）：
+  // - 用于索引构建时“优先处理这些类型的文件”，提升办公/学习场景的边建边搜体验
+  // - 仅影响索引构建顺序，不影响最终索引覆盖范围
+  preferredFileExtensions: string[];
 }

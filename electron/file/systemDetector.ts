@@ -93,8 +93,25 @@ export class SystemDetector {
       
       for (const vol of list) {
         if (!vol.DriveLetter) continue;
-        // DriveType 3 = Fixed (本地硬盘)
-        if (vol.DriveType !== 3) continue;
+        // 兼容不同 PowerShell/系统返回格式：
+        // - 可能是数字 2/3
+        // - 也可能是字符串 "2"/"3"
+        // - 或枚举名 "Removable"/"Fixed"
+        // 这里放宽到“可读写本地盘”优先，排除光驱/内存盘等无意义卷
+        const rawType = vol.DriveType;
+        const typeNum =
+          typeof rawType === 'number'
+            ? rawType
+            : typeof rawType === 'string' && /^\d+$/.test(rawType.trim())
+              ? Number(rawType.trim())
+              : NaN;
+        const typeName = typeof rawType === 'string' ? rawType.trim().toLowerCase() : '';
+        const isWritableLocal =
+          typeNum === 2 ||
+          typeNum === 3 ||
+          typeName === 'removable' ||
+          typeName === 'fixed';
+        if (!isWritableLocal) continue;
 
         const driveLetter = `${vol.DriveLetter}:`;
         drives.push({
@@ -105,6 +122,10 @@ export class SystemDetector {
         });
       }
       
+      // 防御性兜底：解析成功但结果为空时，至少保留 C 盘，避免“索引秒结束但实际没扫描”
+      if (drives.length === 0) {
+        return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true, isSSD: false }];
+      }
       return drives;
     } catch (e) {
       // 兜底：如果 PowerShell 失败，至少返回 C 盘（默认非 SSD 以保安全）

@@ -412,7 +412,7 @@ export function SearchViewImpl() {
         )}
         {hasIgnored ? (
           <div className="no-more-results ignore-tips">
-            您配置了黑名单路径，如果搜索不到您想要的文件，可以尝试在【设置-搜索-黑名单路径】移除对应的路径再试~
+            如果搜索不到您想要的文件，可以尝试在【设置-搜索-黑名单路径】移除对应的路径再试~
           </div>
         ) : null}
       </div>

@@ -30,7 +30,8 @@ export function useSearchController() {
   const parseDrivePrefix = (raw: string) => {
     // 输入支持“盘符前缀”：例如 C:、c:、C：，用于将搜索范围限制到指定盘符并提升速度
     const s = typeof raw === "string" ? raw.trim() : "";
-    const m = s.match(/^([a-zA-Z])\s*[:：]\s*/);
+    // 注意：不要把完整路径（例如 E:\foo\bar）误识别为“盘符前缀模式”，否则会把查询变成 \foo\bar（缺盘符）导致搜不到
+    const m = s.match(/^([a-zA-Z])\s*[:：](?=\s|$)\s*/);
     if (!m) return { term: s, drive: "" };
     const drive = (m[1] || "").toLowerCase();
     const term = s.slice(m[0].length).trim();

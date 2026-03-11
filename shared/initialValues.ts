@@ -72,4 +72,30 @@ export const DEFAULT_SETTINGS = {
   searchDisplayLimit: 100,
   // 是否启用紧凑模式：影响列表项高度与整体密度
   compactMode: false,
+  // 常用文件扩展名（用于优先索引）：办公/学习常见文档 + 常见代码/配置 + 常见压缩包
+  // 说明：这里只影响“索引构建顺序”，不会限制最终索引范围
+  preferredFileExtensions: [
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    '.pdf',
+    '.txt',
+    '.md',
+    '.csv',
+    '.json',
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.py',
+    '.java',
+    '.exe',
+    '.msi',
+    '.zip',
+    '.rar',
+    '.7z',
+  ],
 } satisfies AppSettings;

@@ -172,6 +172,22 @@ export function loadSettings(): AppSettings {
       const rawMaxHeight = raw?.searchWindowMaxHeight ?? raw?.searchWindowInitialHeight;
       const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SETTINGS.searchWindowMaxHeight, 200, 10000);
       const searchDisplayLimit = clampInt(raw?.searchDisplayLimit, DEFAULT_SETTINGS.searchDisplayLimit, 20, 100);
+      const preferredFileExtensions = (() => {
+        const rawList = Array.isArray(raw?.preferredFileExtensions) ? raw.preferredFileExtensions : DEFAULT_SETTINGS.preferredFileExtensions;
+        const out: string[] = [];
+        const seen = new Set<string>();
+        for (const it of rawList) {
+          const s = typeof it === 'string' ? it.trim().toLowerCase() : '';
+          if (!s) continue;
+          const v = s.startsWith('.') ? s : `.${s}`;
+          if (v.length < 2 || v.length > 12) continue;
+          if (seen.has(v)) continue;
+          seen.add(v);
+          out.push(v);
+          if (out.length >= 80) break;
+        }
+        return out.length > 0 ? out : DEFAULT_SETTINGS.preferredFileExtensions;
+      })();
 
       return {
         autoStart: Boolean(raw?.autoStart),
@@ -214,6 +230,7 @@ export function loadSettings(): AppSettings {
         searchWindowMaxHeight,
         searchDisplayLimit,
         compactMode: raw?.compactMode === true,
+        preferredFileExtensions,
       };
     }
   } catch {}
@@ -225,6 +242,7 @@ export function loadSettings(): AppSettings {
     disabledSearchTypeIds: [],
     ignoredPaths: [],
     resultActionButtons: [...DEFAULT_SETTINGS.resultActionButtons],
+    preferredFileExtensions: [...DEFAULT_SETTINGS.preferredFileExtensions],
   };
 }
 

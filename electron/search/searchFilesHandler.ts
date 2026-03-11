@@ -5,12 +5,54 @@ import { fileIndexStrategy } from './strategies/fileIndexStrategy';
 import { createRecentIndexStrategy } from './strategies/recentIndexStrategy';
 import { settingsStrategy } from './strategies/settingsStrategy';
 import type { SearchContext, SearchStrategyDeps } from './strategies/types';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 
 type SearchFilesOptions = { searchTypeId?: string; searchSessionId?: string; drive?: string };
 
 export type SearchFilesDeps = Omit<SearchStrategyDeps, 'getCurrentIconPrefetchToken' | 'currentIconPrefetchToken'>;
 
 let iconPrefetchToken = 0;
+
+function stripInvisibleChars(input: string) {
+	return String(input || '')
+		.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+
+function deriveSearchTerm(input: string) {
+	const s = stripInvisibleChars(input);
+	if (!s) return '';
+	const normalized = s.replace(/\//g, '\\');
+	if (normalized.includes('\\')) return path.win32.basename(normalized);
+	return s;
+}
+
+async function tryResolveDirectPathCandidate(rawInput: string) {
+	const s = stripInvisibleChars(rawInput);
+	if (!s) return null;
+	const normalized = s.replace(/\//g, '\\').trim();
+	if (!normalized) return null;
+	const isWinAbs = /^[a-zA-Z]:\\/.test(normalized) || normalized.startsWith('\\\\');
+	if (!isWinAbs) return null;
+	if (!existsSync(normalized)) return null;
+	try {
+		const st = await fs.stat(normalized);
+		const isDirectory = st.isDirectory();
+		const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+		return {
+			name: path.win32.basename(normalized),
+			path: normalized,
+			type: isDirectory ? 'folder' : 'file',
+			isDirectory,
+			timeMs,
+		};
+	} catch {
+		return null;
+	}
+}
 
 export async function handleSearchFiles(
 	event: Electron.IpcMainInvokeEvent,
@@ -19,13 +61,16 @@ export async function handleSearchFiles(
 	deps: SearchFilesDeps
 ) {
 	const { fileIndex, reconcileRecentIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey, iconDataCache } = deps;
+	const rawQueryForEvents = typeof query === 'string' ? query : '';
+	const queryForSearch = deriveSearchTerm(rawQueryForEvents);
 	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
-	if (!query || query.trim().length < 1) return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
+	if (!queryForSearch || queryForSearch.trim().length < 1)
+		return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
 	void reconcileRecentIndex();
 
-	const nameScorer = createNameScorer(query);
+	const nameScorer = createNameScorer(queryForSearch);
 	const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;
 
 	const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
@@ -69,7 +114,7 @@ export async function handleSearchFiles(
 	const getCurrentIconPrefetchToken = () => iconPrefetchToken;
 	const ctx: SearchContext = {
 		event,
-		query,
+		query: queryForSearch,
 		lowerQuery,
 		searchTypeId,
 		searchSessionId,
@@ -84,6 +129,8 @@ export async function handleSearchFiles(
 		getCurrentIconPrefetchToken,
 		currentIconPrefetchToken,
 	};
+
+	const directPathCandidate = await tryResolveDirectPathCandidate(rawQueryForEvents);
 
 	const resultFromSettings = await settingsStrategy.execute(ctx, strategyDeps);
 	if (resultFromSettings.kind === 'return') return resultFromSettings.response;
@@ -104,7 +151,15 @@ export async function handleSearchFiles(
 	if (resultFromRecent.kind === 'return') return resultFromRecent.response;
 	const recentBoostCandidates = resultFromRecent.items;
 
+	const directCandidates = (() => {
+		if (!directPathCandidate) return [];
+		const baseScore = 999_999;
+		const score = computeCombinedScore(baseScore, directPathCandidate.type, directPathCandidate.path, directPathCandidate.timeMs || 0);
+		return [{ ...directPathCandidate, score, weightedScore: baseScore, matchIndex: 0, nameLen: 1 }];
+	})();
+
 	const candidates = [
+		...directCandidates,
 		...settingsResults,
 		...appResults,
 		...scoredFiles,
@@ -133,7 +188,7 @@ export async function handleSearchFiles(
 	const merged = firstBatch.map(stripMeta);
 	prefetchIconsInBackground({
 		event,
-		query,
+		query: rawQueryForEvents,
 		searchTypeId,
 		searchSessionId,
 		items: top500.map(stripMeta),
@@ -166,7 +221,7 @@ export async function handleSearchFiles(
 
 				if (backgroundResults.length > 0) {
 					event.sender.send('more-results', {
-						query,
+						query: rawQueryForEvents,
 						searchTypeId,
 						searchSessionId,
 						results: backgroundResults,

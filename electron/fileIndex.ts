@@ -127,6 +127,8 @@ export class FileIndex {
   private lastYieldAt = 0;
   private ignoredPrefixes: Array<{ prefix: string; prefixWithSep: string }> = [];
   private ignoredAnyDirNames = new Set<string>();
+	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
+	private preferredFileExts = new Set<string>();
 
   constructor(options: { cachePath: string; maxEntries?: number }) {
     this.cachePath = options.cachePath;
@@ -195,6 +197,24 @@ export class FileIndex {
 		next.sort((a, b) => b.prefix.length - a.prefix.length);
 		this.ignoredPrefixes = next;
 		this.ignoredAnyDirNames = anyDirNames;
+	}
+
+	setPreferredFileExtensions(list: string[]) {
+		// 规范化扩展名配置：
+		// - 统一小写
+		// - 无点号时自动补点号
+		// - 限制长度避免异常值影响排序逻辑
+		const raw = Array.isArray(list) ? list : [];
+		const next = new Set<string>();
+		for (const it of raw) {
+			const s = typeof it === 'string' ? it.trim().toLowerCase() : '';
+			if (!s) continue;
+			const v = s.startsWith('.') ? s : `.${s}`;
+			if (v.length < 2 || v.length > 12) continue;
+			next.add(v);
+			if (next.size >= 200) break;
+		}
+		this.preferredFileExts = next;
 	}
 
 	isIgnoredPath(targetPath: string) {
@@ -579,7 +599,18 @@ export class FileIndex {
         } else {
             try {
                 const info = await SystemDetector.getInstance().detect();
-                roots = info.drives.map(d => d.mountPoint + '\\');
+                // 索引优先级：优先处理非 C 盘（Windows），避免系统盘占用 IO 影响体验
+                roots = info.drives
+                    .slice()
+                    .sort((a, b) => {
+                        const da = String(a?.mountPoint || '').toUpperCase();
+                        const db = String(b?.mountPoint || '').toUpperCase();
+                        const pa = da === 'C:' ? 1 : 0;
+                        const pb = db === 'C:' ? 1 : 0;
+                        if (pa !== pb) return pa - pb;
+                        return da.localeCompare(db);
+                    })
+                    .map(d => d.mountPoint + '\\');
                 isSSD = info.drives.every(d => d.isSSD);
             } catch {
                 roots = ['C:\\'];
@@ -592,7 +623,7 @@ export class FileIndex {
             const usnScanner = new UsnScanner(this.isIgnoredPath.bind(this));
             await usnScanner.scan(roots, addNext, shouldStop);
         } catch (e) {
-            const recursiveScanner = new RecursiveScanner(this.isIgnoredPath.bind(this));
+            const recursiveScanner = new RecursiveScanner(this.isIgnoredPath.bind(this), this.preferredFileExts);
             
             // 包装进度回调以处理协作式让步
             const wrappedProgress = async (entry: FileIndexEntry) => {

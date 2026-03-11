@@ -41,6 +41,12 @@ parentPort?.on('message', async (msg: any) => {
 		}
 		if (req.op === 'setIgnoredPaths') {
 			fileIndex.setIgnoredPaths(Array.isArray(req.payload.paths) ? req.payload.paths : []);
+			// 常用扩展名优先：用于索引构建阶段“优先处理常用文档/代码等”，提升边建边搜体验
+			if (typeof (fileIndex as any).setPreferredFileExtensions === 'function') {
+				(fileIndex as any).setPreferredFileExtensions(
+					Array.isArray(req.payload?.preferredFileExtensions) ? req.payload.preferredFileExtensions : []
+				);
+			}
 			reply({ id: req.id, ok: true });
 			return;
 		}
