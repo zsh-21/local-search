@@ -2,7 +2,7 @@ import { app, globalShortcut, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { loadSettings } from './config/settings';
 import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, FILE_INDEX_VERSION } from './file/indexService';
-import { startUserDirectoryWatchers, closeAllWatchers } from './file/watcher';
+import { startUserDirectoryWatchers, closeAllWatchers, trimRecentIndex } from './file/watcher';
 import {
   createWindow,
   openSearchWindow,
@@ -18,9 +18,49 @@ import { ensureStartMenuShortcutIndex } from './win/startMenuShortcutIndex';
 import { registerIpcHandlers } from './ipc/ipcHandlers';
 import { ensureWindowsAppContextMenu } from './win/contextMenu';
 import { handleAddToQuickListArgv } from './app/quickList';
+import { clearIconCaches } from './icon/iconService';
 
 process.env.DIST = path.join(__dirname, '../dist');
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public');
+
+let resourceGuardTimer: ReturnType<typeof setInterval> | null = null;
+let resourceGuardInFlight = false;
+
+function startResourceGuard() {
+  if (resourceGuardTimer) {
+    clearInterval(resourceGuardTimer);
+    resourceGuardTimer = null;
+  }
+  resourceGuardTimer = setInterval(() => {
+    if (resourceGuardInFlight) return;
+    resourceGuardInFlight = true;
+    void (async () => {
+      try {
+        const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+        if (rssMb >= 1536) {
+          await clearIconCaches();
+          trimRecentIndex(6000);
+          const status = await fileIndex.getStatus();
+          if (status.isIndexing) await fileIndex.abortRebuild();
+          return;
+        }
+        if (rssMb >= 1024) {
+          await clearIconCaches();
+          trimRecentIndex(12000);
+        }
+      } catch {}
+      finally {
+        resourceGuardInFlight = false;
+      }
+    })();
+  }, 60 * 1000);
+}
+
+function stopResourceGuard() {
+  if (!resourceGuardTimer) return;
+  clearInterval(resourceGuardTimer);
+  resourceGuardTimer = null;
+}
 
 // 注册 IPC 处理函数
 registerIpcHandlers();
@@ -66,6 +106,7 @@ if (!gotTheLock) {
       handleAddToQuickListArgv(process.argv);
     } catch {}
     void startUserDirectoryWatchers();
+    startResourceGuard();
     app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 
     setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
@@ -87,6 +128,7 @@ if (!gotTheLock) {
 }
 
 app.on('will-quit', () => {
+  stopResourceGuard();
   globalShortcut.unregisterAll();
   closeAllWatchers();
 });

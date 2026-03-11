@@ -11,6 +11,7 @@ const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 let windowsFileSystemRootsCache: string[] = [];
 // Windows 盘符缓存的最后刷新时间：降低 PowerShell 调用频率，减少后台常驻资源消耗
 let windowsFileSystemRootsLastAt = 0;
+let windowsRootsRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 // 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一次 PowerShell
 const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
@@ -40,6 +41,18 @@ export function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs
       if (keep.has(k)) continue;
       recentIndex.delete(k);
     }
+  }
+}
+
+export function trimRecentIndex(maxKeep: number) {
+  const limit = Math.max(1000, Math.floor(Number(maxKeep) || 0));
+  if (recentIndex.size <= limit) return;
+  const keys = Array.from(recentIndex.keys());
+  keys.sort((a, b) => (recentIndex.get(b)?.timeMs || 0) - (recentIndex.get(a)?.timeMs || 0));
+  const keep = new Set(keys.slice(0, limit));
+  for (const k of keys) {
+    if (keep.has(k)) continue;
+    recentIndex.delete(k);
   }
 }
 
@@ -182,7 +195,11 @@ export async function startUserDirectoryWatchers() {
 
   await refreshRootsAndWatch();
   if (process.platform === 'win32') {
-    setInterval(() => {
+    if (windowsRootsRefreshTimer) {
+      clearInterval(windowsRootsRefreshTimer);
+      windowsRootsRefreshTimer = null;
+    }
+    windowsRootsRefreshTimer = setInterval(() => {
       void refreshRootsAndWatch();
     }, WINDOWS_ROOTS_REFRESH_INTERVAL_MS);
   }
@@ -265,6 +282,10 @@ export async function reconcileRecentIndex(budgetMs = 1200) {
 }
 
 export function closeAllWatchers() {
+  if (windowsRootsRefreshTimer) {
+    clearInterval(windowsRootsRefreshTimer);
+    windowsRootsRefreshTimer = null;
+  }
   for (const w of userDirWatchers.values()) {
     try {
       w.close();
