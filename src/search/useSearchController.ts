@@ -370,9 +370,14 @@ export function useSearchController() {
 
       const filteredMore = filterItemsBySearchType(payload.results, currentTypeId);
       if (filteredMore.length <= 0) return;
+      const hadPending = pendingAppendRef.current.length > 0;
       pendingAppendRef.current = [...pendingAppendRef.current, ...filteredMore];
+      if (!hadPending) {
+        flushPendingAppends();
+        return;
+      }
       if (flushAppendTimerRef.current == null) {
-        flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 50);
+        flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 24);
       }
     };
     window.ipcRenderer?.on("more-results", handler);
@@ -415,7 +420,7 @@ export function useSearchController() {
       flushAppendTimerRef.current = null;
     }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
-    const delay = typeSwitchRequestedRef.current ? 0 : 120;
+    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 80 : 12;
     typeSwitchRequestedRef.current = false;
     const timer = setTimeout(async () => {
       try {
@@ -496,7 +501,7 @@ export function useSearchController() {
           // 将图标回填统一走“批量合并”队列：避免每个 icon 都触发一次列表重渲染导致卡顿
           pendingAppendRef.current = [...pendingAppendRef.current, { ...it, icon }];
           if (flushAppendTimerRef.current == null) {
-            flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 50);
+            flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 24);
           }
         } catch {
           requestedIconKeysRef.current.delete(key);
@@ -559,7 +564,7 @@ export function useSearchController() {
 
     const intervalId = window.setInterval(() => {
       void refreshOnce();
-    }, 3000);
+    }, 1000);
 
     return () => {
       cancelled = true;

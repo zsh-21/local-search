@@ -45,7 +45,7 @@ export type SearchStrategyDeps = {
     search: (query: string, limit: number, options?: { where?: any }) => Promise<any>;
     buildIfEmpty: () => Promise<void>;
   };
-  reconcileRecentIndex: () => void;
+  reconcileRecentIndex: () => void | Promise<void>;
   loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[] };
   loadHistoryStats: () => any;
   normalizeHistoryKey: (rawPath: string) => string;

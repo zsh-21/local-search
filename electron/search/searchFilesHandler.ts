@@ -68,7 +68,7 @@ export async function handleSearchFiles(
 		return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
 	fileIndex.pauseIndexingFor(900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
-	void reconcileRecentIndex();
+	void Promise.resolve(reconcileRecentIndex()).catch(() => {});
 
 	const nameScorer = createNameScorer(queryForSearch);
 	const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;

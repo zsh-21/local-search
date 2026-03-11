@@ -341,7 +341,7 @@ export function registerIpcHandlers() {
     const prevKey = normalizeIgnoredPathsForCompare(prevIgnoredPaths).join('|');
     const nextKey = normalizeIgnoredPathsForCompare(next.ignoredPaths).join('|');
     if (prevKey !== nextKey) {
-      void fileIndex.rebuild();
+      void fileIndex.rebuild().catch(() => {});
     }
     return { ok: true };
   });

@@ -64,6 +64,7 @@ export function SettingsViewImpl() {
   const c = useSettingsController();
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>("");
   const requestIdRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // 头像展示使用 dataUrl：由主进程读取本地图片并转为 dataUrl，避免 file:// 跨域/权限问题
@@ -82,6 +83,18 @@ export function SettingsViewImpl() {
       })
       .catch(() => {});
   }, [c.draft.customAvatarPath]);
+  useEffect(() => {
+    const focusContainer = () => {
+      window.setTimeout(() => {
+        containerRef.current?.focus();
+      }, 0);
+    };
+    focusContainer();
+    window.ipcRenderer?.on("settings-window-opened", focusContainer as any);
+    return () => {
+      window.ipcRenderer?.off("settings-window-opened", focusContainer as any);
+    };
+  }, []);
   const membershipBadge = !c.isMember ? <span className="membership-badge">订阅可用</span> : null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -110,7 +123,12 @@ export function SettingsViewImpl() {
   const currentMeta = useMemo(() => SECTION_META[c.activeKey], [c.activeKey]);
 
   return (
-    <div className={`container settings-container ${c.maximized ? "maximized" : ""}`} onKeyDown={handleKeyDown}>
+    <div
+      ref={containerRef}
+      tabIndex={-1}
+      className={`container settings-container ${c.maximized ? "maximized" : ""}`}
+      onKeyDown={handleKeyDown}
+    >
       <BackgroundImage path={c.draft.backgroundImagePath} opacity={c.draft.backgroundImageOpacity} />
       <ParticleBackground enabled={c.draft.enableEffect} type={c.draft.effectType} />
 

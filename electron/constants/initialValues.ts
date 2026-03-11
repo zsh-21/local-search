@@ -43,10 +43,6 @@ export const FILE_INDEX_VERSION = 5;
 export const FILE_INDEX_WORKER_MIN = 2;
 export const FILE_INDEX_WORKER_MAX = 4;
 
-// Worker 堆大小上限：索引占用内存较多，默认上限容易触发 OOM
-export const FILE_INDEX_WORKER_HEAP_MB_FOR_4 = 1536;
-export const FILE_INDEX_WORKER_HEAP_MB_DEFAULT = 2048;
-
 // 索引最大条目数上限：防止超大索引导致内存不可控
 export const FILE_INDEX_TOTAL_MAX_ENTRIES_CAP = 2_000_000;
 export const FILE_INDEX_ENTRIES_PER_WORKER = 400_000;

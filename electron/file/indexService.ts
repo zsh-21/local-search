@@ -9,8 +9,6 @@ import {
   FILE_INDEX_ENTRIES_PER_WORKER,
   FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
   FILE_INDEX_VERSION,
-  FILE_INDEX_WORKER_HEAP_MB_DEFAULT,
-  FILE_INDEX_WORKER_HEAP_MB_FOR_4,
   FILE_INDEX_WORKER_MAX,
   FILE_INDEX_WORKER_MIN,
 } from '../constants/initialValues';
@@ -132,13 +130,9 @@ function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   // 注意：如果打包后 main.js 在 dist-electron 根目录，则此处路径正确
   const workerPath = path.join(__dirname, 'fileIndex.worker.js');
 
-	// 限制/调整 Worker 堆大小：索引会占用较多内存，默认上限容易触发 OOM
-	// 这里按 Worker 数量做保守配置，避免多 Worker 同时把系统内存吃满
-	const worker = new Worker(workerPath, {
-		resourceLimits: {
-			maxOldGenerationSizeMb: WORKER_COUNT >= 4 ? FILE_INDEX_WORKER_HEAP_MB_FOR_4 : FILE_INDEX_WORKER_HEAP_MB_DEFAULT,
-		},
-	});
+	// 这里移除固定堆上限：此前固定上限会在大盘符/大目录场景触发 ERR_WORKER_OUT_OF_MEMORY
+	// 交由 Node/Electron 默认内存策略管理，优先保证索引构建能够完整进行
+	const worker = new Worker(workerPath);
   shard.worker = worker;
 
   worker.on('message', (msg: any) => {
