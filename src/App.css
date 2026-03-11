@@ -1385,7 +1385,7 @@ html[data-theme="light"] .results li.selected .action-btn {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 0;
+  padding-right: 24px;
   max-width: 700px;
   width: 100%;
   overflow-y: auto;
