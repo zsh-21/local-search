@@ -25,6 +25,9 @@ process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.
 
 let resourceGuardTimer: ReturnType<typeof setInterval> | null = null;
 let resourceGuardInFlight = false;
+let resourceGuardLastMediumAt = 0;
+let resourceGuardLastHeavyAt = 0;
+let resourceGuardLastLightAt = 0;
 
 function startResourceGuard() {
   if (resourceGuardTimer) {
@@ -36,17 +39,35 @@ function startResourceGuard() {
     resourceGuardInFlight = true;
     void (async () => {
       try {
+        const now = Date.now();
         const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
         if (rssMb >= 1536) {
-          await clearIconCaches();
-          trimRecentIndex(6000);
-          const status = await fileIndex.getStatus();
-          if (status.isIndexing) await fileIndex.abortRebuild();
+          if (now - resourceGuardLastHeavyAt >= 120_000) {
+            resourceGuardLastHeavyAt = now;
+            await clearIconCaches();
+            trimRecentIndex(5000);
+            const status = await fileIndex.getStatus();
+            if (status.isIndexing) await fileIndex.abortRebuild();
+            try {
+              (global as any)?.gc?.();
+            } catch {}
+          }
           return;
         }
         if (rssMb >= 1024) {
-          await clearIconCaches();
-          trimRecentIndex(12000);
+          if (now - resourceGuardLastMediumAt >= 90_000) {
+            resourceGuardLastMediumAt = now;
+            await clearIconCaches();
+            trimRecentIndex(10000);
+            try {
+              (global as any)?.gc?.();
+            } catch {}
+          }
+          return;
+        }
+        if (now - resourceGuardLastLightAt >= 10 * 60 * 1000) {
+          resourceGuardLastLightAt = now;
+          trimRecentIndex(20000);
         }
       } catch {}
       finally {

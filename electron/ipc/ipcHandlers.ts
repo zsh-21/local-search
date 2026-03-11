@@ -567,7 +567,11 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-file-index-status', async () => {
-    return await fileIndex.getStatus();
+    try {
+      return await fileIndex.getStatus();
+    } catch {
+      return { isIndexing: false, indexedCount: 0 };
+    }
   });
 
   ipcMain.handle(

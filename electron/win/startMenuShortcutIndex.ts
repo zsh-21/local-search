@@ -81,3 +81,8 @@ export function findStartMenuShortcutByName(name: string) {
 	return bestScore > 0 ? best : '';
 }
 
+export function clearStartMenuShortcutIndex() {
+	startMenuShortcutIndex.clear();
+	startMenuShortcutIndexReady = false;
+}
+

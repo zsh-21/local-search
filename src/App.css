@@ -913,6 +913,7 @@ input::placeholder {
 /* 优雅的滚动条样式 */
 *::-webkit-scrollbar {
   width: 5px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -944,6 +945,7 @@ input::placeholder {
   margin-right: 8px;
   vertical-align: -2px;
   opacity: 0.8;
+  color: var(--fs-text);
 }
 
 @keyframes spin {
@@ -1389,8 +1391,23 @@ html[data-theme="light"] .results li.selected .action-btn {
   max-width: 700px;
   width: 100%;
   overflow-y: auto;
+  overflow-x: auto;
   height: calc(100% - 90px);
   margin: 0;
+  scrollbar-gutter: stable both-edges;
+}
+
+.settings-content::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:horizontal {
+  background: color-mix(in srgb, var(--fs-accent) 44%, var(--fs-border));
+  border-radius: 999px;
+}
+
+.settings-content::-webkit-scrollbar-thumb:horizontal:hover {
+  background: color-mix(in srgb, var(--fs-accent) 62%, var(--fs-muted));
 }
 
 .number-input::-webkit-outer-spin-button,
@@ -1514,6 +1531,37 @@ html[data-theme="light"] .results li.selected .action-btn {
 
 .small-btn:hover {
   background: rgba(255, 255, 255, 0.16);
+}
+
+.index-manage-row {
+  display: flex;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.index-manage-label {
+  color: var(--fs-muted);
+  font-size: 12px;
+  font-weight: 600;
+  width: 92px;
+  flex-shrink: 0;
+}
+
+.index-manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.indexed-count {
+  grid-column: 2;
+  color: var(--fs-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .type-list {

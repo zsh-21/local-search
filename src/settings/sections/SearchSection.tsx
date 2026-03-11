@@ -742,11 +742,9 @@ export function SearchSection({
           <br />
           <strong>在此期间您可以正常使用搜索功能，不会受到任何影响。</strong>
         </div>
-        <div className="form-row">
-          <div className="form-label">
-            全盘索引
-          </div>
-          <div className="btn-group">
+        <div className="index-manage-row">
+          <div className="index-manage-label">全盘索引</div>
+          <div className="index-manage-actions">
             <button
               type="button"
               className={`small-btn ${isRebuildingIndex ? "processing" : ""}`}
@@ -786,15 +784,13 @@ export function SearchSection({
                 取消
               </button>
             )}
-
-         
           </div>
-             <span className="form-label"> {indexedCount > 0 && (
-              <div className="indexed-count">
-                {isRebuildingIndex ? "正在建立临时索引: " : "已索引: "}
-                {indexedCount}
-              </div>
-            )}</span>
+          {indexedCount > 0 ? (
+            <div className="indexed-count">
+              {isRebuildingIndex ? "正在建立临时索引: " : "已索引: "}
+              {indexedCount}
+            </div>
+          ) : null}
         </div>
       </div>
       {error ? <div className="settings-error">{error}</div> : null}

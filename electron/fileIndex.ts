@@ -70,6 +70,13 @@ const tokenizer = {
 			out.push(t);
 		};
 
+		const compact = s.replace(/[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff]+/g, '');
+		if (compact && compact !== s) {
+			push(compact);
+			const maxCompactPrefix = Math.min(4, compact.length);
+			for (let i = 2; i <= maxCompactPrefix; i++) push(compact.slice(0, i));
+		}
+
 		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
 		for (const seg of segs) {
 			if (!seg) continue;
@@ -125,6 +132,7 @@ export class FileIndex {
   private rebuildStartedAt = 0;
   private partialPublished = false;
   private lastYieldAt = 0;
+  private rebuildIndexedCount = 0;
   private ignoredPrefixes: Array<{ prefix: string; prefixWithSep: string }> = [];
   private ignoredAnyDirNames = new Set<string>();
 	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
@@ -144,6 +152,7 @@ export class FileIndex {
     this.rebuildStartedAt = 0;
     this.partialPublished = false;
     this.lastYieldAt = 0;
+    this.rebuildIndexedCount = 0;
   }
 
   // 显式中止当前索引任务
@@ -154,7 +163,7 @@ export class FileIndex {
 	async getStatus(): Promise<FileIndexStatus> {
 		return {
 			isIndexing: this.isIndexing,
-			indexedCount: this.db ? await count(this.db) : 0,
+			indexedCount: this.isIndexing ? this.rebuildIndexedCount : this.db ? await count(this.db) : 0,
 		};
 	}
 
@@ -507,6 +516,7 @@ export class FileIndex {
 		if (this.isIndexing) return;
 		this.isIndexing = true;
 		this.abortRequested = false;
+		this.rebuildIndexedCount = 0;
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
@@ -584,6 +594,7 @@ export class FileIndex {
 			
 			batch.push(entry);
 			entryCount++;
+			this.rebuildIndexedCount = entryCount;
 		};
 
         const shouldStop = () => this.abortRequested || entryCount >= this.maxEntries;
@@ -659,6 +670,7 @@ export class FileIndex {
 				cacheWs.end();
 			} catch {}
 			this.isIndexing = false;
+			this.rebuildIndexedCount = 0;
 			this.pauseUntil = 0;
 		}
 	}

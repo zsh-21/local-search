@@ -45,6 +45,7 @@ interface IndexShard {
   pending: Map<number, { resolve: (v: any) => void; reject: (e: any) => void }>;
   seq: number;
   roots: string[]; // 该分片负责的根路径
+  lastKnownIndexedCount: number;
 }
 
 // 限制 Worker 数量，避免过多线程竞争
@@ -57,12 +58,16 @@ const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
   pending: new Map(),
   seq: 0,
   roots: [],
+  lastKnownIndexedCount: 0,
 }));
 
 // 运行期状态缓存：用于延迟创建 Worker 时仍能保持行为一致
 let searchWindowVisibleCache = false;
 let ignoredPathsCacheForWorkers: string[] = [];
 let preferredFileExtensionsCacheForWorkers: string[] = [];
+let rebuildInProgress = false;
+let rebuildCompletedCount = 0;
+let rebuildCurrentShard = -1;
 
 function setIgnoredPathsCache(paths: string[]) {
   const raw: string[] = Array.isArray(paths) ? paths : [];
@@ -130,9 +135,12 @@ function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   // 注意：如果打包后 main.js 在 dist-electron 根目录，则此处路径正确
   const workerPath = path.join(__dirname, 'fileIndex.worker.js');
 
-	// 这里移除固定堆上限：此前固定上限会在大盘符/大目录场景触发 ERR_WORKER_OUT_OF_MEMORY
-	// 交由 Node/Electron 默认内存策略管理，优先保证索引构建能够完整进行
-	const worker = new Worker(workerPath);
+	// Worker 需要设置保守堆上限，避免全盘重建时多个 Worker 抢内存把主进程一并拖垮
+	// 这里按 Worker 数量动态收紧：并发越高，单 Worker 上限越低
+	const maxOldGenerationSizeMb = WORKER_COUNT >= 4 ? 768 : WORKER_COUNT === 3 ? 896 : 1024;
+	const worker = new Worker(workerPath, {
+		resourceLimits: { maxOldGenerationSizeMb },
+	});
   shard.worker = worker;
 
   worker.on('message', (msg: any) => {
@@ -231,7 +239,36 @@ export const fileIndex = {
   },
   
   getStatus: async () => {
-    const statuses = await Promise.all(shards.map((_, i) => callShard<any>(i, 'getStatus')));
+    if (rebuildInProgress) {
+      let activeCount = 0;
+      if (rebuildCurrentShard >= 0 && rebuildCurrentShard < shards.length) {
+        const shard = shards[rebuildCurrentShard];
+        try {
+          const st = await callShard<any>(rebuildCurrentShard, 'getStatus');
+          const c = typeof st?.indexedCount === 'number' ? Math.max(0, st.indexedCount) : 0;
+          shard.lastKnownIndexedCount = c;
+          activeCount = c;
+        } catch {
+          activeCount = shard.lastKnownIndexedCount || 0;
+        }
+      }
+      return { isIndexing: true, indexedCount: Math.max(0, rebuildCompletedCount + activeCount) };
+    }
+    const statuses = await Promise.all(
+      shards.map(async (shard, i) => {
+        try {
+          if (!shard.worker) {
+            await callShard<boolean>(i, 'loadCache').catch(() => false);
+          }
+          const st = await callShard<any>(i, 'getStatus');
+          const c = typeof st?.indexedCount === 'number' ? Math.max(0, st.indexedCount) : 0;
+          shard.lastKnownIndexedCount = c;
+          return { isIndexing: Boolean(st?.isIndexing), indexedCount: c };
+        } catch {
+          return { isIndexing: false, indexedCount: shard.lastKnownIndexedCount || 0 };
+        }
+      })
+    );
     return {
       isIndexing: statuses.some(s => s.isIndexing),
       indexedCount: statuses.reduce((sum, s) => sum + (s.indexedCount || 0), 0)
@@ -313,13 +350,26 @@ export const fileIndex = {
       shards[i].roots = roots.map((r) => r.path);
     });
 
-    // 并行执行重建
-    await Promise.all(
-      assignments.map((roots, i) => {
-        if (roots.length === 0) return Promise.resolve();
-        return callShard(i, 'rebuild', roots);
-      })
-    );
+    rebuildInProgress = true;
+    rebuildCompletedCount = 0;
+    rebuildCurrentShard = -1;
+    try {
+      // 顺序执行重建：相比并行可显著降低峰值内存，优先保证“不会把应用打崩”
+      for (let i = 0; i < assignments.length; i++) {
+        const roots = assignments[i];
+        if (!roots || roots.length === 0) continue;
+        rebuildCurrentShard = i;
+        await callShard(i, 'rebuild', roots);
+        const st = await callShard<any>(i, 'getStatus').catch(() => ({ indexedCount: shards[i].lastKnownIndexedCount || 0 }));
+        const c = typeof st?.indexedCount === 'number' ? Math.max(0, st.indexedCount) : 0;
+        shards[i].lastKnownIndexedCount = c;
+        rebuildCompletedCount += c;
+      }
+    } finally {
+      rebuildInProgress = false;
+      rebuildCurrentShard = -1;
+      rebuildCompletedCount = 0;
+    }
   },
 
   abortRebuild: async () => {
