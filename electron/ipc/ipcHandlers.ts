@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, shell } from 'electron';
+import { ipcMain, BrowserWindow, dialog, screen, shell } from 'electron';
 import { getDeviceId } from '../config/deviceId';
 import {
   setSearchAllowBlurHide,
@@ -182,9 +182,22 @@ export function registerIpcHandlers() {
   ipcMain.handle('resize-window', (event, height: number, width?: number) => {
     const w = BrowserWindow.fromWebContents(event.sender);
     if (!w) return;
+    const settings = loadSettings();
+    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
     const [currentWidth] = w.getContentSize();
-    const nextWidth = width ?? currentWidth;
-    w.setContentSize(Math.round(nextWidth), Math.round(height));
+    const maxH = typeof settings?.searchWindowMaxHeight === 'number' ? settings.searchWindowMaxHeight : 760;
+    const nextWidth = clamp(Math.round(width ?? currentWidth), 450, 1000);
+    const displayMaxH = (() => {
+      try {
+        const d = screen.getDisplayMatching(w.getBounds());
+        return d?.workAreaSize?.height;
+      } catch {
+        return undefined;
+      }
+    })();
+    const upper = Math.max(200, Math.round(Math.min(Math.round(maxH), displayMaxH ?? Math.round(maxH))));
+    const nextHeight = clamp(Math.round(height), 76, upper);
+    w.setContentSize(nextWidth, nextHeight);
   });
 
   ipcMain.handle('get-window-bounds', (event) => {
@@ -196,10 +209,14 @@ export function registerIpcHandlers() {
     const w = BrowserWindow.fromWebContents(event.sender);
     if (!w) return;
     const current = w.getBounds();
+    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
     w.setBounds({
       x: bounds.x ?? current.x,
       y: bounds.y ?? current.y,
-      width: bounds.width ?? current.width,
+      width:
+        typeof bounds.width === 'number'
+          ? clamp(Math.round(bounds.width), 450, 1000)
+          : current.width,
       height: bounds.height ?? current.height,
     });
   });

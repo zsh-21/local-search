@@ -39,6 +39,12 @@ export interface AppSettings {
   // 自定义头像：本地图片路径；渲染侧通过 get-image-data-url 转为可展示的 dataUrl
   customAvatarPath: string;
   resultActionButtons: ResultActionButtonId[];
+
+  // 搜索窗口尺寸：初始宽高（最小/最大限制由系统内部固定）
+  searchWindowInitialWidth: number;
+  searchWindowMaxHeight: number;
+
+  compactMode: boolean;
 }
 
 export const DEFAULT_SEARCH_SHORTCUT = 'Alt+T';
@@ -47,6 +53,8 @@ export const DEFAULT_THEME: AppSettings['theme'] = 'dark';
 export const DEFAULT_HISTORY_LIMIT = 5;
 export const DEFAULT_SEARCH_TYPE_ID = 'all';
 export const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ['openFolder', 'copyPath', 'deleteHistory'];
+export const DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH = 720;
+export const DEFAULT_SEARCH_WINDOW_MAX_HEIGHT = 760;
 
 export function loadConfig() {
   try {
@@ -173,6 +181,16 @@ export function loadSettings(): AppSettings {
         ignoredPaths.push(p);
       }
 
+      const clampInt = (v: any, fallback: number, min: number, max: number) => {
+        const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(max, Math.max(min, Math.round(n)));
+      };
+
+      const searchWindowInitialWidth = clampInt(raw?.searchWindowInitialWidth, DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH, 450, 1000);
+      const rawMaxHeight = raw?.searchWindowMaxHeight ?? raw?.searchWindowInitialHeight;
+      const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SEARCH_WINDOW_MAX_HEIGHT, 200, 10000);
+
       return {
         autoStart: Boolean(raw?.autoStart),
         searchShortcut: (() => {
@@ -210,6 +228,9 @@ export function loadSettings(): AppSettings {
         backgroundImageOpacity,
         customAvatarPath,
         resultActionButtons,
+        searchWindowInitialWidth,
+        searchWindowMaxHeight,
+        compactMode: raw?.compactMode === true,
       };
     }
   } catch {}
@@ -235,6 +256,9 @@ export function loadSettings(): AppSettings {
     backgroundImageOpacity: 0.25,
     customAvatarPath: '',
     resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
+    searchWindowInitialWidth: DEFAULT_SEARCH_WINDOW_INITIAL_WIDTH,
+    searchWindowMaxHeight: DEFAULT_SEARCH_WINDOW_MAX_HEIGHT,
+    compactMode: false,
   };
 }
 

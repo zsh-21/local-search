@@ -85,10 +85,16 @@ export function useSearchController() {
     setQuery(next);
     setInputValue(next);
     shouldEchoSelectedOnceRef.current = false;
+    setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
   };
 
-  const ITEM_HEIGHT = 52;
-  const MAX_LIST_HEIGHT = 382;
+  const ITEM_HEIGHT = settings.compactMode ? 44 : 52;
+  const deviceMaxHeight = Math.floor((window.screen as any)?.availHeight || 0);
+  const maxWindowHeight = Math.min(
+    typeof settings.searchWindowMaxHeight === "number" ? settings.searchWindowMaxHeight : 760,
+    deviceMaxHeight > 0 ? deviceMaxHeight : Number.POSITIVE_INFINITY,
+  );
+  const MAX_LIST_HEIGHT = Math.max(120, Math.round(maxWindowHeight) - 76 - 90);
   const TYPE_MENU_MIN_LIST_SPACE = 240;
   const DISPLAY_LIMIT = 500;
   const lastVisibleStartIndexRef = useRef(0);
@@ -242,6 +248,7 @@ export function useSearchController() {
     // 主进程通知“需要重置搜索页”时触发：按用户设置决定是否保留上次状态
     const handleReset = async () => {
       void refreshUserStatusSilently();
+      lastResizeHeightRef.current = 0;
       window.ipcRenderer?.invoke("get-settings").then(async (latestSettings: AppSettings) => {
         const s = normalizeSettings(latestSettings);
         if (s.keepStateOnClose) {
@@ -260,6 +267,16 @@ export function useSearchController() {
         const historyItems = resp?.results ?? [];
         setResults(limitResults(dedupeResults(filterItemsBySearchType(historyItems, nextTypeId))));
         setIsSearching(false);
+
+          requestAnimationFrame(() => {
+            const c = containerRef.current;
+            if (!c) return;
+            const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
+            if (nextHeight !== lastResizeHeightRef.current) {
+              lastResizeHeightRef.current = nextHeight;
+              window.ipcRenderer?.invoke("resize-window", nextHeight);
+            }
+          });
         setTimeout(() => {
           inputRef.current?.focus();
           window.ipcRenderer?.invoke("search-view-ready");
@@ -275,6 +292,7 @@ export function useSearchController() {
   useEffect(() => {
     const handler = () => {
       setTypeMenuOpen(false);
+      lastResizeHeightRef.current = 0;
     };
     window.ipcRenderer?.on("search-window-hidden", handler as any);
     return () => {
@@ -287,12 +305,25 @@ export function useSearchController() {
       void refreshUserStatusSilently();
       inputRef.current?.focus();
       window.ipcRenderer?.invoke("search-view-ready");
-      if (queryRef.current.trim().length === 0) {
-        void refreshHistory({
-          typeId: searchTypeIdRef.current,
-          preserveSelectedPath: selectedPathRef.current,
+      lastResizeHeightRef.current = 0;
+      const p =
+        queryRef.current.trim().length === 0
+          ? refreshHistory({
+              typeId: searchTypeIdRef.current,
+              preserveSelectedPath: selectedPathRef.current,
+            })
+          : Promise.resolve();
+      void p.finally(() => {
+        requestAnimationFrame(() => {
+          const c = containerRef.current;
+          if (!c) return;
+          const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
+          if (nextHeight !== lastResizeHeightRef.current) {
+            lastResizeHeightRef.current = nextHeight;
+            window.ipcRenderer?.invoke("resize-window", nextHeight);
+          }
         });
-      }
+      });
     };
     window.ipcRenderer?.on("search-window-opened", handler as any);
     return () => {
@@ -637,6 +668,10 @@ export function useSearchController() {
       ? selectedActionIds[selectedActionIndex]
       : "";
 
+  const clearActionSelection = useCallback(() => {
+    setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
+  }, []);
+
   useEffect(() => {
     setSelectedActionIndex(-1);
   }, [selectedIndex]);
@@ -653,6 +688,11 @@ export function useSearchController() {
       isComposing?: boolean;
     }) => {
       if ((e as any).isComposing) return;
+
+      // 任意非左右键操作都会让“左右键选中右侧按钮”的效果失效，避免状态残留造成误触
+      if (selectedActionIndex >= 0 && e.key !== "ArrowLeft" && e.key !== "ArrowRight") {
+        setSelectedActionIndex(-1);
+      }
 
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         if (results.length === 0) return;
@@ -749,6 +789,7 @@ export function useSearchController() {
       const nextIdx = (idx + delta + enabledSearchTypeOptions.length) % enabledSearchTypeOptions.length;
       const next = enabledSearchTypeOptions[nextIdx];
       typeSwitchRequestedRef.current = true;
+      setSelectedActionIndex(-1);
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
       return;
@@ -822,7 +863,8 @@ export function useSearchController() {
       if (!c) return;
 
       const containerRect = c.getBoundingClientRect();
-      let nextHeight = Math.ceil(containerRect.height);
+      const baseHeight = Math.ceil(Math.max(containerRect.height, c.scrollHeight));
+      let nextHeight = baseHeight;
 
       const menuEl = typeMenuOpen ? typeMenuRef.current : null;
       if (menuEl) {
@@ -853,7 +895,7 @@ export function useSearchController() {
     const ro = new ResizeObserver(() => {
       const c = containerRef.current;
       if (!c) return;
-      const nextHeight = Math.max(76, Math.ceil(c.getBoundingClientRect().height));
+      const nextHeight = Math.max(76, Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)));
       if (nextHeight !== lastResizeHeightRef.current) {
         lastResizeHeightRef.current = nextHeight;
         window.ipcRenderer?.invoke("resize-window", nextHeight);
@@ -938,5 +980,6 @@ export function useSearchController() {
     toast,
     showToast,
     selectedActionId,
+    clearActionSelection,
   };
 }

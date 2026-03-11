@@ -135,6 +135,21 @@ export function normalizeSettings(s: any): AppSettings {
     resultActionButtons.push(...DEFAULT_SETTINGS.resultActionButtons);
   }
 
+  const clampInt = (v: any, fallback: number, min: number, max: number) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  };
+
+  const searchWindowInitialWidth = clampInt(
+    s?.searchWindowInitialWidth,
+    DEFAULT_SETTINGS.searchWindowInitialWidth,
+    450,
+    1000,
+  );
+  const rawMaxHeight = s?.searchWindowMaxHeight ?? s?.searchWindowInitialHeight;
+  const searchWindowMaxHeight = clampInt(rawMaxHeight, DEFAULT_SETTINGS.searchWindowMaxHeight, 200, 10000);
+
   return {
     autoStart: Boolean(s?.autoStart),
     searchShortcut,
@@ -160,6 +175,9 @@ export function normalizeSettings(s: any): AppSettings {
     backgroundImageOpacity,
     customAvatarPath,
     resultActionButtons,
+    searchWindowInitialWidth,
+    searchWindowMaxHeight,
+    compactMode: typeof s?.compactMode === "boolean" ? s.compactMode : DEFAULT_SETTINGS.compactMode,
   };
 }
 

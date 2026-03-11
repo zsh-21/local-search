@@ -420,9 +420,10 @@ export function SearchViewImpl() {
 
   return (
     <div
-      className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""}`}
+      className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""} ${c.settings.compactMode ? "compact" : ""}`}
       ref={c.containerRef}
       onMouseDownCapture={(e) => {
+        c.clearActionSelection();
         if (e.target !== e.currentTarget) return;
         c.hideWindow();
       }}
@@ -469,7 +470,10 @@ export function SearchViewImpl() {
           ref={c.inputRef}
           type="text"
           value={c.inputValue}
-          onChange={(e) => c.setQuery(e.target.value)}
+          onChange={(e) => {
+            c.clearActionSelection();
+            c.setQuery(e.target.value);
+          }}
           placeholder={c.placeholder}
           autoFocus
         />
@@ -508,6 +512,7 @@ export function SearchViewImpl() {
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
+                c.clearActionSelection();
                 c.setTypeMenuOpen((v) => !v);
               }}
               aria-haspopup="menu"
@@ -534,6 +539,7 @@ export function SearchViewImpl() {
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
+                        c.clearActionSelection();
                         c.setSearchTypeId(opt.id);
                         c.setTypeMenuOpen(false);
                       }}
@@ -552,7 +558,10 @@ export function SearchViewImpl() {
 
         <button
           className="settings-btn"
-          onClick={c.openSettings}
+          onClick={() => {
+            c.clearActionSelection();
+            c.openSettings();
+          }}
           title="设置"
           type="button"
           aria-label="设置"
@@ -585,8 +594,14 @@ export function SearchViewImpl() {
                 ref={c.scrollContainerRef}
                 className="results-scroll-container"
                 style={{ maxHeight: c.MAX_LIST_HEIGHT, overflowY: "auto" }}
-                onWheel={() => c.setLastSelectedBy("mouse")}
-                onMouseDown={() => c.setLastSelectedBy("mouse")}
+                onWheel={() => {
+                  c.clearActionSelection();
+                  c.setLastSelectedBy("mouse");
+                }}
+                onMouseDown={() => {
+                  c.clearActionSelection();
+                  c.setLastSelectedBy("mouse");
+                }}
                 onMouseLeave={() => c.setHoveredKey("")}
               >
                 {/* 结果列表增量刷新时保持 hover 稳定：鼠标离开才清空 hoveredKey，避免 hover 视觉闪烁 */}

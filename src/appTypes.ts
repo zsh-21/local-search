@@ -41,6 +41,12 @@ export interface AppSettings {
   customAvatarPath: string;
   // 右侧按钮显示顺序：最多三项，由设置面板控制
   resultActionButtons: ResultActionButtonId[];
+
+  // 搜索窗口尺寸：初始宽高（最小/最大限制由系统内部固定）
+  searchWindowInitialWidth: number;
+  searchWindowMaxHeight: number;
+
+  compactMode: boolean;
 }
 
 // 搜索结果右侧操作按钮：最多展示三项，用户可在设置里选择与排序
@@ -69,6 +75,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backgroundImageOpacity: 0.25,
   customAvatarPath: "",
   resultActionButtons: ["openFolder", "copyPath", "deleteHistory"],
+  searchWindowInitialWidth: 720,
+  searchWindowMaxHeight: 760,
+  compactMode: false,
 };
 
 export type SearchTypeOption = { id: string; label: string };

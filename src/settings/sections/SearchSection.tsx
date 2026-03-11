@@ -45,6 +45,12 @@ export function SearchSection({
   const [newIgnoredPath, setNewIgnoredPath] = useState("");
   const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
   const [indexedCount, setIndexedCount] = useState(0);
+  const [searchWindowInitialWidthText, setSearchWindowInitialWidthText] = useState(
+    String(draft.searchWindowInitialWidth),
+  );
+  const [searchWindowMaxHeightText, setSearchWindowMaxHeightText] = useState(
+    String(draft.searchWindowMaxHeight),
+  );
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [tooltip, setTooltip] = useState<null | {
     text: string;
@@ -68,6 +74,14 @@ export function SearchSection({
     };
     void syncIndexing();
   }, []);
+
+  useEffect(() => {
+    setSearchWindowInitialWidthText(String(draft.searchWindowInitialWidth));
+  }, [draft.searchWindowInitialWidth]);
+
+  useEffect(() => {
+    setSearchWindowMaxHeightText(String(draft.searchWindowMaxHeight));
+  }, [draft.searchWindowMaxHeight]);
 
   useEffect(() => {
     if (!isRebuildingIndex) return;
@@ -192,6 +206,12 @@ export function SearchSection({
     next[idx] = tmp;
     setDraft({ ...draft, resultActionButtons: next });
     setError("");
+  };
+
+  const clampInt = (v: any, fallback: number, min: number, max: number) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(n)));
   };
 
   const normalizeIgnoredPath = (v: string) => v.replace(/\//g, "\\").trim().replace(/[\\]+$/g, "");
@@ -329,6 +349,73 @@ export function SearchSection({
           />
           <span>显示列表文件地址</span>
         </label>
+        <label className="setting-row">
+          <input
+            type="checkbox"
+            checked={draft.compactMode}
+            onChange={(e) => {
+              setDraft({ ...draft, compactMode: e.target.checked });
+              setError("");
+            }}
+          />
+          <span>紧凑模式</span>
+        </label>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">
+          <span>搜索窗口尺寸</span>
+        </div>
+        <div className="settings-hint">
+          初始宽度用于控制搜索窗口首次打开的宽度；最大高度用于控制搜索结果展开后的最大高度。
+          <br />
+          宽度范围 450-1000；高度最大值不超过当前显示器可用高度。
+        </div>
+        <div className="form-row">
+          <div className="form-label">初始宽度</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="numeric"
+            value={searchWindowInitialWidthText}
+            onChange={(e) => setSearchWindowInitialWidthText(e.target.value)}
+            onBlur={() => {
+              const raw = searchWindowInitialWidthText.trim();
+              const next = clampInt(raw, draft.searchWindowInitialWidth, 450, 1000);
+              setDraft({ ...draft, searchWindowInitialWidth: next });
+              setError("");
+              setSearchWindowInitialWidthText(String(next));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">最大高度</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="numeric"
+            value={searchWindowMaxHeightText}
+            onChange={(e) => setSearchWindowMaxHeightText(e.target.value)}
+            onBlur={() => {
+              const raw = searchWindowMaxHeightText.trim();
+              const max = Math.max(200, Math.floor(window.screen?.availHeight || 0));
+              const next = clampInt(raw, draft.searchWindowMaxHeight, 200, max);
+              setDraft({ ...draft, searchWindowMaxHeight: next });
+              setError("");
+              setSearchWindowMaxHeightText(String(next));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                (e.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+          />
+        </div>
       </div>
 
       <div className="settings-group">

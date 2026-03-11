@@ -85,7 +85,26 @@ export function SettingsViewImpl() {
   const membershipBadge = !c.isMember ? <span className="membership-badge">订阅可用</span> : null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") c.onClose();
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
+      if (e.key === "Escape") c.onClose();
+      return;
+    }
+
+    if (e.key === "Escape") {
+      c.onClose();
+      return;
+    }
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const keys: SettingsTabKey[] = ["account", ...NAV_ITEMS.map((x) => x.key)];
+      const idx = Math.max(0, keys.indexOf(c.activeKey));
+      const delta = e.key === "ArrowDown" ? 1 : -1;
+      const next = keys[(idx + delta + keys.length) % keys.length];
+      c.setActiveKey(next);
+    }
   };
 
   const currentMeta = useMemo(() => SECTION_META[c.activeKey], [c.activeKey]);

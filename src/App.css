@@ -983,6 +983,43 @@ input::placeholder {
   border: 1px solid transparent;
 }
 
+.search-container.compact .results li {
+  padding: 0 10px;
+  gap: 10px;
+  border-radius: 7px;
+}
+
+.search-container.compact .result-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.search-container.compact .result-icon.folder-emoji {
+  width: 20px;
+  height: 20px;
+  font-size: 16px;
+}
+
+.search-container.compact .result-icon.image-preview {
+  width: 28px;
+  height: 28px;
+}
+
+.search-container.compact .app-name {
+  font-size: 13.5px;
+}
+
+.search-container.compact .app-path {
+  font-size: 9.5px;
+  margin-top: 1px;
+}
+
+.search-container.compact .action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
 .results li.selected {
   background-color: var(--fs-accent-soft);
   color: var(--fs-accent);
@@ -2153,8 +2190,8 @@ html[data-theme="light"] .settings-nav-item:hover {
   width: 10px;
   height: 10px;
   background: var(--fs-surface);
-  border-left: 1px solid var(--fs-border);
-  border-top: 1px solid var(--fs-border);
+  border-right: 1px solid var(--fs-border);
+  border-bottom: 1px solid var(--fs-border);
   transform: rotate(45deg);
 }
 

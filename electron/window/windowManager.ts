@@ -49,7 +49,8 @@ export function getSettingsWindow() {
 export function createWindow() {
   const config = loadConfig();
   const bounds = config?.bounds;
-  const width = 720;
+  const settings = loadSettings();
+  const width = typeof settings?.searchWindowInitialWidth === 'number' ? settings.searchWindowInitialWidth : 720;
   const height = 76;
 
   const useBounds =
@@ -220,6 +221,13 @@ export function createSettingsWindow() {
 
 export function openSearchWindow() {
   const settings = loadSettings();
+  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+  const initW = clamp(
+    typeof settings?.searchWindowInitialWidth === 'number' ? settings.searchWindowInitialWidth : 720,
+    450,
+    1000,
+  );
+  const initH = 76;
   const sendOpenEvent = () => {
     // 首次呼出时渲染进程可能还在加载：这里统一在“实际 show 的时刻”发送事件，避免丢事件导致空白/状态不一致
     if (!win || win.isDestroyed()) return;
@@ -251,6 +259,12 @@ export function openSearchWindow() {
       return;
     }
 
+    // 未开启“保留运行状态”时，每次呼出面板都应用“初始宽高”配置（保留状态则尊重用户上次调整）
+    if (!settings.keepStateOnClose) {
+      try {
+        win.setContentSize(Math.round(initW), Math.round(initH));
+      } catch {}
+    }
     fileIndex.setSearchWindowVisible(true);
     // 清空缓存后需要在下次呼出面板时自动重建索引：这里确保索引为空时会触发 rebuild
     void fileIndex.buildIfEmpty();
