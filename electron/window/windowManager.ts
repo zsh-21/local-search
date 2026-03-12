@@ -280,8 +280,6 @@ export function openSearchWindow() {
       } catch {}
     }
     fileIndex.setSearchWindowVisible(true);
-    // 清空缓存后需要在下次呼出面板时自动重建索引：这里确保索引为空时会触发 rebuild
-    void fileIndex.buildIfEmpty().catch(() => {});
     searchWasFocusedSinceShow = false;
     searchAllowBlurHide = false;
     if (searchHideTimer) {
@@ -300,8 +298,6 @@ export function openSearchWindow() {
   win = null;
   createWindow();
   fileIndex.setSearchWindowVisible(true);
-  // 新窗口显示前触发一次“索引为空则重建”，避免用户首次呼出后看到空结果
-  void fileIndex.buildIfEmpty().catch(() => {});
   // 新建窗口时同样等页面首帧准备好再 show 与发事件，避免首次呼出空白
   showWhenReady();
 }

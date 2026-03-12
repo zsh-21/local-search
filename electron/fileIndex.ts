@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { createReadStream, createWriteStream, existsSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
@@ -131,6 +131,11 @@ export class FileIndex {
   private ignoredAnyDirNames = new Set<string>();
 	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
 	private preferredFileExts = new Set<string>();
+  // 增量落盘：watcher ingest/remove 会追加写入 cache，保证跨重启持久化
+  private cacheAppendWs: WriteStream | null = null;
+  private cacheAppendQueue: string[] = [];
+  private cacheAppendFlushing = false;
+  private cacheAppendTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: { cachePath: string; maxEntries?: number }) {
     this.cachePath = options.cachePath;
@@ -146,6 +151,16 @@ export class FileIndex {
     this.rebuildStartedAt = 0;
     this.partialPublished = false;
     this.lastYieldAt = 0;
+    this.cacheAppendQueue.length = 0;
+    this.cacheAppendFlushing = false;
+    if (this.cacheAppendTimer) {
+      clearTimeout(this.cacheAppendTimer);
+      this.cacheAppendTimer = null;
+    }
+    try {
+      this.cacheAppendWs?.end();
+    } catch {}
+    this.cacheAppendWs = null;
   }
 
   // 显式中止当前索引任务
@@ -275,6 +290,61 @@ export class FileIndex {
 		return this.db;
 	}
 
+  private ensureCacheAppendStream() {
+    if (this.cacheAppendWs) return this.cacheAppendWs;
+    try {
+      // 追加模式：避免覆盖已有缓存；目录不存在时由写入前的 mkdir 负责创建
+      this.cacheAppendWs = createWriteStream(this.cachePath, { encoding: 'utf-8', flags: 'a' });
+      this.cacheAppendWs.on('error', () => {
+        try {
+          this.cacheAppendWs?.end();
+        } catch {}
+        this.cacheAppendWs = null;
+      });
+      return this.cacheAppendWs;
+    } catch {
+      this.cacheAppendWs = null;
+      return null;
+    }
+  }
+
+  private async flushCacheAppendQueue() {
+    if (this.cacheAppendFlushing) return;
+    if (this.cacheAppendQueue.length === 0) return;
+    this.cacheAppendFlushing = true;
+    try {
+      await fs.mkdir(path.dirname(this.cachePath), { recursive: true }).catch(() => {});
+      const ws = this.ensureCacheAppendStream();
+      if (!ws) return;
+      while (this.cacheAppendQueue.length > 0) {
+        const chunk = this.cacheAppendQueue.splice(0, Math.min(200, this.cacheAppendQueue.length)).join('');
+        if (!chunk) continue;
+        if (!ws.write(chunk)) {
+          await new Promise<void>((resolve) => ws.once('drain', () => resolve()));
+        }
+      }
+    } catch {
+      // best effort: 落盘失败不影响索引内存态
+    } finally {
+      this.cacheAppendFlushing = false;
+    }
+  }
+
+  private enqueueCacheDelta(line: string) {
+    if (!line) return;
+    this.cacheAppendQueue.push(line.endsWith('\n') ? line : `${line}\n`);
+    if (this.cacheAppendQueue.length >= 300) {
+      void this.flushCacheAppendQueue();
+      return;
+    }
+    // 轻量延迟合并：减少高频 fs.watch 事件导致的频繁 I/O
+    if (this.cacheAppendTimer) return;
+    this.cacheAppendTimer = setTimeout(() => {
+      this.cacheAppendTimer = null;
+      void this.flushCacheAppendQueue();
+    }, 80);
+  }
+
 	private buildPathText(entryPath: string) {
 		// 将路径拆分为更适合搜索的文本：
 		// - 统一分隔符为 '\\'
@@ -377,6 +447,9 @@ export class FileIndex {
 			drive,
 		});
 		if (typeof id === 'string' && id) this.pathToId.set(key, id);
+
+    // 增量落盘：insert 追加写入缓存，保证重启后仍可快速 loadCache
+    this.enqueueCacheDelta(JSON.stringify({ op: 'i', p: entryPath, d: isDirectory ? 1 : 0, t: normalizedTimeMs }));
 	}
 
 	async removePath(entryPath: string) {
@@ -389,6 +462,9 @@ export class FileIndex {
 			await remove(db, id);
 		} catch {}
 		this.pathToId.delete(key);
+
+    // 增量落盘：remove 追加写入缓存（loadCache 时会回放并删除）
+    this.enqueueCacheDelta(JSON.stringify({ op: 'r', p: entryPath }));
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -442,9 +518,11 @@ export class FileIndex {
 				let p = '';
 				let isDirectory = false;
 				let timeMs = 0;
+        let op: 'i' | 'r' | '' = '';
 				if (raw.startsWith('{')) {
 					try {
 						const obj = JSON.parse(raw);
+						op = obj?.op === 'i' || obj?.op === 'r' ? obj.op : '';
 						p = typeof obj?.p === 'string' ? obj.p : '';
 						isDirectory = obj?.d === 1 || obj?.d === true;
 						timeMs = Number.isFinite(obj?.t) ? Math.max(0, Number(obj.t)) : 0;
@@ -457,6 +535,16 @@ export class FileIndex {
 				if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(p) && !p.startsWith('\\\\')) continue;
 				
 				const key = p.toLowerCase();
+        if (op === 'r') {
+          const id = this.pathToId.get(key);
+          if (id && this.db) {
+            try {
+              await remove(this.db, id);
+            } catch {}
+          }
+          this.pathToId.delete(key);
+          continue;
+        }
 				if (this.pathToId.has(key)) continue;
 				if (!isDirectory) {
 					const ext = path.extname(p).toLowerCase();
@@ -489,6 +577,8 @@ export class FileIndex {
 		} finally {
 			this.isIndexing = false;
 			this.pauseUntil = 0;
+      // loadCache 完成后刷新一次增量落盘队列（如运行期尚未 flush）
+      void this.flushCacheAppendQueue();
 		}
 	}
 

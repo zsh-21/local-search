@@ -340,9 +340,7 @@ export function registerIpcHandlers() {
     };
     const prevKey = normalizeIgnoredPathsForCompare(prevIgnoredPaths).join('|');
     const nextKey = normalizeIgnoredPathsForCompare(next.ignoredPaths).join('|');
-    if (prevKey !== nextKey) {
-      void fileIndex.rebuild().catch(() => {});
-    }
+    // 不再触发“全盘重建索引”：忽略规则会立即生效于 watcher 过滤与后续增量 ingest。
     return { ok: true };
   });
 
@@ -546,28 +544,6 @@ export function registerIpcHandlers() {
     } catch {
       return '';
     }
-  });
-
-  ipcMain.handle('rebuild-file-index', async (_event, options?: { ignoredPaths?: string[] }) => {
-    try {
-      if (Array.isArray(options?.ignoredPaths)) {
-        await fileIndex.setIgnoredPaths(options.ignoredPaths);
-      }
-      await fileIndex.rebuild();
-      return await fileIndex.getStatus();
-    } catch {
-      // 索引 Worker 可能因内存不足退出：此处兜底返回状态，避免未处理的 Promise rejection
-      return { isIndexing: false };
-    }
-  });
-
-  ipcMain.handle('abort-file-index', async () => {
-    await fileIndex.abortRebuild();
-    return await fileIndex.getStatus();
-  });
-
-  ipcMain.handle('get-file-index-status', async () => {
-    return await fileIndex.getStatus();
   });
 
   ipcMain.handle(

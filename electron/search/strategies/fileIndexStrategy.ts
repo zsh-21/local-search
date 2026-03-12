@@ -34,7 +34,6 @@ export const fileIndexStrategy: SearchStrategy = {
 
     let fileSearch: any = null;
     try {
-      await deps.fileIndex.buildIfEmpty();
       fileSearch = await deps.fileIndex.search(ctx.query, fileSearchLimit, where ? { where } : undefined);
     } catch {
       fileSearch = { results: [], isIndexing: false, totalCount: 0 };

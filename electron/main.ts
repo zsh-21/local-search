@@ -1,7 +1,7 @@
 import { app, globalShortcut, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { loadSettings } from './config/settings';
-import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, clearFileIndexCacheOnDisk, FILE_INDEX_VERSION } from './file/indexService';
+import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, FILE_INDEX_VERSION } from './file/indexService';
 import { startUserDirectoryWatchers, closeAllWatchers, trimRecentIndex } from './file/watcher';
 import {
   createWindow,
@@ -117,24 +117,13 @@ if (!gotTheLock) {
     void (async () => {
       try {
         const currentAppVersion = app.getVersion();
-        const metaBefore = loadFileIndexMeta();
-        const shouldRebuildBecauseUpdated =
-          Boolean(metaBefore) && (typeof metaBefore?.appVersion !== 'string' || metaBefore.appVersion !== currentAppVersion);
-        if (shouldRebuildBecauseUpdated) {
-          await fileIndex.abortRebuild();
-          await fileIndex.reset();
-          await clearFileIndexCacheOnDisk();
-        }
-
+        // 索引持久化策略：
+        // - 只加载本地缓存（可秒级可用），不再触发“全盘重建/扫描”
+        // - 运行期的新增/删除/改动由 watcher 增量更新并落盘
         await fileIndex.loadCache();
         const meta = loadFileIndexMeta();
-        if (!meta || meta.version !== FILE_INDEX_VERSION || shouldRebuildBecauseUpdated) {
-          // 版本不一致时需要彻底复位再重建：避免旧索引残留影响结果
-          await fileIndex.reset();
-          await fileIndex.rebuild();
+        if (!meta || meta.version !== FILE_INDEX_VERSION || meta.appVersion !== currentAppVersion) {
           saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion });
-        } else {
-          await fileIndex.buildIfEmpty();
         }
       } catch {}
     })();
