@@ -88,6 +88,10 @@ export function ShortcutsSection({
             <div className="shortcut-label">翻页选择</div>
             <input className="shortcut-input" readOnly value="PageUp / PageDown" />
           </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">切换结果按钮</div>
+            <input className="shortcut-input" readOnly value="Ctrl+← / Ctrl+→" />
+          </div>
         </div>
       </div>
     </div>

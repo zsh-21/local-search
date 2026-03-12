@@ -719,7 +719,7 @@ export function useSearchController() {
         setSelectedActionIndex(-1);
       }
 
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      if (e.ctrlKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
         if (results.length === 0) return;
         const item = results[selectedIndex];
         const ids = getVisibleActionIdsForItem(item);
@@ -738,6 +738,8 @@ export function useSearchController() {
           return next;
         });
         return;
+      }else{
+        setSelectedActionIndex(-1);
       }
 
       if (e.key === "Enter" && selectedActionIndex >= 0) {
