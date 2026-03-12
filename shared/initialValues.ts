@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS = {
   // 右侧按钮默认顺序：最多三项
   resultActionButtons: DEFAULT_RESULT_ACTION_BUTTONS,
   // 搜索窗口初始宽度：主进程创建窗口时使用
-  searchWindowInitialWidth: 460,
+  searchWindowInitialWidth: 600,
   // 搜索窗口最大高度：渲染端自适应 resize 时会受该值限制
   searchWindowMaxHeight: 360,
   // 搜索结果最大展示条数：用于限制 UI 列表渲染成本
