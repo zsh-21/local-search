@@ -30,7 +30,7 @@ export class RecursiveScanner implements Scanner {
   ): Promise<void> {
     // 动态并发控制：SSD 推荐 10-14，HDD 推荐 2-4
     // 在索引期间，过高的并发在 HDD 上会导致机械磁头频繁寻道，反而变慢并导致系统卡顿
-    const CONCURRENCY = isSSD ? 12 : 3; 
+    const CONCURRENCY = isSSD ? 4 : 1; 
     // 索引优先级策略：
     // 1) 先处理非 C 盘（Windows）
     // 2) 同一盘符内先处理浅层目录（3~4 层），再逐步深入（5~8 层，以此类推）
@@ -80,16 +80,19 @@ export class RecursiveScanner implements Scanner {
         const deferred = driveDeferred.get(driveKey) || [];
         let active = 0;
         let completed = false;
+        let resolveDone: (() => void) | null = null;
 
         const schedule = () => {
           if (completed) return;
           if (shouldStop()) {
             completed = true;
             resolve();
+            resolveDone?.();
             return;
           }
           if (queue.length === 0 && active === 0) {
             completed = true;
+            resolveDone?.();
             return;
           }
           while (active < CONCURRENCY && queue.length > 0) {
@@ -114,16 +117,10 @@ export class RecursiveScanner implements Scanner {
           }
         };
 
-        schedule();
-        const waitDone = () =>
-          new Promise<void>((r) => {
-            const tick = () => {
-              if (completed) return r();
-              setTimeout(tick, 8);
-            };
-            tick();
-          });
-        return waitDone();
+        return new Promise<void>((r) => {
+          resolveDone = r;
+          schedule();
+        });
       };
 
       const scanBands = async () => {

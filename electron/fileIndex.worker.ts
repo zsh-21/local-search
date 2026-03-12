@@ -77,7 +77,7 @@ parentPort?.on('message', async (msg: any) => {
 			return;
 		}
 		if (req.op === 'ingestPath') {
-			await fileIndex.ingestPath(req.payload.path, req.payload.isDirectory);
+			await fileIndex.ingestPath(req.payload.path, req.payload.isDirectory, req.payload.timeMs);
 			reply({ id: req.id, ok: true });
 			return;
 		}

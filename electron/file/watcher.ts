@@ -16,6 +16,13 @@ let windowsRootsRefreshTimer: ReturnType<typeof setInterval> | null = null;
 // 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一次 PowerShell
 const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
+const WATCH_EVENT_DEBOUNCE_MS = 260;
+const WATCH_MAX_IN_FLIGHT = 6;
+const watchDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const watchBacklog: string[] = [];
+const watchBacklogSet = new Set<string>();
+let watchInFlight = 0;
+
 // 最近变更索引：用于弥补 fs.watch 丢事件/全量索引未覆盖导致的“新建文件搜不到”
 const RECENT_INDEX_MAX = 30_000;
 export const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
@@ -24,6 +31,54 @@ let recentReconcileLastAt = 0;
 
 export function normalizeRecentKey(rawPath: string) {
   return typeof rawPath === 'string' ? rawPath.trim().toLowerCase() : '';
+}
+
+async function handleWatchPath(fullPath: string) {
+  try {
+    const st = await fs.stat(fullPath);
+    const isDir = st.isDirectory();
+    const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
+    upsertRecentIndex(fullPath, isDir, timeMs);
+    await fileIndex.ingestPath(fullPath, isDir, timeMs);
+  } catch {
+    recentIndex.delete(normalizeRecentKey(fullPath));
+    try {
+      await fileIndex.removePath(fullPath);
+    } catch {}
+  }
+}
+
+function drainWatchBacklog() {
+  while (watchInFlight < WATCH_MAX_IN_FLIGHT && watchBacklog.length > 0) {
+    const fullPath = watchBacklog.shift();
+    if (!fullPath) break;
+    const key = normalizeRecentKey(fullPath);
+    watchBacklogSet.delete(key);
+    watchInFlight += 1;
+    void (async () => {
+      try {
+        await handleWatchPath(fullPath);
+      } finally {
+        watchInFlight -= 1;
+        drainWatchBacklog();
+      }
+    })();
+  }
+}
+
+function scheduleWatchWork(fullPath: string) {
+  const key = normalizeRecentKey(fullPath);
+  if (!key) return;
+  const prev = watchDebounceTimers.get(key);
+  if (prev) clearTimeout(prev);
+  const timer = setTimeout(() => {
+    watchDebounceTimers.delete(key);
+    if (watchBacklogSet.has(key)) return;
+    watchBacklogSet.add(key);
+    watchBacklog.push(fullPath);
+    drainWatchBacklog();
+  }, WATCH_EVENT_DEBOUNCE_MS);
+  watchDebounceTimers.set(key, timer);
 }
 
 export function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs: number) {
@@ -130,26 +185,7 @@ export async function startUserDirectoryWatchers() {
           return path.join(normalized, raw);
         })();
         if (shouldSkipWatchPath(fullPath)) return;
-        setTimeout(() => {
-          // 事件回调处尽量避免同步 IO（existsSync/statSync），降低主进程卡顿概率
-          void (async () => {
-            try {
-              const st = await fs.stat(fullPath);
-              const isDir = st.isDirectory();
-              const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
-              upsertRecentIndex(fullPath, isDir, timeMs);
-              await fileIndex.ingestPath(fullPath, isDir);
-            } catch {
-              // stat 失败通常意味着文件被删除/无权限：按删除处理，保证索引尽快收敛
-              recentIndex.delete(normalizeRecentKey(fullPath));
-              try {
-                await fileIndex.removePath(fullPath);
-              } catch {
-                // 索引 Worker 可能异常退出：这里不影响 watcher 主流程，避免产生未处理的 Promise rejection
-              }
-            }
-          })();
-        }, 80);
+        scheduleWatchWork(fullPath);
       });
       userDirWatchers.set(key, w);
     } catch {}
@@ -286,6 +322,12 @@ export function closeAllWatchers() {
     clearInterval(windowsRootsRefreshTimer);
     windowsRootsRefreshTimer = null;
   }
+  for (const t of watchDebounceTimers.values()) {
+    clearTimeout(t);
+  }
+  watchDebounceTimers.clear();
+  watchBacklog.length = 0;
+  watchBacklogSet.clear();
   for (const w of userDirWatchers.values()) {
     try {
       w.close();

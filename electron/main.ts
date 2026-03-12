@@ -1,7 +1,7 @@
 import { app, globalShortcut, BrowserWindow } from 'electron';
 import path from 'node:path';
 import { loadSettings } from './config/settings';
-import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, FILE_INDEX_VERSION } from './file/indexService';
+import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, clearFileIndexCacheOnDisk, FILE_INDEX_VERSION } from './file/indexService';
 import { startUserDirectoryWatchers, closeAllWatchers, trimRecentIndex } from './file/watcher';
 import {
   createWindow,
@@ -37,16 +37,20 @@ function startResourceGuard() {
     void (async () => {
       try {
         const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-        if (rssMb >= 1536) {
+        if (rssMb >= 800) {
           await clearIconCaches();
-          trimRecentIndex(6000);
+          trimRecentIndex(4000);
           const status = await fileIndex.getStatus();
-          if (status.isIndexing) await fileIndex.abortRebuild();
+          if (status.isIndexing) {
+            await fileIndex.abortRebuild();
+            fileIndex.pauseIndexingFor(30_000);
+          }
           return;
         }
-        if (rssMb >= 1024) {
+        if (rssMb >= 600) {
           await clearIconCaches();
-          trimRecentIndex(12000);
+          trimRecentIndex(8000);
+          fileIndex.pauseIndexingFor(10_000);
         }
       } catch {}
       finally {
@@ -112,13 +116,23 @@ if (!gotTheLock) {
     setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
     void (async () => {
       try {
+        const currentAppVersion = app.getVersion();
+        const metaBefore = loadFileIndexMeta();
+        const shouldRebuildBecauseUpdated =
+          Boolean(metaBefore) && (typeof metaBefore?.appVersion !== 'string' || metaBefore.appVersion !== currentAppVersion);
+        if (shouldRebuildBecauseUpdated) {
+          await fileIndex.abortRebuild();
+          await fileIndex.reset();
+          await clearFileIndexCacheOnDisk();
+        }
+
         await fileIndex.loadCache();
         const meta = loadFileIndexMeta();
-        if (!meta || meta.version !== FILE_INDEX_VERSION) {
+        if (!meta || meta.version !== FILE_INDEX_VERSION || shouldRebuildBecauseUpdated) {
           // 版本不一致时需要彻底复位再重建：避免旧索引残留影响结果
           await fileIndex.reset();
           await fileIndex.rebuild();
-          saveFileIndexMeta({ version: FILE_INDEX_VERSION });
+          saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion });
         } else {
           await fileIndex.buildIfEmpty();
         }

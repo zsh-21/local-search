@@ -37,15 +37,15 @@ export const SETTINGS_WINDOW_MIN_HEIGHT = 520;
 // =========================
 
 // 索引版本：结构变更时递增，用于触发重建
-export const FILE_INDEX_VERSION = 5;
+export const FILE_INDEX_VERSION = 6;
 
 // Worker 数量限制：避免过多线程竞争导致性能抖动
-export const FILE_INDEX_WORKER_MIN = 2;
+export const FILE_INDEX_WORKER_MIN = 1;
 export const FILE_INDEX_WORKER_MAX = 4;
 
 // 索引最大条目数上限：防止超大索引导致内存不可控
-export const FILE_INDEX_TOTAL_MAX_ENTRIES_CAP = 2_000_000;
-export const FILE_INDEX_ENTRIES_PER_WORKER = 400_000;
+export const FILE_INDEX_TOTAL_MAX_ENTRIES_CAP = 500_000;
+export const FILE_INDEX_ENTRIES_PER_WORKER = 100_000;
 
 // =========================
 // 文件类型/目录过滤初始值（主进程侧）

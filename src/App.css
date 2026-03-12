@@ -269,8 +269,8 @@ html[data-theme="light"] .settings-logo {
 
 .back-to-top-btn {
   position: absolute;
-  right: 8px;
-  bottom: 6px;
+  right: 0;
+  bottom: 0;
   width: 24px;
   height: 24px;
   border-radius: 50%;

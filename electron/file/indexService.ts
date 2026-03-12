@@ -1,10 +1,11 @@
 import { app } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
 import { SystemDetector } from './systemDetector';
-import { getFileIndexMetaPath, getFileIndexPath, getFileIndexShardPath } from '../constants/storagePaths';
+import { getFileIndexMetaPath, getFileIndexPath, getFileIndexShardPath, getFileIndexShardTmpPath, getFileIndexTmpPath } from '../constants/storagePaths';
 import {
   FILE_INDEX_ENTRIES_PER_WORKER,
   FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
@@ -330,10 +331,10 @@ export const fileIndex = {
     );
   },
 
-  ingestPath: async (p: string, isDirectory: boolean) => {
+  ingestPath: async (p: string, isDirectory: boolean, timeMs?: number) => {
     // 路由到负责该路径的分片
     const shardIdx = getShardForPath(p);
-    await callShard(shardIdx, 'ingestPath', { path: p, isDirectory });
+    await callShard(shardIdx, 'ingestPath', { path: p, isDirectory, timeMs });
   },
 
   removePath: async (p: string) => {
@@ -344,10 +345,30 @@ export const fileIndex = {
   },
 
   search: async (query: string, limit: number, options?: { where?: any }) => {
-    // 1. 广播搜索
-    const results = await Promise.all(shards.map((_, i) => 
-      callShard<any>(i, 'search', { query, limit, options })
-    ));
+    const driveEq = (() => {
+      const w = options?.where;
+      if (!w) return null;
+      if (typeof (w as any)?.drive?.eq === 'string') return String((w as any).drive.eq || '');
+      const and = (w as any)?.and;
+      if (Array.isArray(and)) {
+        for (const it of and) {
+          if (typeof it?.drive?.eq === 'string') return String(it.drive.eq || '');
+        }
+      }
+      return null;
+    })();
+
+    const targetShardIndices = (() => {
+      if (process.platform !== 'win32') return shards.map((_, i) => i);
+      const d = typeof driveEq === 'string' ? driveEq.trim().toLowerCase() : '';
+      if (!/^[a-z]$/.test(d)) return shards.map((_, i) => i);
+      const shardIdx = getShardForPath(`${d}:\\`);
+      return [shardIdx];
+    })();
+
+    const results = await Promise.all(
+      targetShardIndices.map((i) => callShard<any>(i, 'search', { query, limit, options }))
+    );
     
     // 2. 合并结果：用 Top-K 插入替代全量 sort，降低高频搜索时的 CPU 波动
     const topResults: any[] = [];
@@ -383,18 +404,31 @@ export const fileIndex = {
   }
 };
 
-export function loadFileIndexMeta(): { version: number } | null {
+export async function clearFileIndexCacheOnDisk() {
+  const tasks: Array<Promise<any>> = [];
+  tasks.push(fs.rm(FILE_INDEX_META_PATH, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(FILE_INDEX_PATH, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(getFileIndexTmpPath(), { force: true }).catch(() => {}));
+  for (let i = 0; i < WORKER_COUNT; i++) {
+    tasks.push(fs.rm(getFileIndexShardPath(i), { force: true }).catch(() => {}));
+    tasks.push(fs.rm(getFileIndexShardTmpPath(i), { force: true }).catch(() => {}));
+  }
+  await Promise.all(tasks);
+}
+
+export function loadFileIndexMeta(): { version: number; appVersion?: string } | null {
   try {
     if (!existsSync(FILE_INDEX_META_PATH)) return null;
     const raw = JSON.parse(readFileSync(FILE_INDEX_META_PATH, 'utf-8'));
     if (typeof raw?.version !== 'number') return null;
-    return { version: raw.version };
+    const appVersion = typeof raw?.appVersion === 'string' ? raw.appVersion : undefined;
+    return { version: raw.version, appVersion };
   } catch {
     return null;
   }
 }
 
-export function saveFileIndexMeta(meta: { version: number }) {
+export function saveFileIndexMeta(meta: { version: number; appVersion?: string }) {
   try {
     writeFileSync(FILE_INDEX_META_PATH, JSON.stringify(meta));
   } catch {}

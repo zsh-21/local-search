@@ -13,6 +13,7 @@ export interface FileIndexEntry {
 	path: string;
 	name: string;
 	isDirectory: boolean;
+	timeMs?: number;
     // 索引时使用的可选字段
     kind?: string;
     ext?: string;
@@ -38,6 +39,7 @@ const SCHEMA = {
 	// 用于“路径分词搜索”：把完整路径拆成更适合分词的文本，支持用目录名/数字/扩展名组合检索
 	pathText: 'string',
 	isDirectory: 'boolean',
+	timeMs: 'number',
 	kind: 'enum',
 	ext: 'enum',
 	drive: 'enum',
@@ -338,7 +340,7 @@ export class FileIndex {
 		return out;
 	}
 
-	async ingestPath(entryPath: string, isDirectory: boolean) {
+	async ingestPath(entryPath: string, isDirectory: boolean, timeMs?: number) {
 		if (!entryPath) return;
 		// 增量 ingest 需要遵守上限：否则长期运行会无限膨胀，最终导致 Worker OOM
 		if (this.pathToId.size >= this.maxEntries) return;
@@ -361,6 +363,7 @@ export class FileIndex {
 		const pinyinFull = toPinyinFull(name);
 		const initials = toPinyinInitials(name);
 		const pathText = this.buildPathText(entryPath);
+		const normalizedTimeMs = Number.isFinite(timeMs) ? Math.max(0, Number(timeMs)) : 0;
 		const id = await insert(db, {
 			path: entryPath,
 			name,
@@ -368,6 +371,7 @@ export class FileIndex {
 			initials,
 			pathText,
 			isDirectory,
+			timeMs: normalizedTimeMs,
 			kind,
 			ext,
 			drive,
@@ -401,8 +405,8 @@ export class FileIndex {
 			const stream = createReadStream(this.cachePath, { encoding: 'utf-8' });
 			const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 			
-			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string; drive: string }> = [];
-			const BATCH_SIZE = 5000;
+			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string; drive: string; timeMs: number }> = [];
+		const BATCH_SIZE = 500;
 
 			const processBatch = async () => {
 				if (batch.length === 0) return;
@@ -414,6 +418,7 @@ export class FileIndex {
 					initials: toPinyinInitials(e.name),
 					pathText: this.buildPathText(e.path),
 					isDirectory: e.isDirectory,
+					timeMs: Number.isFinite(e.timeMs) ? e.timeMs : 0,
 					kind: e.kind,
 					ext: e.ext,
 					drive: e.drive
@@ -436,11 +441,13 @@ export class FileIndex {
 
 				let p = '';
 				let isDirectory = false;
+				let timeMs = 0;
 				if (raw.startsWith('{')) {
 					try {
 						const obj = JSON.parse(raw);
 						p = typeof obj?.p === 'string' ? obj.p : '';
 						isDirectory = obj?.d === 1 || obj?.d === true;
+						timeMs = Number.isFinite(obj?.t) ? Math.max(0, Number(obj.t)) : 0;
 					} catch {}
 				} else {
 					p = raw;
@@ -463,6 +470,7 @@ export class FileIndex {
 					ext: path.extname(p).toLowerCase(),
 					kind: classifyKind(isDirectory, path.extname(p).toLowerCase()),
 					drive: normalizeDrive(p),
+					timeMs,
 				});
 				count++;
 
@@ -521,7 +529,7 @@ export class FileIndex {
 		
 		let entryCount = 0;
 		const batch: FileIndexEntry[] = [];
-		const BATCH_SIZE = 2000;
+		const BATCH_SIZE = 500;
         let processedSinceYield = 0;
 
 		const flushBatch = async () => {
@@ -531,6 +539,7 @@ export class FileIndex {
 
 			const docs = toWrite.map((e) => {
 				const ext = e.ext || path.extname(e.name).toLowerCase();
+				const timeMs = Number.isFinite(e.timeMs) ? Math.max(0, Number(e.timeMs)) : 0;
 				return {
 					path: e.path,
 					name: e.name,
@@ -538,6 +547,7 @@ export class FileIndex {
 					initials: e.initials || toPinyinInitials(e.name),
 					pathText: this.buildPathText(e.path),
 					isDirectory: e.isDirectory,
+					timeMs,
 					kind: e.kind || classifyKind(e.isDirectory, ext),
 					ext,
 					drive: e.drive || normalizeDrive(e.path),
@@ -551,9 +561,25 @@ export class FileIndex {
 			}
 
 			// 写入缓存时处理背压：大索引构建时避免 write 堆积导致内存抖动
-			const lines = toWrite.map((e) => `${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0 })}\n`).join('');
-			if (!cacheWs.write(lines)) {
-				await new Promise<void>((resolve) => cacheWs.once('drain', () => resolve()));
+			const CHUNK_SIZE = 200;
+			let chunk: string[] = [];
+			for (let i = 0; i < toWrite.length; i++) {
+				const e = toWrite[i]!;
+				const timeMs = Number.isFinite(e.timeMs) ? Math.max(0, Number(e.timeMs)) : 0;
+				chunk.push(`${JSON.stringify({ p: e.path, d: e.isDirectory ? 1 : 0, t: timeMs })}\n`);
+				if (chunk.length >= CHUNK_SIZE) {
+					const lines = chunk.join('');
+					chunk = [];
+					if (!cacheWs.write(lines)) {
+						await new Promise<void>((resolve) => cacheWs.once('drain', () => resolve()));
+					}
+				}
+			}
+			if (chunk.length > 0) {
+				const lines = chunk.join('');
+				if (!cacheWs.write(lines)) {
+					await new Promise<void>((resolve) => cacheWs.once('drain', () => resolve()));
+				}
 			}
 		};
 
@@ -582,7 +608,7 @@ export class FileIndex {
 				if (!shouldIndexFile(false, ext)) return;
 			}
 			
-			batch.push(entry);
+			batch.push({ ...entry, timeMs: Number.isFinite(entry.timeMs) ? Math.max(0, Number(entry.timeMs)) : 0 });
 			entryCount++;
 		};
 
@@ -733,6 +759,7 @@ export class FileIndex {
 				path: p,
 				name: (doc?.name as string) || '',
 				isDirectory: Boolean(doc?.isDirectory),
+				timeMs: Number.isFinite(doc?.timeMs) ? Math.max(0, Number(doc.timeMs)) : 0,
 				score: (typeof score === 'number' ? score : 0) * 1000,
 			});
 			if (results.length >= limit) break;
