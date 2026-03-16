@@ -14,12 +14,12 @@ export interface FileIndexEntry {
 	name: string;
 	isDirectory: boolean;
 	timeMs?: number;
-    // 索引时使用的可选字?
-    kind?: string;
-    ext?: string;
-    drive?: string;
-    pinyin?: string;
-    initials?: string;
+	// 索引时使用的可选字段
+	kind?: string;
+	ext?: string;
+	drive?: string;
+	pinyin?: string;
+	initials?: string;
 }
 
 export interface FileIndexSearchResult extends FileIndexEntry {
@@ -32,6 +32,7 @@ export interface FileIndexStatus {
 }
 
 interface FlexSearchDoc {
+	[id: string]: any;
 	id: string;
 	path: string;
 	name: string;
@@ -76,7 +77,9 @@ const flexsearchEncode = (raw: string) => {
 		const isAscii = /^[a-z0-9]+$/.test(seg);
 		if (isAscii) {
 			push(seg);
-			const maxPrefix = Math.min(6, seg.length);
+			// 长前缀适度放宽：仅对较短英文词扩大前缀长度，避免长词生成过多 token
+			const baseMaxPrefix = seg.length <= 10 ? 10 : 6;
+			const maxPrefix = Math.min(baseMaxPrefix, seg.length);
 			for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
 			if (seg.length >= 4 && seg.length <= 16 && out.length < MAX_TOKENS) {
 				let added = 0;
@@ -92,13 +95,13 @@ const flexsearchEncode = (raw: string) => {
 
 		push(seg);
 
-		// ķִǿ֧֡ǰ׺ϼ磺Ŀ¼Ŀ¼ԡҲУ
-		//  token ֻ 2/3 ǰ׺ tokens ը
+		// 中文分词增强：支持“前缀组合检索”（例如：目录名“测试目录”，搜索“测试”也能命中）
+		// 控制 token 数量：只添加 2/3 字前缀，避免 tokens 爆炸
 		if (seg.length >= 2) push(seg.slice(0, 2));
 		if (seg.length >= 3) push(seg.slice(0, 3));
 
-		// ƥ token ״
-		// ֻԡĴʡ<=2 token㳣ü硰 
+		// 单字匹配会显著增加 token 数量，且容易带来噪声
+		// 这里只对“极短中文词”（长度<=2）启用逐字 token，满足常用检索（如“简 历”）
 		if (seg.length <= 2) {
 			for (let i = 0; i < seg.length; i++) push(seg[i]);
 		}
@@ -129,7 +132,7 @@ export class FileIndex {
   private ignoredAnyDirNames = new Set<string>();
 	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
 	private preferredFileExts = new Set<string>();
-  // 增量落盘：watcher ingest/remove 会追加写?cache，保证跨重启持久?
+  // 增量落盘：watcher ingest/remove 会追加写入 cache，保证跨重启持久化
   private cacheAppendWs: WriteStream | null = null;
   private cacheAppendQueue: string[] = [];
   private cacheAppendFlushing = false;
@@ -239,9 +242,9 @@ export class FileIndex {
 	}
 
 	setPreferredFileExtensions(list: string[]) {
-		// 规范化扩展名配置?
+		// 规范化扩展名配置
 		// - 统一小写
-		// - 无点号时自动补点?
+		// - 无点号时自动补点
 		// - 限制长度避免异常值影响排序逻辑
 		const raw = Array.isArray(list) ? list : [];
 		const next = new Set<string>();
