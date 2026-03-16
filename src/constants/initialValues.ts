@@ -86,7 +86,7 @@ export const SEARCH_WINDOW_BOTTOM_BAR_HEIGHT = 90;
 export const SEARCH_WINDOW_MIN_HEIGHT = SEARCH_WINDOW_TOP_BAR_HEIGHT;
 
 // 列表最小高度：避免窗口太矮导致交互困难
-export const SEARCH_LIST_MIN_HEIGHT = 400;
+export const SEARCH_LIST_MIN_HEIGHT = 120;
 
 // 类型下拉菜单最小可用空间：空间不足时走“向上展开/压缩”等策略
 export const TYPE_MENU_MIN_LIST_SPACE = 240;
