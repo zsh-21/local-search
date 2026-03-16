@@ -34,6 +34,10 @@ parentPort?.on('message', async (msg: any) => {
 			reply({ id: req.id, ok: true, result: await fileIndex.getStatus() });
 			return;
 		}
+		if (req.op === 'getDriveStats') {
+			reply({ id: req.id, ok: true, result: await fileIndex.getDriveStats() });
+			return;
+		}
 		if (req.op === 'setSearchWindowVisible') {
 			fileIndex.setSearchWindowVisible(Boolean(req.payload.visible));
 			reply({ id: req.id, ok: true });

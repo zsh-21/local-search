@@ -31,6 +31,7 @@ export const USER_DATA_FILENAMES = {
   fileIndex: "file-index.txt",
   // 索引元信息：记录索引版本等，用于判断是否需要 reset/rebuild
   fileIndexMeta: "file-index-meta.json",
+  indexStats: "file-index-stats.json",
 } as const;
 
 export function getUserDataRoot(): string {
@@ -108,6 +109,10 @@ export function getFileIndexTmpPath(): string {
 export function getFileIndexMetaPath(): string {
   // 索引元信息路径（file-index-meta.json）
   return getUserDataPath(USER_DATA_FILENAMES.fileIndexMeta);
+}
+
+export function getFileIndexStatsPath(): string {
+  return getUserDataPath(USER_DATA_FILENAMES.indexStats);
 }
 
 export function getFileIndexShardPath(shardIndex: number): string {

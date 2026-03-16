@@ -77,7 +77,44 @@ export class SystemDetector {
    */
   private async detectDrives(): Promise<DriveInfo[]> {
     if (platform() !== 'win32') return [];
-    
+
+    const buildFallback = (roots: string[]): DriveInfo[] => {
+      const items: DriveInfo[] = [];
+      for (const raw of roots) {
+        const trimmed = String(raw || '').trim();
+        if (!trimmed) continue;
+        const letter = trimmed.replace(/\\+$/, '').replace(/\/+$/, '');
+        const driveLetter = letter.endsWith(':') ? letter : `${letter}:`;
+        if (!/^[a-zA-Z]:$/.test(driveLetter)) continue;
+        const upper = driveLetter.toUpperCase();
+        items.push({
+          mountPoint: driveLetter,
+          fileSystem: 'Unknown',
+          isSystemDrive: upper === 'C:',
+          isSSD: false,
+        });
+      }
+      if (items.length === 0) {
+        return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true, isSSD: false }];
+      }
+      return items;
+    };
+
+    const fallbackByPsDrive = async (): Promise<DriveInfo[]> => {
+      try {
+        const { stdout } = await execAsync(
+          'powershell -NoProfile -Command "Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root"'
+        );
+        const roots = stdout
+          .split(/\r?\n/g)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return buildFallback(roots);
+      } catch {
+        return buildFallback(['C:']);
+      }
+    };
+
     try {
       // 使用 PowerShell 组合命令：
       // 1. Get-Volume 获取卷信息
@@ -85,8 +122,19 @@ export class SystemDetector {
       const { stdout } = await execAsync(
         'powershell -NoProfile -Command "Get-Volume | Where-Object DriveLetter -ne $null | ForEach-Object { $v = $_; $p = Get-Partition -DriveLetter $v.DriveLetter; $d = Get-Disk -Number $p.DiskNumber; [PSCustomObject]@{DriveLetter=$v.DriveLetter;FileSystem=$v.FileSystem;DriveType=$v.DriveType;IsSSD=($d.Model -match \'SSD\' -or $d.BusType -eq \'NVMe\')}} | ConvertTo-Json"'
       );
-      
-      const volumes = JSON.parse(stdout);
+
+      const raw = String(stdout || '').trim();
+      if (!raw) return await fallbackByPsDrive();
+      let volumes: any;
+      try {
+        volumes = JSON.parse(raw);
+      } catch {
+        try {
+          volumes = JSON.parse(raw.replace(/^\uFEFF/, ''));
+        } catch {
+          return await fallbackByPsDrive();
+        }
+      }
       const drives: DriveInfo[] = [];
       
       const list = Array.isArray(volumes) ? volumes : [volumes];
@@ -122,14 +170,22 @@ export class SystemDetector {
         });
       }
       
-      // 防御性兜底：解析成功但结果为空时，至少保留 C 盘，避免“索引秒结束但实际没扫描”
-      if (drives.length === 0) {
-        return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true, isSSD: false }];
+      if (drives.length === 0) return await fallbackByPsDrive();
+      const fallback = await fallbackByPsDrive();
+      const byMount = new Map<string, DriveInfo>();
+      for (const d of drives) {
+        const key = String(d.mountPoint || '').toUpperCase();
+        if (!key) continue;
+        byMount.set(key, d);
       }
-      return drives;
-    } catch (e) {
-      // 兜底：如果 PowerShell 失败，至少返回 C 盘（默认非 SSD 以保安全）
-      return [{ mountPoint: 'C:', fileSystem: 'Unknown', isSystemDrive: true, isSSD: false }];
+      for (const d of fallback) {
+        const key = String(d.mountPoint || '').toUpperCase();
+        if (!key || byMount.has(key)) continue;
+        byMount.set(key, d);
+      }
+      return Array.from(byMount.values());
+    } catch {
+      return await fallbackByPsDrive();
     }
   }
 

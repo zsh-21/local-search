@@ -38,6 +38,10 @@ export const fileIndexStrategy: SearchStrategy = {
     } catch {
       fileSearch = { results: [], isIndexing: false, totalCount: 0 };
     }
+    const rawCount = Number((fileSearch as any)?.rawCount ?? (fileSearch as any)?.totalCount ?? 0);
+    if (ctx.query && ctx.query.trim()) {
+      console.log(`[search] "${ctx.query}" matches=${rawCount}`);
+    }
 
     const fileResultsRaw: Array<{
       path: string;

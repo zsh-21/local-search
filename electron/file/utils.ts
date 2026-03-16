@@ -1,14 +1,25 @@
 import { IMAGE_EXTENSIONS, SHORTCUT_EXTENSIONS, SKIP_DIR_NAMES, VIDEO_EXTENSIONS } from '../constants/initialValues';
 
-// 文件扩展名集合已抽离：便于你统一调整“分类/是否索引”的策略
 export { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, SHORTCUT_EXTENSIONS };
 
-/**
- * 根据文件类型分类
- * @param isDirectory 是否为目录
- * @param ext 文件扩展名
- * @returns 'folder' | 'image' | 'video' | 'file'
- */
+const SKIP_FILE_NAMES = new Set([
+	"desktop.ini",
+	"thumbs.db",
+	"pagefile.sys",
+	"hiberfil.sys",
+	"swapfile.sys",
+	"ntuser.dat",
+	"ntuser.dat.log",
+	"ntuser.dat.log1",
+	"ntuser.dat.log2",
+	"bootmgr",
+	"bootnxt",
+]);
+
+function isHiddenName(name: string) {
+	return typeof name === 'string' && name.length > 1 && name.startsWith('.');
+}
+
 export function classifyKind(isDirectory: boolean, ext: string) {
 	if (isDirectory) return 'folder';
 	if (IMAGE_EXTENSIONS.has(ext)) return 'image';
@@ -16,34 +27,43 @@ export function classifyKind(isDirectory: boolean, ext: string) {
 	return 'file';
 }
 
-/**
- * 判断是否应该索引该文件
- * 策略：跳过快捷方式，避免搜索结果冗余
- */
 export function shouldIndexFile(isDirectory: boolean, ext: string) {
 	if (isDirectory) return true;
 	return !SHORTCUT_EXTENSIONS.has(ext);
 }
 
-/**
- * 规范化盘符格式
- * 例如：'C:\Users' -> 'c'
- */
 export function normalizeDrive(p: string) {
 	const raw = typeof p === 'string' ? p.trim() : '';
 	const m = raw.match(/^([a-zA-Z]):/);
 	return m ? m[1].toLowerCase() : '';
 }
 
-/**
- * 判断目录名是否应该跳过
- * 过滤开发工具配置目录、回收站、系统卷信息等无关目录
- */
 export function shouldSkipDirName(name: string) {
+	if (isHiddenName(name)) return true;
 	const lower = name.toLowerCase();
-	// 目录跳过规则已抽离：便于你集中增删“需要跳过的目录名”
 	if (SKIP_DIR_NAMES.has(lower)) return true;
+	return false;
+}
 
-	// 保留 Program Files 和 ProgramData，因为用户可能需要搜索其中的应用或配置文件
+export function shouldSkipFileName(name: string) {
+	if (isHiddenName(name)) return true;
+	const lower = String(name || '').toLowerCase();
+	if (SKIP_FILE_NAMES.has(lower)) return true;
+	return false;
+}
+
+export function shouldSkipHiddenOrSystemPath(targetPath: string) {
+	const raw = typeof targetPath === 'string' ? targetPath.trim() : '';
+	if (!raw) return false;
+	const normalized = raw.replace(/\//g, '\\').replace(/\\+/g, '\\');
+	const parts = normalized.split('\\').filter(Boolean);
+	for (const part of parts) {
+		if (!part) continue;
+		if (isHiddenName(part)) return true;
+		const lower = part.toLowerCase();
+		if (SKIP_DIR_NAMES.has(lower)) return true;
+	}
+	const leaf = parts[parts.length - 1] || '';
+	if (shouldSkipFileName(leaf)) return true;
 	return false;
 }

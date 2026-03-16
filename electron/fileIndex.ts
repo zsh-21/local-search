@@ -1,10 +1,10 @@
-import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import { createReadStream, createWriteStream, existsSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { create, insert, insertMultiple, search, count, remove, type Orama } from '@orama/orama';
+import { Document } from 'flexsearch';
 import { toPinyinFull, toPinyinInitials } from './pinyin';
-import { shouldIndexFile, normalizeDrive, classifyKind } from './file/utils';
+import { shouldIndexFile, normalizeDrive, classifyKind, shouldSkipHiddenOrSystemPath } from './file/utils';
 import { RecursiveScanner } from './file/scanners/recursiveScanner';
 import { UsnScanner } from './file/scanners/usnScanner';
 import { SystemDetector } from './file/systemDetector';
@@ -14,7 +14,7 @@ export interface FileIndexEntry {
 	name: string;
 	isDirectory: boolean;
 	timeMs?: number;
-    // 索引时使用的可选字段
+    // 索引时使用的可选字?
     kind?: string;
     ext?: string;
     drive?: string;
@@ -31,93 +31,91 @@ export interface FileIndexStatus {
 	indexedCount: number;
 }
 
-const SCHEMA = {
-	name: 'string',
-	pinyin: 'string',
-	initials: 'string',
-	path: 'string',
-	// 用于“路径分词搜索”：把完整路径拆成更适合分词的文本，支持用目录名/数字/扩展名组合检索
-	pathText: 'string',
-	isDirectory: 'boolean',
-	timeMs: 'number',
-	kind: 'enum',
-	ext: 'enum',
-	drive: 'enum',
-} as const;
+interface FlexSearchDoc {
+	id: string;
+	path: string;
+	name: string;
+	pinyin: string;
+	initials: string;
+	pathText: string;
+	isDirectory: boolean;
+	timeMs: number;
+	kind: string;
+	ext: string;
+	drive: string;
+}
 
-type FileDB = Orama<typeof SCHEMA>;
+const tokenizeCache = new Map<string, string[]>();
+const flexsearchEncode = (raw: string) => {
+	const s = (raw || '').toLowerCase();
+	if (!s) return [];
+	const cached = tokenizeCache.get(s);
+	if (cached) return cached.slice();
 
-const tokenizer = {
-	language: 'custom',
-	normalizationCache: new Map<string, string>(),
-	tokenize: (raw: string) => {
-		const s = (raw || '').toLowerCase();
-		if (!s) return [];
+	const out: string[] = [];
+	// token 上限：过低会导致“路径组合检索”丢关键 token（如 26-3 中的 3、扩展名 doc 等）
+	const MAX_TOKENS = 24;
+	let seen: Set<string> | null = null;
+	const push = (t: string) => {
+		if (!t) return;
+		if (out.length >= MAX_TOKENS) return;
+		if (seen) {
+			if (seen.has(t)) return;
+			seen.add(t);
+		} else if (out.length >= 4) {
+			seen = new Set(out);
+			if (seen.has(t)) return;
+			seen.add(t);
+		}
+		out.push(t);
+	};
 
-		const out: string[] = [];
-		// token 上限：过低会导致“路径组合查询”丢关键 token（如 26-3 中的 3、扩展名 doc 等）
-		const MAX_TOKENS = 24;
-		let seen: Set<string> | null = null;
-		const push = (t: string) => {
-			if (!t) return;
-			if (out.length >= MAX_TOKENS) return;
-			if (seen) {
-				if (seen.has(t)) return;
-				seen.add(t);
-			} else if (out.length >= 4) {
-				seen = new Set(out);
-				if (seen.has(t)) return;
-				seen.add(t);
-			}
-			out.push(t);
-		};
-
-		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
-		for (const seg of segs) {
-			if (!seg) continue;
-			const isAscii = /^[a-z0-9]+$/.test(seg);
-			if (isAscii) {
-				push(seg);
-				const maxPrefix = Math.min(4, seg.length);
-				for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
-				if (seg.length >= 4 && seg.length <= 16 && out.length < MAX_TOKENS) {
-					let added = 0;
-					const maxNgrams = 4;
-					for (let i = 0; i <= seg.length - 3; i++) {
-						push(seg.slice(i, i + 3));
-						added += 1;
-						if (added >= maxNgrams || out.length >= MAX_TOKENS) break;
-					}
-				}
-				continue;
-			}
-
+	const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
+	for (const seg of segs) {
+		if (!seg) continue;
+		const isAscii = /^[a-z0-9]+$/.test(seg);
+		if (isAscii) {
 			push(seg);
-
-			// 中文分词增强：支持“前缀组合检索”（例如：目录名“杂七杂八”，搜索“杂七”也能命中）
-			// 控制 token 数量：只添加 2/3 字前缀，避免 tokens 爆炸
-			if (seg.length >= 2) push(seg.slice(0, 2));
-			if (seg.length >= 3) push(seg.slice(0, 3));
-
-			// 单字匹配会显著增加 token 数量，且容易带来噪声。
-			// 这里仅对“极短中文词”（长度<=2）启用逐字 token，满足常用检索（如“简 历”）
-			if (seg.length <= 2) {
-				for (let i = 0; i < seg.length; i++) push(seg[i]);
+			const maxPrefix = Math.min(6, seg.length);
+			for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
+			if (seg.length >= 4 && seg.length <= 16 && out.length < MAX_TOKENS) {
+				let added = 0;
+				const maxNgrams = 4;
+				for (let i = 0; i <= seg.length - 3; i++) {
+					push(seg.slice(i, i + 3));
+					added += 1;
+					if (added >= maxNgrams || out.length >= MAX_TOKENS) break;
+				}
 			}
+			continue;
 		}
 
-		return out;
-	},
-};
+		push(seg);
 
+		// ķִǿ֧֡ǰ׺ϼ磺Ŀ¼Ŀ¼ԡҲУ
+		//  token ֻ 2/3 ǰ׺ tokens ը
+		if (seg.length >= 2) push(seg.slice(0, 2));
+		if (seg.length >= 3) push(seg.slice(0, 3));
+
+		// ƥ token ״
+		// ֻԡĴʡ<=2 token㳣ü硰 
+		if (seg.length <= 2) {
+			for (let i = 0; i < seg.length; i++) push(seg[i]);
+		}
+	}
+
+	tokenizeCache.set(s, out.slice());
+	return out;
+};
 export interface RebuildRoot {
   path: string;
   isSSD: boolean;
 }
 
 export class FileIndex {
-  private db: FileDB | null = null;
+  private index: Document<FlexSearchDoc> | null = null;
   private pathToId = new Map<string, string>();
+  private driveCounts = new Map<string, number>();
   private readonly cachePath: string;
   private readonly maxEntries: number;
   private isIndexing = false;
@@ -131,7 +129,7 @@ export class FileIndex {
   private ignoredAnyDirNames = new Set<string>();
 	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
 	private preferredFileExts = new Set<string>();
-  // 增量落盘：watcher ingest/remove 会追加写入 cache，保证跨重启持久化
+  // 增量落盘：watcher ingest/remove 会追加写?cache，保证跨重启持久?
   private cacheAppendWs: WriteStream | null = null;
   private cacheAppendQueue: string[] = [];
   private cacheAppendFlushing = false;
@@ -143,8 +141,9 @@ export class FileIndex {
   }
 
   reset() {
-    this.db = null;
+    this.index = null;
     this.pathToId.clear();
+    this.driveCounts.clear();
     this.isIndexing = false;
     this.abortRequested = false;
     this.pauseUntil = 0;
@@ -171,8 +170,31 @@ export class FileIndex {
 	async getStatus(): Promise<FileIndexStatus> {
 		return {
 			isIndexing: this.isIndexing,
-			indexedCount: this.db ? await count(this.db) : 0,
+			indexedCount: this.pathToId.size,
 		};
+	}
+
+	private getDriveKeyFromPath(entryPath: string) {
+		const drive = normalizeDrive(entryPath);
+		return drive || 'other';
+	}
+
+	private bumpDriveCount(driveKey: string, delta: number) {
+		if (!driveKey) return;
+		const prev = this.driveCounts.get(driveKey) || 0;
+		const next = prev + delta;
+		if (next <= 0) this.driveCounts.delete(driveKey);
+		else this.driveCounts.set(driveKey, next);
+	}
+
+	async getDriveStats(): Promise<{ totalCount: number; drives: Array<{ drive: string; count: number }> }> {
+		const drives = Array.from(this.driveCounts.entries())
+			.map(([drive, count]) => ({
+				drive: drive === 'other' ? 'other' : `${drive.toUpperCase()}:`,
+				count,
+			}))
+			.sort((a, b) => a.drive.localeCompare(b.drive));
+		return { totalCount: this.pathToId.size, drives };
 	}
 
 	setSearchWindowVisible(visible: boolean) {
@@ -217,9 +239,9 @@ export class FileIndex {
 	}
 
 	setPreferredFileExtensions(list: string[]) {
-		// 规范化扩展名配置：
+		// 规范化扩展名配置?
 		// - 统一小写
-		// - 无点号时自动补点号
+		// - 无点号时自动补点?
 		// - 限制长度避免异常值影响排序逻辑
 		const raw = Array.isArray(list) ? list : [];
 		const next = new Set<string>();
@@ -236,6 +258,7 @@ export class FileIndex {
 
 	isIgnoredPath(targetPath: string) {
 		if (!targetPath) return false;
+		if (shouldSkipHiddenOrSystemPath(targetPath)) return true;
 		const t = targetPath.replace(/\//g, '\\').replace(/\\+/g, '\\').toLowerCase();
 		if (this.ignoredAnyDirNames.size > 0) {
 			for (const name of this.ignoredAnyDirNames) {
@@ -283,17 +306,29 @@ export class FileIndex {
 		}
 	}
 
-	private async ensureDB() {
-		if (!this.db) {
-			this.db = await create({ schema: SCHEMA, components: { tokenizer } as any });
+	private createIndex() {
+		return new Document<FlexSearchDoc>({
+			tokenize: 'strict',
+			encode: flexsearchEncode,
+			document: {
+				id: 'id',
+				index: ['name', 'pinyin', 'initials', 'pathText'],
+				store: ['path', 'name', 'isDirectory', 'timeMs', 'kind', 'ext', 'drive'],
+			},
+		});
+	}
+
+	private async ensureIndex() {
+		if (!this.index) {
+			this.index = this.createIndex();
 		}
-		return this.db;
+		return this.index;
 	}
 
   private ensureCacheAppendStream() {
     if (this.cacheAppendWs) return this.cacheAppendWs;
     try {
-      // 追加模式：避免覆盖已有缓存；目录不存在时由写入前的 mkdir 负责创建
+      // 追加模式：避免覆盖已有缓存；目录不存在时由写入前?mkdir 负责创建
       this.cacheAppendWs = createWriteStream(this.cachePath, { encoding: 'utf-8', flags: 'a' });
       this.cacheAppendWs.on('error', () => {
         try {
@@ -324,7 +359,7 @@ export class FileIndex {
         }
       }
     } catch {
-      // best effort: 落盘失败不影响索引内存态
+      // best effort: 落盘失败不影响索引内存?
     } finally {
       this.cacheAppendFlushing = false;
     }
@@ -337,7 +372,7 @@ export class FileIndex {
       void this.flushCacheAppendQueue();
       return;
     }
-    // 轻量延迟合并：减少高频 fs.watch 事件导致的频繁 I/O
+    // 轻量延迟合并：减少高?fs.watch 事件导致的频?I/O
     if (this.cacheAppendTimer) return;
     this.cacheAppendTimer = setTimeout(() => {
       this.cacheAppendTimer = null;
@@ -348,8 +383,8 @@ export class FileIndex {
 	private buildPathText(entryPath: string) {
 		// 将路径拆分为更适合搜索的文本：
 		// - 统一分隔符为 '\\'
-		// - 用空格拼接各级目录与文件名
-		// - 保留扩展名（如 doc/docx）与数字片段（如 26-3 -> 26 3）
+		// - 用空格拼接各级目录与文件?
+		// - 保留扩展名（?doc/docx）与数字片段（如 26-3 -> 26 3?
 		const raw = typeof entryPath === 'string' ? entryPath.trim() : '';
 		if (!raw) return '';
 		const normalized = raw.replace(/\//g, '\\').replace(/\\+/g, '\\');
@@ -358,9 +393,9 @@ export class FileIndex {
 	}
 
 	private extractSearchTokens(rawQuery: string) {
-		// 从用户输入中提取“更可能有效”的检索 token：
+		// 从用户输入中提取“更可能有效”的检?token?
 		// - 支持用户把一段总结/说明直接粘贴到搜索框
-		// - 丢弃大量无意义停用词，保留目录名/数字/扩展名/英文缩写等
+		// - 丢弃大量无意义停用词，保留目录名/数字/扩展?英文缩写?
 		const s = (rawQuery || '').toLowerCase();
 		if (!s) return [];
 		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
@@ -371,7 +406,7 @@ export class FileIndex {
 			'可以',
 			'通过',
 			'或者',
-			'又',
+			'可',
 			'方式',
 			'搜索',
 			'文件',
@@ -395,10 +430,10 @@ export class FileIndex {
 			const isDigits = /^[0-9]+$/.test(token);
 			const isAscii = /^[a-z0-9]+$/.test(token);
 			if (isAscii) {
-				// 过滤掉无意义的单字符英文，但保留数字（如 3）
+				// 过滤掉无意义的单字符英文，但保留数字（如 3?
 				if (!isDigits && token.length <= 1) continue;
 			} else {
-				// 中文 token 太短往往噪声较大：长度为 1 的中文默认跳过
+				// 中文 token 太短往往噪声较大：长度为 1 的中文默认跳?
 				if (token.length <= 1) continue;
 			}
 
@@ -412,15 +447,15 @@ export class FileIndex {
 
 	async ingestPath(entryPath: string, isDirectory: boolean, timeMs?: number) {
 		if (!entryPath) return;
-		// 增量 ingest 需要遵守上限：否则长期运行会无限膨胀，最终导致 Worker OOM
+		//  ingest Ҫޣлͣյ Worker OOM
 		if (this.pathToId.size >= this.maxEntries) return;
 		if (process.platform === 'win32') {
-			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\\\')) return;
+			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\')) return;
 		} else {
 			if (!entryPath.startsWith('/')) return;
 		}
 
-		const db = await this.ensureDB();
+		const index = await this.ensureIndex();
 		const key = entryPath.toLowerCase();
 		if (this.pathToId.has(key)) return;
 		if (this.isIgnoredPath(entryPath)) return;
@@ -430,11 +465,14 @@ export class FileIndex {
 		if (!shouldIndexFile(isDirectory, ext)) return;
 		const kind = classifyKind(isDirectory, ext);
 		const drive = normalizeDrive(entryPath);
+		const driveKey = drive || 'other';
 		const pinyinFull = toPinyinFull(name);
 		const initials = toPinyinInitials(name);
 		const pathText = this.buildPathText(entryPath);
 		const normalizedTimeMs = Number.isFinite(timeMs) ? Math.max(0, Number(timeMs)) : 0;
-		const id = await insert(db, {
+
+		const doc: FlexSearchDoc = {
+			id: key,
 			path: entryPath,
 			name,
 			pinyin: pinyinFull,
@@ -445,11 +483,13 @@ export class FileIndex {
 			kind,
 			ext,
 			drive,
-		});
-		if (typeof id === 'string' && id) this.pathToId.set(key, id);
+		};
+		index.add(doc);
+		this.pathToId.set(key, key);
+		this.bumpDriveCount(driveKey, 1);
 
-    // 增量落盘：insert 追加写入缓存，保证重启后仍可快速 loadCache
-    this.enqueueCacheDelta(JSON.stringify({ op: 'i', p: entryPath, d: isDirectory ? 1 : 0, t: normalizedTimeMs }));
+		// ̣insert ׷д뻺棬֤Կɿ loadCache
+		this.enqueueCacheDelta(JSON.stringify({ op: 'i', p: entryPath, d: isDirectory ? 1 : 0, t: normalizedTimeMs }));
 	}
 
 	async removePath(entryPath: string) {
@@ -457,14 +497,15 @@ export class FileIndex {
 		const key = entryPath.toLowerCase();
 		const id = this.pathToId.get(key);
 		if (!id) return;
-		const db = await this.ensureDB();
+		const index = await this.ensureIndex();
 		try {
-			await remove(db, id);
+			index.remove(id);
 		} catch {}
 		this.pathToId.delete(key);
+		this.bumpDriveCount(this.getDriveKeyFromPath(entryPath), -1);
 
-    // 增量落盘：remove 追加写入缓存（loadCache 时会回放并删除）
-    this.enqueueCacheDelta(JSON.stringify({ op: 'r', p: entryPath }));
+		// ̣remove ׷д뻺棨loadCache ʱطŲɾ
+		this.enqueueCacheDelta(JSON.stringify({ op: 'r', p: entryPath }));
 	}
 
 	async loadCache(): Promise<boolean> {
@@ -474,51 +515,65 @@ export class FileIndex {
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
-		this.db = await create({ schema: SCHEMA, components: { tokenizer } as any });
+		this.index = this.createIndex();
 		this.pathToId.clear();
+		this.driveCounts.clear();
 
 		try {
 			const stream = createReadStream(this.cachePath, { encoding: 'utf-8' });
 			const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-			
-			const batch: Array<{ path: string; name: string; isDirectory: boolean; kind: string; ext: string; drive: string; timeMs: number }> = [];
-		const BATCH_SIZE = 500;
+
+			const batch: Array<{ path: string; isDirectory: boolean; timeMs: number }> = [];
+			const BATCH_SIZE = 500;
 
 			const processBatch = async () => {
 				if (batch.length === 0) return;
-				if (!this.db) return;
-				const docs = batch.map((e) => ({
-					path: e.path,
-					name: e.name,
-					pinyin: toPinyinFull(e.name),
-					initials: toPinyinInitials(e.name),
-					pathText: this.buildPathText(e.path),
-					isDirectory: e.isDirectory,
-					timeMs: Number.isFinite(e.timeMs) ? e.timeMs : 0,
-					kind: e.kind,
-					ext: e.ext,
-					drive: e.drive
-				}));
-				const ids = await insertMultiple(this.db, docs);
-			    for (let i = 0; i < docs.length; i++) {
-				    const p = docs[i]?.path;
-				    const id = (ids as any)[i];
-				    if (typeof p === 'string' && p && typeof id === 'string' && id) this.pathToId.set(p.toLowerCase(), id);
-			    }
-			    batch.length = 0;
+				if (!this.index) return;
+
+				for (const e of batch) {
+					const p = e.path;
+					if (!p) continue;
+					const key = p.toLowerCase();
+					if (this.pathToId.has(key)) continue;
+					if (this.isIgnoredPath(p)) continue;
+					if (!e.isDirectory) {
+						const ext = path.extname(p).toLowerCase();
+						if (!shouldIndexFile(false, ext)) continue;
+					}
+
+					const name = path.basename(p);
+					const ext = path.extname(p).toLowerCase();
+					const doc: FlexSearchDoc = {
+						id: key,
+						path: p,
+						name,
+						pinyin: toPinyinFull(name),
+						initials: toPinyinInitials(name),
+						pathText: this.buildPathText(p),
+						isDirectory: e.isDirectory,
+						timeMs: Number.isFinite(e.timeMs) ? Math.max(0, Number(e.timeMs)) : 0,
+						kind: classifyKind(e.isDirectory, ext),
+						ext,
+						drive: normalizeDrive(p),
+					};
+					this.index.add(doc);
+					this.pathToId.set(key, key);
+					this.bumpDriveCount(doc.drive || 'other', 1);
+				}
+				batch.length = 0;
 			};
 
 			let count = 0;
 			for await (const line of rl) {
 				const raw = line.trim();
 				if (!raw) continue;
-				
+
 				if (count >= this.maxEntries) break;
 
 				let p = '';
 				let isDirectory = false;
 				let timeMs = 0;
-        let op: 'i' | 'r' | '' = '';
+				let op: 'i' | 'r' | '' = '';
 				if (raw.startsWith('{')) {
 					try {
 						const obj = JSON.parse(raw);
@@ -532,34 +587,29 @@ export class FileIndex {
 				}
 				p = typeof p === 'string' ? p.trim() : '';
 				if (!p) continue;
-				if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(p) && !p.startsWith('\\\\')) continue;
-				
+				if (process.platform === 'win32' && !/^[a-zA-Z]:/.test(p) && !p.startsWith('\\')) continue;
+
 				const key = p.toLowerCase();
-        if (op === 'r') {
-          const id = this.pathToId.get(key);
-          if (id && this.db) {
-            try {
-              await remove(this.db, id);
-            } catch {}
-          }
-          this.pathToId.delete(key);
-          continue;
-        }
+				if (op === 'r') {
+					const existed = this.pathToId.has(key);
+					const id = this.pathToId.get(key);
+					if (id && this.index) {
+						try {
+							this.index.remove(id);
+						} catch {}
+					}
+					this.pathToId.delete(key);
+					if (existed) this.bumpDriveCount(this.getDriveKeyFromPath(p), -1);
+					continue;
+				}
 				if (this.pathToId.has(key)) continue;
 				if (!isDirectory) {
 					const ext = path.extname(p).toLowerCase();
 					if (!shouldIndexFile(false, ext)) continue;
 				}
+				if (this.isIgnoredPath(p)) continue;
 
-				batch.push({
-					path: p,
-					name: path.basename(p),
-					isDirectory,
-					ext: path.extname(p).toLowerCase(),
-					kind: classifyKind(isDirectory, path.extname(p).toLowerCase()),
-					drive: normalizeDrive(p),
-					timeMs,
-				});
+				batch.push({ path: p, isDirectory, timeMs });
 				count++;
 
 				if (batch.length >= BATCH_SIZE) {
@@ -569,36 +619,34 @@ export class FileIndex {
 			}
 			await processBatch();
 			await this.cooperativeYield(() => {});
-			
+
 			return count > 0;
 		} catch {
-			if (!this.db) this.db = await create({ schema: SCHEMA });
+			if (!this.index) this.index = this.createIndex();
 			return false;
 		} finally {
 			this.isIndexing = false;
 			this.pauseUntil = 0;
-      // loadCache 完成后刷新一次增量落盘队列（如运行期尚未 flush）
-      void this.flushCacheAppendQueue();
+			// loadCache ɺˢһ̶Уδ flush
+			void this.flushCacheAppendQueue();
 		}
 	}
 
 	async buildIfEmpty() {
-		const db = await this.ensureDB();
-		const cnt = await count(db);
-		if (cnt > 0) return;
+		if (this.pathToId.size > 0) return;
 		await this.rebuild();
 	}
 
 	/**
 	 * 重建索引
-	 * 核心逻辑：基于文档的分级策略选择扫描器
+	 * 核心逻辑：基于文档的分级策略选择扫描?
 	 * 
-	 * 策略选择逻辑：
-	 * 1. 尝试使用 USN 扫描器 (UsnScanner)
+	 * 策略选择逻辑?
+	 * 1. 尝试使用 USN 扫描?(UsnScanner)
 	 *    - 前置条件：hasNativeSupport (必须) + Admin (推荐) + NTFS (必须)
-	 *    - 如果检测失败或未集成，UsnScanner 会抛出异常
-	 * 2. 降级使用递归扫描器 (RecursiveScanner)
-	 *    - 场景：无原生插件、非 NTFS 分区、权限不足
+	 *    - 如果检测失败或未集成，UsnScanner 会抛出异?
+	 * 2. 降级使用递归扫描?(RecursiveScanner)
+	 *    - 场景：无原生插件、非 NTFS 分区、权限不?
 	 *    - 特性：使用并发队列优化 SSD 读取性能
 	 */
 	async rebuild(explicitRoots?: (string | RebuildRoot)[]) {
@@ -609,10 +657,11 @@ export class FileIndex {
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
 
-		const existingCount = this.db ? await count(this.db) : 0;
+		const existingCount = this.pathToId.size;
 		const publishIncrementally = existingCount <= 0;
-		const nextDb = await create({ schema: SCHEMA, components: { tokenizer } as any });
+		const nextIndex = this.createIndex();
 		const nextPathToId = new Map<string, string>();
+		const nextDriveCounts = new Map<string, number>();
 		const tmpPath = `${this.cachePath}.tmp`;
 		await fs.mkdir(path.dirname(this.cachePath), { recursive: true });
 		const cacheWs = createWriteStream(tmpPath, { encoding: 'utf-8' });
@@ -625,12 +674,16 @@ export class FileIndex {
 		const flushBatch = async () => {
 			if (batch.length === 0) return;
 			const toWrite = batch.slice();
-			batch.length = 0; // 立即清空，避免并发添加导致的重复或遗漏
+			batch.length = 0; // գⲢӵµظ©
 
-			const docs = toWrite.map((e) => {
+			for (const e of toWrite) {
 				const ext = e.ext || path.extname(e.name).toLowerCase();
 				const timeMs = Number.isFinite(e.timeMs) ? Math.max(0, Number(e.timeMs)) : 0;
-				return {
+				const key = e.path.toLowerCase();
+				if (nextPathToId.has(key)) continue;
+
+				const doc: FlexSearchDoc = {
+					id: key,
 					path: e.path,
 					name: e.name,
 					pinyin: e.pinyin || toPinyinFull(e.name),
@@ -642,15 +695,13 @@ export class FileIndex {
 					ext,
 					drive: e.drive || normalizeDrive(e.path),
 				};
-			});
-			const ids = await insertMultiple(nextDb, docs);
-			for (let i = 0; i < docs.length; i++) {
-				const p = docs[i]?.path;
-				const id = (ids as any)[i];
-				if (typeof p === 'string' && p && typeof id === 'string' && id) nextPathToId.set(p.toLowerCase(), id);
+				nextIndex.add(doc);
+				nextPathToId.set(key, key);
+				const driveKey = doc.drive || 'other';
+				nextDriveCounts.set(driveKey, (nextDriveCounts.get(driveKey) || 0) + 1);
 			}
 
-			// 写入缓存时处理背压：大索引构建时避免 write 堆积导致内存抖动
+			// д뻺ʱѹʱ write ѻڴ涶
 			const CHUNK_SIZE = 200;
 			let chunk: string[] = [];
 			for (let i = 0; i < toWrite.length; i++) {
@@ -672,20 +723,21 @@ export class FileIndex {
 				}
 			}
 		};
-
 		const maybePublishPartial = () => {
 			if (!publishIncrementally) return;
 			if (this.partialPublished) return;
 			if (Date.now() - this.rebuildStartedAt < 2500) return;
 			if (nextPathToId.size <= 0) return;
-			this.db = nextDb;
+			this.index = nextIndex;
 			this.pathToId = nextPathToId;
+			this.driveCounts = nextDriveCounts;
 			this.partialPublished = true;
 		};
 
 		if (publishIncrementally) {
-			this.db = nextDb;
+			this.index = nextIndex;
 			this.pathToId = nextPathToId;
+			this.driveCounts = nextDriveCounts;
 			this.partialPublished = true;
 		}
 
@@ -710,12 +762,12 @@ export class FileIndex {
 
         if (explicitRoots && explicitRoots.length > 0) {
             roots = explicitRoots.map(r => typeof r === 'string' ? r : r.path);
-            // 如果显式传入的根路径中有任何一个不是 SSD，则采取更稳健的并发策略
+            // 如果显式传入的根路径中有任何一个不?SSD，则采取更稳健的并发策略
             isSSD = explicitRoots.every(r => typeof r === 'string' ? true : r.isSSD);
         } else {
             try {
                 const info = await SystemDetector.getInstance().detect();
-                // 索引优先级：优先处理非 C 盘（Windows），避免系统盘占用 IO 影响体验
+                // 索引优先级：优先处理?C 盘（Windows），避免系统盘占?IO 影响体验
                 roots = info.drives
                     .slice()
                     .sort((a, b) => {
@@ -734,7 +786,7 @@ export class FileIndex {
             }
         }
 
-        // 策略选择：尝试 USN -> 降级 Recursive
+        // 策略选择：尝?USN -> 降级 Recursive
         try {
             const usnScanner = new UsnScanner(this.isIgnoredPath.bind(this));
             await usnScanner.scan(roots, addNext, shouldStop);
@@ -745,7 +797,7 @@ export class FileIndex {
             const wrappedProgress = async (entry: FileIndexEntry) => {
                 addNext(entry);
                 processedSinceYield++;
-                // 索引过程中更细粒度的控制：每处理 200 个文件（或根据负载调整）执行一次让步
+                // 索引过程中更细粒度的控制：每处理 200 个文件（或根据负载调整）执行一次让?
                 const yieldBatch = this.lowPriority ? 150 : 300;
                 if (processedSinceYield % yieldBatch === 0) {
                      if (batch.length >= BATCH_SIZE) await flushBatch();
@@ -757,7 +809,7 @@ export class FileIndex {
         }
 
 		try {
-			// 刷新剩余数据并完成构建
+			// 刷新剩余数据并完成构?
 			await flushBatch();
 			await new Promise<void>((resolve) => {
 				cacheWs.on('finish', () => resolve());
@@ -768,8 +820,9 @@ export class FileIndex {
 				await fs.unlink(tmpPath);
 			});
 
-			this.db = nextDb;
+			this.index = nextIndex;
 			this.pathToId = nextPathToId;
+			this.driveCounts = nextDriveCounts;
 		} finally {
 			try {
 				cacheWs.end();
@@ -779,98 +832,171 @@ export class FileIndex {
 		}
 	}
 
-	async search(
+		async search(
 		query: string,
 		limit = 100,
 		options?: { where?: any }
-	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number }> {
-		const db = await this.ensureDB();
+	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number; rawCount: number }> {
+		const index = await this.ensureIndex();
 		const queryLower = query.trim().toLowerCase();
-		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0 };
+		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0, rawCount: 0 };
 
-		// 允许用户粘贴一整段文本：这里先提取 token 再组合为搜索词
+		const matchesWhere = (doc: FlexSearchDoc, where?: any) => {
+			if (!where) return true;
+			const clauses = Array.isArray(where?.and) ? where.and : [where];
+			for (const clause of clauses) {
+				if (!clause) continue;
+				if (typeof clause.isDirectory === 'boolean' && doc.isDirectory !== clause.isDirectory) return false;
+				const ext = (doc.ext || '').toLowerCase();
+				const drive = (doc.drive || '').toLowerCase();
+				const inList = clause?.ext?.in;
+				const notInList = clause?.ext?.nin;
+				const eqDrive = clause?.drive?.eq;
+				if (Array.isArray(inList) && !inList.map((x: any) => String(x).toLowerCase()).includes(ext)) return false;
+				if (Array.isArray(notInList) && notInList.map((x: any) => String(x).toLowerCase()).includes(ext)) return false;
+				if (typeof eqDrive === 'string' && eqDrive.toLowerCase() !== drive) return false;
+			}
+			return true;
+		};
+
+		const normalizeResults = (raw: any): Array<{ id: string; doc: FlexSearchDoc | null; rank: number }> => {
+			const out: Array<{ id: string; doc: FlexSearchDoc | null }> = [];
+			const seen = new Set<string>();
+			const push = (id: any, doc: any) => {
+				const key = typeof id === 'string' || typeof id === 'number' ? String(id) : '';
+				if (!key || seen.has(key)) return;
+				seen.add(key);
+				out.push({ id: key, doc: doc || null });
+			};
+
+			if (Array.isArray(raw)) {
+				if (raw.length > 0 && raw[0] && typeof raw[0] === 'object' && 'id' in raw[0]) {
+					for (const item of raw) push((item as any).id, (item as any).doc);
+				} else {
+					for (const group of raw) {
+						const result = (group as any)?.result;
+						if (!Array.isArray(result)) continue;
+						for (const item of result) {
+							if (item && typeof item === 'object' && 'id' in item) {
+								push((item as any).id, (item as any).doc);
+							} else {
+								push(item, null);
+							}
+						}
+					}
+				}
+			}
+
+			const size = out.length;
+			return out.map((item, idx) => ({
+				...item,
+				rank: Math.max(1, size - idx),
+			}));
+		};
+
+		const doSearch = (term: string, l: number) => {
+			const raw = index.search(term, {
+				limit: l,
+				enrich: true,
+				merge: true,
+				field: ['name', 'pinyin', 'initials', 'pathText'],
+			}) as any;
+			return normalizeResults(raw);
+		};
+
+		// ûճһıȡ token Ϊ
 		const tokens = this.extractSearchTokens(queryLower);
 		const normalizedTerm = tokens.length > 0 ? tokens.join(' ') : queryLower;
 
-		const doSearch = async (term: string, l: number) => {
-			return await search(db, {
-				term,
-				// 搜索字段：支持“目录 + 文件名 + 扩展名”组合检索
-				properties: ['name', 'pinyin', 'initials', 'pathText'],
-				limit: l,
-				threshold: 1,
-				boost: { name: 2, pinyin: 1.4, initials: 1.2, pathText: 1.35 },
-				where: options?.where,
-			});
-		};
+		let mergedHits = doSearch(normalizedTerm, limit * 3);
 
-		const searchResult = await doSearch(normalizedTerm, limit * 2);
-
-		// 如果“整句搜索”没有命中且 token 较多，则降级为“按 token 合并”
-		const hitsRaw = (searchResult as any).hits || [];
-		let mergedHits = hitsRaw;
+		// δ token ϶࣬򽵼Ϊ token ϲ
 		if (mergedHits.length === 0 && tokens.length >= 2) {
-			const merged = new Map<string, { doc: any; scoreSum: number; hitCount: number }>();
+			const merged = new Map<string, { doc: FlexSearchDoc | null; scoreSum: number; hitCount: number }>();
 			const tokenList = tokens.slice(0, 6);
 			for (const t of tokenList) {
-				const r = await doSearch(t, Math.max(limit, 120));
-				for (const hit of (r as any).hits || []) {
-					const p = hit?.document?.path as string;
-					if (!p) continue;
-					const key = p.toLowerCase();
+				const hits = doSearch(t, Math.max(limit, 120));
+				for (const hit of hits) {
+					const doc = hit.doc || (index.get(hit.id) as any);
+					if (!doc?.path) continue;
+					const key = String(hit.id);
 					const prev = merged.get(key);
-					const score = typeof hit?.score === 'number' ? hit.score : 0;
+					const score = hit.rank || 0;
 					if (prev) {
 						prev.scoreSum += score;
 						prev.hitCount += 1;
 					} else {
-						merged.set(key, { doc: hit.document, scoreSum: score, hitCount: 1 });
+						merged.set(key, { doc, scoreSum: score, hitCount: 1 });
 					}
 				}
 			}
 			mergedHits = Array.from(merged.values())
 				.map((x) => ({
-					document: x.doc,
-					// 命中多个 token 的结果优先：在累计分数上做轻微加成
-					score: x.scoreSum + x.hitCount * 0.15,
+					id: x.doc?.path ? x.doc.path.toLowerCase() : '',
+					doc: x.doc,
+					rank: x.scoreSum + x.hitCount * 0.15,
 				}))
-				.sort((a, b) => (b.score || 0) - (a.score || 0))
-				.slice(0, limit * 2);
+				.sort((a, b) => (b.rank || 0) - (a.rank || 0))
+				.slice(0, limit * 3);
 		}
 
+		const rawCount = Array.isArray(mergedHits) ? mergedHits.length : 0;
 		const results: FileIndexSearchResult[] = [];
 		for (const hit of mergedHits || []) {
-			const doc = hit.document;
-			const score = hit.score;
+			const doc = (hit.doc || (index.get(hit.id) as any)) as FlexSearchDoc | null;
 			const p = doc?.path as string;
 			if (!p || this.isIgnoredPath(p)) continue;
+			if (!doc || !matchesWhere(doc, options?.where)) continue;
+
+			const nameLower = String(doc.name || '').toLowerCase();
+			let score = Number(hit.rank || 0) * 10;
+			if (nameLower === queryLower) score += 5000;
+			else if (nameLower.startsWith(queryLower)) score += 2000;
+			else if (nameLower.includes(queryLower)) score += 600;
+			const pathLower = String(doc.path || '').toLowerCase();
+			if (pathLower.includes(queryLower)) score += 200;
 
 			results.push({
 				path: p,
 				name: (doc?.name as string) || '',
 				isDirectory: Boolean(doc?.isDirectory),
 				timeMs: Number.isFinite(doc?.timeMs) ? Math.max(0, Number(doc.timeMs)) : 0,
-				score: (typeof score === 'number' ? score : 0) * 1000,
+				score,
 			});
 			if (results.length >= limit) break;
 		}
 
-		// totalCount 在“按 token 合并”模式下不再可信，这里以实际结果数量作为兜底
-		const totalCount = typeof (searchResult as any).count === 'number' ? (searchResult as any).count : results.length;
-		return { results, isIndexing: this.isIndexing, totalCount };
-	}
+		const totalCount = results.length;
+		return { results, isIndexing: this.isIndexing, totalCount, rawCount };
 
-	async countMatches(query: string, options?: { where?: any }) {
-		const db = await this.ensureDB();
-		const queryLower = query.trim().toLowerCase();
-		if (!queryLower) return { totalCount: 0, isIndexing: this.isIndexing };
-		const resp = await search(db, {
-			term: queryLower,
-			// 计数逻辑与 search 对齐，否则会出现“结果能搜到但 totalCount 不一致”
-			properties: ['name', 'pinyin', 'initials', 'pathText'],
-			where: options?.where,
-			preflight: true,
-		});
-		return { totalCount: (resp as any).count || 0, isIndexing: this.isIndexing };
 	}
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

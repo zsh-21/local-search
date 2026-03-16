@@ -4,16 +4,17 @@ import { existsSync, watch } from 'node:fs';
 import fs from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileIndex, isIgnoredPathByCache } from './indexService';
+import { shouldSkipHiddenOrSystemPath } from './utils';
 
-// 运行期可能插拔U盘，watcher 需要按 root 动态增删
+// 运行期可能插拔U盘，watcher 需要按 root 动态增�?
 const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 // Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
 let windowsFileSystemRootsCache: string[] = [];
-// Windows 盘符缓存的最后刷新时间：降低 PowerShell 调用频率，减少后台常驻资源消耗
+// Windows 盘符缓存的最后刷新时间：降低 PowerShell 调用频率，减少后台常驻资源消�?
 let windowsFileSystemRootsLastAt = 0;
 let windowsRootsRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
-// 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一次 PowerShell
+// 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一�?PowerShell
 const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 2 * 60 * 1000;
 
 const WATCH_EVENT_DEBOUNCE_MS = 260;
@@ -23,7 +24,7 @@ const watchBacklog: string[] = [];
 const watchBacklogSet = new Set<string>();
 let watchInFlight = 0;
 
-// 最近变更索引：用于弥补 fs.watch 丢事件/全量索引未覆盖导致的“新建文件搜不到”
+// 最近变更索引：用于弥补 fs.watch 丢事�?全量索引未覆盖导致的“新建文件搜不到�?
 const RECENT_INDEX_MAX = 30_000;
 export const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
 let recentReconcileInFlight = false;
@@ -82,7 +83,7 @@ function scheduleWatchWork(fullPath: string) {
 }
 
 export function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs: number) {
-  // 最近变更索引：只保存必要字段，优先保证“新建/刚改动”的内容可被搜索到
+  // 最近变更索引：只保存必要字段，优先保证“新�?刚改动”的内容可被搜索�?
   const key = normalizeRecentKey(fullPath);
   if (!key) return;
   const name = path.basename(fullPath);
@@ -138,8 +139,9 @@ async function getWindowsFileSystemRoots(): Promise<string[]> {
 }
 
 export function shouldSkipWatchPath(fullPath: string) {
-  // watcher 的过滤必须快速：这里用主进程缓存的 ignore 规则避免跨线程往返
+  // watcher 的过滤必须快速：这里用主进程缓存�?ignore 规则避免跨线程往�?
   if (isIgnoredPathByCache(fullPath)) return true;
+  if (shouldSkipHiddenOrSystemPath(fullPath)) return true;
   const lower = fullPath.toLowerCase();
   return (
     lower.includes('\\node_modules\\') ||
@@ -169,9 +171,9 @@ export async function startUserDirectoryWatchers() {
       const w = watch(normalized, { recursive: true }, (_eventType, filename) => {
         if (!filename) return;
         const raw = filename.toString().replace(/\//g, '\\');
-        // Windows 的 fs.watch 可能返回以单反斜杠开头的路径（例如 \Users\...\a.txt）：
+        // Windows �?fs.watch 可能返回以单反斜杠开头的路径（例�?\Users\...\a.txt）：
         // - path.isAbsolute('\\Users\\...') === true，但它缺少盘符，无法用于打开/索引
-        // - 这里以 watcher 根目录的盘符进行补齐，确保 recentIndex 与索引写入始终是“可用的绝对路径”
+        // - 这里�?watcher 根目录的盘符进行补齐，确�?recentIndex 与索引写入始终是“可用的绝对路径�?
         const fullPath = (() => {
           if (process.platform !== 'win32') return path.isAbsolute(raw) ? raw : path.join(normalized, raw);
           const isWinFullAbs = /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\');
@@ -179,7 +181,7 @@ export async function startUserDirectoryWatchers() {
           if (raw.startsWith('\\')) {
             const drive = normalized.slice(0, 2);
             if (/^[a-zA-Z]:$/.test(drive)) return `${drive}${raw}`;
-            // 非盘符根（例如 UNC 根）时，去掉开头的反斜杠再拼接，避免 path.join 被“绝对段”覆盖
+            // 非盘符根（例�?UNC 根）时，去掉开头的反斜杠再拼接，避�?path.join 被“绝对段”覆�?
             return path.join(normalized, raw.replace(/^\\+/, ''));
           }
           return path.join(normalized, raw);
@@ -192,11 +194,11 @@ export async function startUserDirectoryWatchers() {
   };
 
   const refreshRootsAndWatch = async () => {
-    // Windows 盘符可能运行期变化（U盘/移动硬盘），这里定时刷新并增删 watcher
+    // Windows 盘符可能运行期变化（U�?移动硬盘），这里定时刷新并增�?watcher
     if (process.platform === 'win32') {
       try {
         const now = Date.now();
-        // 降低 PowerShell 调用频率：在刷新间隔内直接复用缓存结果
+        // 降低 PowerShell 调用频率：在刷新间隔内直接复用缓存结�?
         if (now - windowsFileSystemRootsLastAt > WINDOWS_ROOTS_REFRESH_INTERVAL_MS || windowsFileSystemRootsCache.length === 0) {
           windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
           windowsFileSystemRootsLastAt = now;
@@ -242,7 +244,7 @@ export async function startUserDirectoryWatchers() {
 }
 
 export async function reconcileRecentIndex(budgetMs = 1200) {
-  // 兜底扫描：当 fs.watch 丢事件或全量索引未覆盖时，尽量把“最近新增/改动”的文件补进 recentIndex
+  // 兜底扫描：当 fs.watch 丢事件或全量索引未覆盖时，尽量把“最近新�?改动”的文件补进 recentIndex
   if (recentReconcileInFlight) return;
   const now = Date.now();
   if (now - recentReconcileLastAt < 2000) return;
@@ -298,7 +300,7 @@ export async function reconcileRecentIndex(budgetMs = 1200) {
           const fullPath = path.join(dir, ent.name);
           if (shouldSkipWatchPath(fullPath)) continue;
           try {
-            // 兜底扫描属于后台任务：使用异步 stat，避免阻塞主进程
+            // 兜底扫描属于后台任务：使用异�?stat，避免阻塞主进程
             const st = await fs.stat(fullPath);
             const isDir = st.isDirectory();
             const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
@@ -337,3 +339,5 @@ export function closeAllWatchers() {
 }
 
 export { getWindowsFileSystemRoots };
+
+

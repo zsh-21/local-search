@@ -1,7 +1,10 @@
 import { app, globalShortcut, BrowserWindow } from 'electron';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadSettings } from './config/settings';
 import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, FILE_INDEX_VERSION } from './file/indexService';
+import { SystemDetector } from './file/systemDetector';
+import { getFileIndexStatsPath } from './constants/storagePaths';
 import { startUserDirectoryWatchers, closeAllWatchers, trimRecentIndex } from './file/watcher';
 import {
   createWindow,
@@ -25,6 +28,68 @@ process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.
 
 let resourceGuardTimer: ReturnType<typeof setInterval> | null = null;
 let resourceGuardInFlight = false;
+let indexStatsTimer: ReturnType<typeof setInterval> | null = null;
+let indexStatsInFlight = false;
+let lastIndexStatsSignature = '';
+let lastIndexingState = false;
+
+function buildDriveSignature(drives: Array<{ mountPoint?: string }>) {
+  const list = drives
+    .map((d) => String(d?.mountPoint || '').trim())
+    .filter(Boolean)
+    .map((d) => d.toUpperCase())
+    .sort();
+  return list.join('|');
+}
+
+function startIndexStatsWriter() {
+  if (indexStatsTimer) {
+    clearInterval(indexStatsTimer);
+    indexStatsTimer = null;
+  }
+  const statsPath = getFileIndexStatsPath();
+  indexStatsTimer = setInterval(() => {
+    if (indexStatsInFlight) return;
+    indexStatsInFlight = true;
+    void (async () => {
+      try {
+        const [stats, status] = await Promise.all([fileIndex.getDriveStats(), fileIndex.getStatus()]);
+        const signature = JSON.stringify({
+          totalCount: stats.totalCount,
+          drives: stats.drives,
+          isIndexing: status.isIndexing,
+        });
+        if (signature !== lastIndexStatsSignature) {
+          const payload = {
+            updatedAt: new Date().toISOString(),
+            isIndexing: status.isIndexing,
+            totalCount: stats.totalCount,
+            drives: stats.drives,
+          };
+          await fs.mkdir(path.dirname(statsPath), { recursive: true }).catch(() => {});
+          await fs.writeFile(statsPath, JSON.stringify(payload, null, 2), 'utf-8');
+          lastIndexStatsSignature = signature;
+        }
+        if (lastIndexingState && !status.isIndexing) {
+          const driveSummary = Array.isArray(stats.drives)
+            ? stats.drives.map((d) => `${d.drive}=${d.count}`).join(', ')
+            : '';
+          console.log(`[index] complete total=${stats.totalCount} drives=${driveSummary}`);
+        }
+        lastIndexingState = status.isIndexing;
+      } catch {
+      } finally {
+        indexStatsInFlight = false;
+      }
+    })();
+  }, 2000);
+}
+
+function stopIndexStatsWriter() {
+  if (!indexStatsTimer) return;
+  clearInterval(indexStatsTimer);
+  indexStatsTimer = null;
+}
 
 function startResourceGuard() {
   if (resourceGuardTimer) {
@@ -111,6 +176,7 @@ if (!gotTheLock) {
     } catch {}
     void startUserDirectoryWatchers();
     startResourceGuard();
+    startIndexStatsWriter();
     app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 
     setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
@@ -120,10 +186,20 @@ if (!gotTheLock) {
         // 索引持久化策略：
         // - 只加载本地缓存（可秒级可用），不再触发“全盘重建/扫描”
         // - 运行期的新增/删除/改动由 watcher 增量更新并落盘
-        await fileIndex.loadCache();
+        const cacheLoaded = await fileIndex.loadCache();
         const meta = loadFileIndexMeta();
-        if (!meta || meta.version !== FILE_INDEX_VERSION || meta.appVersion !== currentAppVersion) {
-          saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion });
+        const systemInfo = await SystemDetector.getInstance().detect();
+        const driveSignature = buildDriveSignature(systemInfo?.drives || []);
+        const shouldRebuild =
+          !meta ||
+          meta.version !== FILE_INDEX_VERSION ||
+          meta.appVersion !== currentAppVersion ||
+          meta.driveSignature !== driveSignature;
+        if (shouldRebuild) {
+          saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion, driveSignature });
+          void fileIndex.rebuild();
+        } else if (!cacheLoaded) {
+          void fileIndex.buildIfEmpty();
         }
       } catch {}
     })();
@@ -132,6 +208,7 @@ if (!gotTheLock) {
 
 app.on('will-quit', () => {
   stopResourceGuard();
+  stopIndexStatsWriter();
   globalShortcut.unregisterAll();
   closeAllWatchers();
 });
