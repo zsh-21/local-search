@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { AppSettings, DEFAULT_SETTINGS, ResultActionButtonId, SearchTypeOption } from "./appTypes";
+import { AppItem, AppSettings, DEFAULT_SETTINGS, ResultActionButtonId, SearchTypeOption } from "./appTypes";
 import { BASE_SEARCH_TYPE_IDS, FS_BACKUP_SETTINGS_KEY } from "./constants/initialValues";
 import { useStoredMembership } from "./membership";
 
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
-  const theme: AppSettings["theme"] = s?.theme === "light" ? "light" : "dark";
+  const allowedThemes: AppSettings["theme"][] = ["dark", "light", "dusk", "forest", "ocean", "sunset"];
+  const theme: AppSettings["theme"] = allowedThemes.includes(s?.theme) ? s.theme : DEFAULT_SETTINGS.theme;
   const uiFontFamily =
     typeof s?.uiFontFamily === "string" && s.uiFontFamily.trim()
       ? s.uiFontFamily.trim().slice(0, 300)
@@ -211,6 +212,51 @@ export function normalizeSettings(s: any): AppSettings {
 // 备份配置的存储 Key 已抽离：便于你统一调整 localStorage 的命名与迁移策略
 const BACKUP_SETTINGS_KEY = FS_BACKUP_SETTINGS_KEY;
 
+export type AppBootstrapState = {
+  settings: AppSettings;
+  history: AppItem[];
+};
+
+let bootstrapStateCache: AppBootstrapState = {
+  settings: DEFAULT_SETTINGS,
+  history: [],
+};
+let bootstrapStatePromise: Promise<AppBootstrapState> | null = null;
+let bootstrapStateLoaded = false;
+
+// renderer 启动阶段统一复用这份快照 Promise，避免搜索页/设置页各自重复拉取初始化数据。
+export function loadBootstrapState(): Promise<AppBootstrapState> {
+  if (bootstrapStateLoaded) return Promise.resolve(bootstrapStateCache);
+  if (bootstrapStatePromise) return bootstrapStatePromise;
+  bootstrapStatePromise = window.ipcRenderer
+    ?.invoke("get-app-bootstrap-state")
+    .then((raw: any) => {
+      const next: AppBootstrapState = {
+        settings: normalizeSettings(raw?.settings),
+        history: Array.isArray(raw?.history) ? raw.history : [],
+      };
+      bootstrapStateCache = next;
+      bootstrapStateLoaded = true;
+      return next;
+    })
+    .catch(() => {
+      bootstrapStateLoaded = true;
+      return bootstrapStateCache;
+    }) ?? Promise.resolve(bootstrapStateCache);
+  return bootstrapStatePromise;
+}
+
+export function getBootstrapHistoryCache() {
+  return bootstrapStateCache.history;
+}
+
+export function setBootstrapHistoryCache(history: AppItem[]) {
+  bootstrapStateCache = {
+    ...bootstrapStateCache,
+    history: Array.isArray(history) ? history : [],
+  };
+}
+
 function getBackupSettings(): Partial<AppSettings> | null {
   try {
     const raw = localStorage.getItem(BACKUP_SETTINGS_KEY);
@@ -393,11 +439,10 @@ export function useSettings() {
 
   useEffect(() => {
     let mounted = true;
-    window.ipcRenderer
-      ?.invoke("get-settings")
-      .then((s: AppSettings) => {
+    loadBootstrapState()
+      .then((snapshot) => {
         if (!mounted) return;
-        setBaseSettings(normalizeSettings(s));
+        setBaseSettings(snapshot.settings);
         setLoaded(true);
       })
       .catch(() => {
@@ -406,7 +451,12 @@ export function useSettings() {
       });
 
     const handler = (_event: any, next: AppSettings) => {
-      setBaseSettings(normalizeSettings(next));
+      const normalized = normalizeSettings(next);
+      bootstrapStateCache = {
+        ...bootstrapStateCache,
+        settings: normalized,
+      };
+      setBaseSettings(normalized);
       setLoaded(true);
     };
     window.ipcRenderer?.on("settings-updated", handler as any);

@@ -23,16 +23,13 @@ import {
   loadHistoryStats,
   normalizeHistoryKey,
   normalizeExtKey,
-  loadHistory,
-  saveHistory,
   recordHistoryItem,
-  isExistingTarget,
   clearHistory,
   deleteHistoryItemFunc,
 } from '../history/history';
 import { getInstalledAppsCache } from '../apps/installedApps';
 import { iconDataCache, isTooSmallAppIconDataUrl } from '../icon/iconCache';
-import { getAppIconDataStable, getFileIconData, getHistoryIconForPath } from '../icon/iconService';
+import { getAppIconDataStable, getFileIconData } from '../icon/iconService';
 import { normalizeAppGroupKey } from '../utils/normalize';
 import { clearLocalCacheAll } from '../utils/cacheCleaner';
 import { resolveAppId } from '../win/resolveAppId';
@@ -42,6 +39,7 @@ import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from '../wi
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, statSync, readFileSync } from 'node:fs';
+import { getBootstrapState, refreshBootstrapHistory, setBootstrapSettings } from '../app/bootstrapState';
 
 let sudoPromptModule: any | null = null;
 
@@ -115,6 +113,18 @@ async function isCurrentProcessAdminOnWindows(): Promise<boolean> {
 
   isAdminProcessCache = ok;
   return ok;
+}
+
+// 历史广播统一走启动快照缓存：这样搜索页和设置页都能拿到同一份已预热结果。
+async function broadcastHistoryUpdated() {
+  const results = await refreshBootstrapHistory();
+  try {
+    getSearchWindow()?.webContents.send('history-updated', { results });
+  } catch {}
+  try {
+    getSettingsWindow()?.webContents.send('history-updated', { results });
+  } catch {}
+  return { results };
 }
 
 export function registerIpcHandlers() {
@@ -232,7 +242,16 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-settings', () => {
-    return loadSettings();
+    return getBootstrapState().settings;
+  });
+
+  // 启动快照一次返回设置与历史：renderer 启动阶段只需打一趟 IPC。
+  ipcMain.handle('get-app-bootstrap-state', () => {
+    const snapshot = getBootstrapState();
+    return {
+      settings: snapshot.settings,
+      history: snapshot.history,
+    };
   });
 
   ipcMain.handle('select-background-image', async () => {
@@ -309,6 +328,7 @@ export function registerIpcHandlers() {
     
     // Save to disk
     saveSettings(next);
+    setBootstrapSettings(next);
     
     // Update Ignored Paths in fileIndex
     await fileIndex.setIgnoredPaths(next.ignoredPaths, next.preferredFileExtensions);
@@ -326,6 +346,9 @@ export function registerIpcHandlers() {
     try {
         settingsWin?.webContents.send('settings-updated', next);
     } catch {}
+
+    // 历史受 enableHistory/historyLimit 影响：保存设置后同步刷新快照，避免空输入列表仍沿用旧限制。
+    await broadcastHistoryUpdated();
 
     // Rebuild index if ignored paths changed
     // 忽略路径对比：仅当“集合内容”变化时才触发重建，避免因为顺序变化导致误重建
@@ -345,31 +368,18 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-history', async () => {
-    const settings = loadSettings();
-    const history =
-      settings.historyLimit > 0 ? loadHistory().filter((h) => isExistingTarget(h)).slice(0, settings.historyLimit) : [];
-
-    const results = await Promise.all(
-      history.map(async (h) => {
-        const iconData = await getHistoryIconForPath({ type: h.type, name: h.name, path: h.path });
-        return { name: h.name, path: h.path, type: h.type, icon: iconData };
-      })
-    );
-
-    return { results };
+    return { results: getBootstrapState().history };
   });
 
-  ipcMain.handle('clear-history', () => {
+  ipcMain.handle('clear-history', async () => {
     clearHistory();
-    getSearchWindow()?.webContents.send('reset-search');
-    getSettingsWindow()?.webContents.send('reset-search');
+    await broadcastHistoryUpdated();
     return { ok: true };
   });
 
-  ipcMain.handle('delete-history-item', (_event, targetPath: string) => {
+  ipcMain.handle('delete-history-item', async (_event, targetPath: string) => {
     deleteHistoryItemFunc(targetPath);
-    getSearchWindow()?.webContents.send('reset-search');
-    getSettingsWindow()?.webContents.send('reset-search');
+    await broadcastHistoryUpdated();
     return { ok: true };
   });
 
@@ -400,7 +410,10 @@ export function registerIpcHandlers() {
       }
       if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
         await shell.openExternal(item.path);
-        if (item?.name && item?.path) recordHistoryItem(item);
+        if (item?.name && item?.path) {
+          recordHistoryItem(item);
+          await broadcastHistoryUpdated();
+        }
         BrowserWindow.fromWebContents(event.sender)?.hide();
         return true;
       }
@@ -419,7 +432,10 @@ export function registerIpcHandlers() {
         }
       }
       if (ok) {
-        if (item?.name && item?.path) recordHistoryItem(item);
+        if (item?.name && item?.path) {
+          recordHistoryItem(item);
+          await broadcastHistoryUpdated();
+        }
         BrowserWindow.fromWebContents(event.sender)?.hide();
       }
       return ok;

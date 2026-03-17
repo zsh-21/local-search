@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
-import { getSearchTypeOptions, normalizeSettings, useSettings } from "../settingsStore";
+import { getBootstrapHistoryCache, getSearchTypeOptions, loadBootstrapState, setBootstrapHistoryCache, useSettings } from "../settingsStore";
 import {
   DEFAULT_SETTINGS,
   SEARCH_ITEM_HEIGHT_COMPACT,
@@ -23,9 +23,198 @@ import {
 
 type RefreshHistoryOpts = { typeId?: string; preserveSelectedPath?: string };
 
+const CALC_CONSTANTS: Record<string, number> = {
+  pi: Math.PI,
+  e: Math.E,
+};
+
+function ensureArity(name: string, args: number[], min: number, max = min) {
+  if (args.length < min || args.length > max) {
+    throw new Error(`Function ${name} expects ${min}${min === max ? "" : `-${max}`} arguments`);
+  }
+}
+
+function ensureMinArity(name: string, args: number[], min: number) {
+  if (args.length < min) throw new Error(`Function ${name} expects at least ${min} arguments`);
+}
+
+function callCalcFunction(name: string, args: number[]) {
+  const key = name.toLowerCase();
+  switch (key) {
+    case "sin":
+      ensureArity(key, args, 1);
+      return Math.sin(args[0]);
+    case "cos":
+      ensureArity(key, args, 1);
+      return Math.cos(args[0]);
+    case "tan":
+      ensureArity(key, args, 1);
+      return Math.tan(args[0]);
+    case "log":
+      ensureArity(key, args, 1, 2);
+      return args.length === 1 ? Math.log10(args[0]) : Math.log(args[0]) / Math.log(args[1]);
+    case "ln":
+      ensureArity(key, args, 1);
+      return Math.log(args[0]);
+    case "sqrt":
+      ensureArity(key, args, 1);
+      return Math.sqrt(args[0]);
+    case "abs":
+      ensureArity(key, args, 1);
+      return Math.abs(args[0]);
+    case "pow":
+      ensureArity(key, args, 2);
+      return Math.pow(args[0], args[1]);
+    case "min":
+      ensureMinArity(key, args, 1);
+      return Math.min(...args);
+    case "max":
+      ensureMinArity(key, args, 1);
+      return Math.max(...args);
+    case "round":
+      ensureArity(key, args, 1, 2);
+      if (args.length === 1) return Math.round(args[0]);
+      return Math.round(args[0] * Math.pow(10, args[1])) / Math.pow(10, args[1]);
+    case "floor":
+      ensureArity(key, args, 1);
+      return Math.floor(args[0]);
+    case "ceil":
+      ensureArity(key, args, 1);
+      return Math.ceil(args[0]);
+    default:
+      throw new Error(`Unsupported function: ${name}`);
+  }
+}
+
+function evaluateCalcExpression(rawExpr: string) {
+  const source = (rawExpr || "").replace(/\s+/g, "");
+  if (!source) return null;
+
+  let index = 0;
+  const peek = () => source[index] || "";
+  const consume = (ch: string) => {
+    if (source[index] === ch) {
+      index += 1;
+      return true;
+    }
+    return false;
+  };
+
+  const parseNumber = () => {
+    const rest = source.slice(index);
+    const match = rest.match(/^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (!match) throw new Error("Invalid number");
+    index += match[0].length;
+    const value = Number(match[0]);
+    if (!Number.isFinite(value)) throw new Error("Invalid number");
+    return value;
+  };
+
+  const parseIdentifier = () => {
+    const rest = source.slice(index);
+    const match = rest.match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
+    if (!match) throw new Error("Invalid identifier");
+    index += match[0].length;
+    return match[0];
+  };
+
+  const parseExpression = (): number => {
+    let value = parseTerm();
+    while (true) {
+      if (consume("+")) value += parseTerm();
+      else if (consume("-")) value -= parseTerm();
+      else break;
+    }
+    return value;
+  };
+
+  const parseTerm = (): number => {
+    let value = parsePower();
+    while (true) {
+      if (consume("*")) value *= parsePower();
+      else if (consume("/")) value /= parsePower();
+      else if (consume("%")) value %= parsePower();
+      else break;
+    }
+    return value;
+  };
+
+  const parsePower = (): number => {
+    const left = parseUnary();
+    if (consume("^")) return Math.pow(left, parsePower());
+    return left;
+  };
+
+  const parseUnary = (): number => {
+    if (consume("+")) return parseUnary();
+    if (consume("-")) return -parseUnary();
+    return parsePrimary();
+  };
+
+  const parsePrimary = (): number => {
+    if (consume("(")) {
+      const value = parseExpression();
+      if (!consume(")")) throw new Error("Missing closing parenthesis");
+      return value;
+    }
+
+    const ch = peek();
+    if (/[0-9.]/.test(ch)) return parseNumber();
+    if (/[a-zA-Z_]/.test(ch)) {
+      const id = parseIdentifier();
+      if (consume("(")) {
+        const args: number[] = [];
+        if (!consume(")")) {
+          while (true) {
+            args.push(parseExpression());
+            if (consume(")")) break;
+            if (!consume(",")) throw new Error("Invalid argument separator");
+          }
+        }
+        return callCalcFunction(id, args);
+      }
+      const constValue = CALC_CONSTANTS[id.toLowerCase()];
+      if (typeof constValue !== "number") throw new Error("Unsupported identifier");
+      return constValue;
+    }
+
+    throw new Error("Unexpected token");
+  };
+
+  try {
+    const value = parseExpression();
+    if (index !== source.length) return null;
+    if (!Number.isFinite(value) || Number.isNaN(value)) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function formatCalcNumber(value: number) {
+  const normalized = Number.parseFloat(value.toPrecision(15));
+  if (Object.is(normalized, -0)) return "0";
+  return `${normalized}`;
+}
+
+function buildCalcItem(queryTerm: string): AppItem | null {
+  const trimmed = (queryTerm || "").trim();
+  if (!trimmed.startsWith("=")) return null;
+  const expression = trimmed.slice(1).trim();
+  if (!expression) return null;
+  const value = evaluateCalcExpression(expression);
+  if (value == null) return null;
+  return {
+    name: formatCalcNumber(value),
+    path: expression,
+    type: "calc",
+    description: `= ${expression}`,
+  };
+}
+
 export function useSearchController() {
   // 统一读取设置：搜索页会用到默认类型、类型顺序、主题与背景相关配置
-  const { settings } = useSettings();
+  const { settings, loaded } = useSettings();
 
   const parseDrivePrefix = (raw: string) => {
     // 输入支持“盘符前缀”：例如 C:、c:、C：，用于将搜索范围限制到指定盘符并提升速度
@@ -88,9 +277,12 @@ export function useSearchController() {
   const iconFetchTokenRef = useRef(0);
   const iconFetchStartedTokenRef = useRef(0);
   const requestedIconKeysRef = useRef<Set<string>>(new Set());
+  const calcItemRef = useRef<AppItem | null>(null);
   // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
   const typeSwitchRequestedRef = useRef(false);
   const shouldEchoSelectedOnceRef = useRef(false);
+  const historyItemsRef = useRef<AppItem[]>(getBootstrapHistoryCache());
+  const bootstrapTypeSyncedRef = useRef(false);
 
   const setQueryAndInputValue = (next: string) => {
     setQuery(next);
@@ -116,6 +308,49 @@ export function useSearchController() {
   useEffect(() => {
     void refreshUserStatusSilently();
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    // 启动阶段先拿主进程预热好的快照：首开搜索面板时直接复用这份历史与默认类型。
+    void loadBootstrapState().then((snapshot) => {
+      if (!mounted) return;
+      historyItemsRef.current = Array.isArray(snapshot.history) ? snapshot.history : [];
+      setBootstrapHistoryCache(historyItemsRef.current);
+
+      if (!bootstrapTypeSyncedRef.current && loaded) {
+        const nextTypeId = snapshot.settings.defaultSearchTypeId || "all";
+        bootstrapTypeSyncedRef.current = true;
+        setSearchTypeId(nextTypeId);
+        if (queryRef.current.trim().length === 0) {
+          applyHistoryResults(historyItemsRef.current, { typeId: nextTypeId });
+        }
+      } else if (queryRef.current.trim().length === 0) {
+        applyHistoryResults(historyItemsRef.current, {
+          typeId: searchTypeIdRef.current,
+          preserveSelectedPath: selectedPathRef.current,
+        });
+      }
+    });
+
+    const handleHistoryUpdated = (_event: any, payload?: { results?: AppItem[] }) => {
+      const nextHistory = Array.isArray(payload?.results) ? payload.results : [];
+      historyItemsRef.current = nextHistory;
+      setBootstrapHistoryCache(nextHistory);
+      if (queryRef.current.trim().length === 0) {
+        applyHistoryResults(nextHistory, {
+          typeId: searchTypeIdRef.current,
+          preserveSelectedPath: selectedPathRef.current,
+        });
+      }
+    };
+
+    window.ipcRenderer?.on("history-updated", handleHistoryUpdated as any);
+    return () => {
+      mounted = false;
+      window.ipcRenderer?.off("history-updated", handleHistoryUpdated as any);
+    };
+  }, [loaded]);
 
   useEffect(() => {
     return () => {
@@ -159,6 +394,13 @@ export function useSearchController() {
   };
 
   const limitResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
+  const withCalcResult = (items: AppItem[]) => {
+    const calcItem = calcItemRef.current;
+    if (!calcItem) return items;
+    const nonCalcItems = items.filter((item) => item.type !== "calc");
+    return limitResults([calcItem, ...nonCalcItems]);
+  };
+  const getCalcOffset = () => (calcItemRef.current ? 1 : 0);
 
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {
@@ -170,7 +412,7 @@ export function useSearchController() {
     pendingAppendRef.current = [];
     startTransition(() => {
       setResults((prev) => {
-         const next = limitResults(mergeResultsStable(prev, batch));
+         const next = withCalcResult(limitResults(mergeResultsStable(prev, batch)));
         setTotalCount((c) => Math.max(c, next.length));
         return next;
       });
@@ -230,11 +472,7 @@ export function useSearchController() {
   }, [searchTypeId]);
 
   // 刷新历史记录：用于“空输入”模式下展示最近打开项
-  const refreshHistory = async (opts?: RefreshHistoryOpts) => {
-    const resp = (await window.ipcRenderer?.invoke("get-history")) as
-      | { results: AppItem[] }
-      | undefined;
-    const historyItems = resp?.results ?? [];
+  const applyHistoryResults = (historyItems: AppItem[], opts?: RefreshHistoryOpts) => {
     const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
     const filtered = filterItemsBySearchType(historyItems, typeId);
     const deduped = limitResults(dedupeResults(filtered));
@@ -251,10 +489,13 @@ export function useSearchController() {
     setIsIndexing(false);
   };
 
+  const refreshHistory = async (opts?: RefreshHistoryOpts) => {
+    applyHistoryResults(historyItemsRef.current, opts);
+  };
+
   const deleteHistoryItem = async (targetPath: string) => {
     if (!targetPath) return;
     await window.ipcRenderer?.invoke("delete-history-item", targetPath);
-    await refreshHistory();
   };
 
   useEffect(() => {
@@ -263,48 +504,40 @@ export function useSearchController() {
     const handleReset = async () => {
       void refreshUserStatusSilently();
       lastResizeHeightRef.current = 0;
-      window.ipcRenderer?.invoke("get-settings").then(async (latestSettings: AppSettings) => {
-        const s = normalizeSettings(latestSettings);
-        if (s.keepStateOnClose) {
-          setTimeout(() => {
-            inputRef.current?.focus();
-            window.ipcRenderer?.invoke("search-view-ready");
-          }, 50);
-          return;
-        }
-        const nextTypeId = s.defaultSearchTypeId || "all";
-        setSearchTypeId(nextTypeId);
-        setQueryAndInputValue("");
-        const resp = (await window.ipcRenderer?.invoke("get-history")) as
-          | { results: AppItem[] }
-          | undefined;
-        const historyItems = resp?.results ?? [];
-        setResults(limitResults(dedupeResults(filterItemsBySearchType(historyItems, nextTypeId))));
-        setIsSearching(false);
-
-          requestAnimationFrame(() => {
-            const c = containerRef.current;
-            if (!c) return;
-            const nextHeight = Math.max(
-              SEARCH_WINDOW_MIN_HEIGHT,
-              Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
-            );
-            if (nextHeight !== lastResizeHeightRef.current) {
-              lastResizeHeightRef.current = nextHeight;
-              window.ipcRenderer?.invoke("resize-window", nextHeight);
-            }
-          });
+      if (settings.keepStateOnClose) {
         setTimeout(() => {
           inputRef.current?.focus();
           window.ipcRenderer?.invoke("search-view-ready");
         }, 50);
+        return;
+      }
+      const nextTypeId = settings.defaultSearchTypeId || "all";
+      setSearchTypeId(nextTypeId);
+      setQueryAndInputValue("");
+      applyHistoryResults(historyItemsRef.current, { typeId: nextTypeId });
+
+      requestAnimationFrame(() => {
+        const c = containerRef.current;
+        if (!c) return;
+        const nextHeight = Math.max(
+          SEARCH_WINDOW_MIN_HEIGHT,
+          Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
+        );
+        if (nextHeight !== lastResizeHeightRef.current) {
+          lastResizeHeightRef.current = nextHeight;
+          window.ipcRenderer?.invoke("resize-window", nextHeight);
+        }
       });
+      setTimeout(() => {
+        inputRef.current?.focus();
+        window.ipcRenderer?.invoke("search-view-ready");
+      }, 50);
     };
     window.ipcRenderer?.on("reset-search", handleReset);
     return () => {
-      window.ipcRenderer?.removeAllListeners("reset-search");
+      window.ipcRenderer?.off("reset-search", handleReset as any);
     };
-  }, []);
+  }, [settings]);
 
   useEffect(() => {
     const handler = () => {
@@ -389,6 +622,7 @@ export function useSearchController() {
 
   useEffect(() => {
     const { term: trimmed, drive } = parseDrivePrefix(query);
+    calcItemRef.current = buildCalcItem(trimmed);
     if (!trimmed || trimmed.length < 1) {
       // 空输入不触发搜索：显示历史；其余交由后续流程处理（支持单字符搜索）
       searchRequestIdRef.current += 1;
@@ -436,12 +670,12 @@ export function useSearchController() {
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
         setSelectedIndex(0);
         startTransition(() => {
-          const limited = limitResults(dedupeResults(nextResults));
+          const limited = withCalcResult(limitResults(dedupeResults(nextResults)));
           setResults(limited);
           const rawTotal = typeof resp?.totalCount === "number" ? resp.totalCount : limited.length;
           // 如果没有更多结果，且当前结果数量小于后端返回的总数（说明前端去重了），则以当前结果数量为准，避免界面显示“12条结果”但列表只有3项
           const finalTotal = (!resp?.hasMore && limited.length < rawTotal) ? limited.length : rawTotal;
-          setTotalCount(finalTotal);
+          setTotalCount(finalTotal + getCalcOffset());
           setIsIndexing(Boolean(resp?.isIndexing));
           setHasMore(Boolean(resp?.hasMore));
         });
@@ -552,8 +786,8 @@ export function useSearchController() {
         startTransition(() => {
           setResults((prev) => {
             // 增量回填/索引刷新时只“补齐/更新”数据，不重排已加载的列表顺序，避免拖拽/操作时出现跳动
-            const merged = limitResults(mergeResultsStable(prev, serverOrdered));
-            setTotalCount((c) => Math.max(c, respTotal, merged.length));
+            const merged = withCalcResult(limitResults(mergeResultsStable(prev, serverOrdered)));
+            setTotalCount((c) => Math.max(c, respTotal + getCalcOffset(), merged.length));
             return merged;
           });
           setIsIndexing(Boolean(resp?.isIndexing));
@@ -608,7 +842,18 @@ export function useSearchController() {
     window.ipcRenderer?.invoke("open-settings-window");
   };
 
+  const copyCalcResult = (item: AppItem | undefined) => {
+    if (!item || item.type !== "calc") return;
+    const resultText = String(item.name || "").trim();
+    if (!resultText) return;
+    navigator.clipboard
+      .writeText(resultText)
+      .then(() => showToast("已复制计算结果", "success"))
+      .catch(() => showToast("复制失败", "error"));
+  };
+
   const openFolder = (app: AppItem) => {
+    if (app.type === "calc") return;
     if (app.type === "settings") {
       window.ipcRenderer?.invoke("open-item", {
         name: app.name,
@@ -622,6 +867,10 @@ export function useSearchController() {
   };
 
   const launchApp = (app: AppItem) => {
+    if (app.type === "calc") {
+      copyCalcResult(app);
+      return;
+    }
     window.ipcRenderer?.invoke("open-item", {
       name: app.name,
       path: app.path,
@@ -668,7 +917,7 @@ export function useSearchController() {
 
   const getVisibleActionIdsForItem = useCallback(
     (item: AppItem | undefined) => {
-      if (!item) return [] as AppSettings["resultActionButtons"]; 
+      if (!item || item.type === "calc") return [] as AppSettings["resultActionButtons"]; 
       const raw = Array.isArray(settings.resultActionButtons) ? settings.resultActionButtons : [];
       const out: AppSettings["resultActionButtons"][number][] = [];
       for (const id of raw) {
@@ -855,8 +1104,16 @@ export function useSearchController() {
       setSelectedIndex((prev) => Math.max(0, prev - 10));
       e.preventDefault();
     } else if (e.key === "Enter") {
-      if (e.ctrlKey) openFolder(results[selectedIndex]);
-      else launchApp(results[selectedIndex]);
+      const selected = results[selectedIndex];
+      if (!selected) return;
+      if (selected.type === "calc") {
+        e.preventDefault();
+        e.stopPropagation();
+        copyCalcResult(selected);
+        return;
+      }
+      if (e.ctrlKey) openFolder(selected);
+      else launchApp(selected);
     }
   };
 

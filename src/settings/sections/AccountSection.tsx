@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppSettings } from "../../appTypes";
 import { getStoredTokenFromLocalStorage } from "../../membership";
 import { User } from "../../api";
+import { THEME_STYLE_OPTIONS } from "../../constants/initialValues";
 
 // 账号分区：登录/退出、会员状态展示、刷新状态入口
 export function AccountSection({
@@ -38,6 +39,7 @@ export function AccountSection({
   formatDateTime: (v: unknown) => string;
 }) {
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const themeLabelMap = new Map(THEME_STYLE_OPTIONS.map((item) => [item.id, item.label]));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarDataUrl, setAvatarDataUrl] = useState("");
   const requestIdRef = useRef(0);
@@ -248,7 +250,7 @@ export function AccountSection({
               {draft.theme ? (
                 <div className="account-detail-row">
                   <div className="account-detail-key">主题模式</div>
-                  <div className="account-detail-val">{draft.theme}</div>
+                  <div className="account-detail-val">{themeLabelMap.get(draft.theme) || draft.theme}</div>
                 </div>
               ) : null}
               {draft.accentColor ? (

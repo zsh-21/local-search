@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, shell, globalShortcut } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import path from 'node:path';
 import {
   loadConfig,
@@ -6,9 +6,6 @@ import {
   loadSettingsWindowConfig,
   saveSettingsWindowConfig,
   loadSettings,
-  AppSettings,
-  DEFAULT_SEARCH_SHORTCUT,
-  DEFAULT_SETTINGS_SHORTCUT,
 } from '../config/settings';
 import {
   DEFAULT_SETTINGS,
@@ -23,6 +20,7 @@ import { fileIndex } from '../file/indexService';
 import { reconcileRecentIndex } from '../file/watcher';
 import { recordHistoryItem } from '../history/history';
 import { registerShortcuts as registerGlobalShortcuts } from '../app/shortcuts';
+import { refreshBootstrapHistory } from '../app/bootstrapState';
 
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
@@ -348,6 +346,10 @@ export async function handleQuickItemPicked(targetPath: string) {
     const ext = path.extname(targetPath).toLowerCase();
     const name = path.basename(targetPath, ext) || path.basename(targetPath) || '快捷项';
     recordHistoryItem({ name, path: targetPath, type: 'file' });
+    // 快捷项命中后同步刷新历史快照，避免下一次呼出面板时还看到旧历史。
+    const results = await refreshBootstrapHistory();
+    win?.webContents.send('history-updated', { results });
+    settingsWin?.webContents.send('history-updated', { results });
     win?.webContents.send('reset-search');
   } catch {}
 }

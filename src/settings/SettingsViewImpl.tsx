@@ -306,6 +306,7 @@ export function SettingsViewImpl() {
                     applyThemePreview={c.applyThemePreview}
                     applyFontPreview={c.applyFontPreview}
                     themeColors={c.themeColors}
+                    themeOptions={c.themeOptions}
                     fontOptions={c.fontOptions}
                   />
                 ) : null}

@@ -22,6 +22,7 @@ import { registerIpcHandlers } from './ipc/ipcHandlers';
 import { ensureWindowsAppContextMenu } from './win/contextMenu';
 import { handleAddToQuickListArgv } from './app/quickList';
 import { clearIconCaches } from './icon/iconService';
+import { primeBootstrapState, setBootstrapIndexStatus } from './app/bootstrapState';
 
 process.env.DIST = path.join(__dirname, '../dist');
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public');
@@ -156,6 +157,8 @@ if (!gotTheLock) {
 
   app.whenReady().then(async () => {
     const initialSettings = loadSettings();
+    // 启动预热：在窗口真正可见前先把设置与历史快照准备好，面板打开直接使用。
+    await primeBootstrapState(initialSettings);
     // 初始化时同步设置忽略规则（主进程缓存 + Worker 内索引规则）
     await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths, initialSettings.preferredFileExtensions);
     createWindow();
@@ -195,6 +198,7 @@ if (!gotTheLock) {
           meta.version !== FILE_INDEX_VERSION ||
           meta.appVersion !== currentAppVersion ||
           meta.driveSignature !== driveSignature;
+        setBootstrapIndexStatus({ hasCache: cacheLoaded, isIndexing: shouldRebuild || !cacheLoaded });
         if (shouldRebuild) {
           saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion, driveSignature });
           void fileIndex.rebuild();

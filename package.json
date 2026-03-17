@@ -9,6 +9,7 @@
     "clear:cache": "electron ./scripts/clear-local-cache.cjs"
   },
   "dependencies": {
+    "@fontsource/fira-code": "^5.2.7",
     "flexsearch": "^0.8.212",
     "pinyin-pro": "^3.27.0",
     "react": "^18.2.0",

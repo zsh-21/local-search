@@ -9,7 +9,7 @@ export interface AppSettings {
   autoStart: boolean;
   searchShortcut: string;
   settingsShortcut: string;
-  theme: "dark" | "light";
+  theme: "dark" | "light" | "dusk" | "forest" | "ocean" | "sunset";
   uiFontFamily: string;
   historyLimit: number;
   defaultSearchTypeId: string;

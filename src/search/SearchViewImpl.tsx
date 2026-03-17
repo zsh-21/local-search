@@ -123,6 +123,7 @@ export function SearchViewImpl() {
   }, [actionTooltip, c.selectedActionId]);
 
   const getVisibleActionIdsForItem = (item: AppItem) => {
+    if (item.type === "calc") return [];
     const raw = Array.isArray(c.settings.resultActionButtons) ? c.settings.resultActionButtons : [];
     const out: string[] = [];
     for (const id of raw) {
@@ -181,6 +182,15 @@ export function SearchViewImpl() {
 
   // 根据结果类型渲染不同图标：文件夹/应用/设置/文件
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
+    if (item.type === "calc") {
+      return (
+        <svg className="result-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="4" y="2.5" width="16" height="19" rx="3" stroke="currentColor" strokeWidth="1.7" />
+          <path d="M8 7.5h8M8 12h3m5 0h.01M8 16.5h3m5 0h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+    }
+
     if (item.type === "folder") {
       
       return (
@@ -236,6 +246,9 @@ export function SearchViewImpl() {
     const isImg = item.type === "file" && isImageFile(item.path);
     const lowerPath = (item.path || "").toLowerCase();
     const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
+    const hasPath = typeof item.path === "string" && item.path.trim().length > 0;
+    const showPathLine = c.settings.showResultPath && hasPath;
+    const tooltipAddress = hasPath ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
     const badgeText =
@@ -263,7 +276,13 @@ export function SearchViewImpl() {
           c.setHoveredKey(normalizeResultKey(item));
         }}
       >
-        <li className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}>
+        <li
+          className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}
+          title={item.name}
+          data-title-address={tooltipAddress}
+          data-title-delay="500"
+          data-title-no-scroll="true"
+        >
           <span className="result-index">{index + 1}</span>
           {renderResultIcon(item, isImg)}
           <div className="result-meta">
@@ -272,8 +291,8 @@ export function SearchViewImpl() {
               {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
               {isSelected && <span className="shortcut-hint">ENTER</span>}
             </div>
-            {c.settings.showResultPath ? (
-              <span className="app-path" title={item.path}>
+            {showPathLine ? (
+              <span className="app-path">
                 {renderHighlightedText(item.path)}
               </span>
             ) : null}

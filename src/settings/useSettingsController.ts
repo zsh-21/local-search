@@ -8,6 +8,7 @@ import {
   FS_TOKEN_KEY,
   FS_USER_KEY,
   THEME_COLOR_OPTIONS,
+  THEME_STYLE_OPTIONS,
 } from "../constants/initialValues";
 import { applyMembershipRestrictionsToSettings, getSearchTypeOptions, useSettings } from "../settingsStore";
 
@@ -403,6 +404,7 @@ export function useSettingsController() {
 
   // 主题色列表已抽离：便于你集中调整颜色、命名或增加新主题色
   const themeColors = THEME_COLOR_OPTIONS;
+  const themeOptions = THEME_STYLE_OPTIONS;
   const fontOptions = [
     {
       id: "segoe-ui",// 👌
@@ -508,6 +510,7 @@ export function useSettingsController() {
     handleLogout,
     toast,
     themeColors,
+    themeOptions,
     fontOptions,
     formatDateTime,
   };

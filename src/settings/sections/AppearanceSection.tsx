@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { AppSettings } from "../../appTypes";
 
-// 外观分区：主题模式、特效开关/类型、背景图片、主题色（含会员禁用）
+// 外观分区：主题模式、特效开关、类型、背景图片、主题色（含会员禁用）
 export function AppearanceSection({
   draft,
   setDraft,
@@ -11,6 +11,7 @@ export function AppearanceSection({
   applyThemePreview,
   applyFontPreview,
   themeColors,
+  themeOptions,
   fontOptions,
 }: {
   draft: AppSettings;
@@ -21,6 +22,7 @@ export function AppearanceSection({
   applyThemePreview: (theme: AppSettings["theme"], accentColor: string) => void;
   applyFontPreview: (fontFamily: string) => void;
   themeColors: { name: string; color: string }[];
+  themeOptions: { id: AppSettings["theme"]; label: string }[];
   fontOptions: { id: string; label: string; value: string; sample: string }[];
 }) {
   return (
@@ -28,35 +30,31 @@ export function AppearanceSection({
       <div className="settings-group">
         <div className="settings-group-title">主题界面</div>
         <div className="theme-grid">
-          <button
-            type="button"
-            className={`theme-card dark ${draft.theme === "dark" ? "active" : ""}`}
-            onClick={() => {
-              // 主题切换即时生效，避免保存前视觉不一致
-              setDraft({ ...draft, theme: "dark" });
-              document.documentElement.dataset.theme = "dark";
-            }}
-          >
-            <div className="theme-preview" />
-            <span>深色模式</span>
-          </button>
-          <button
-            type="button"
-            className={`theme-card light ${draft.theme === "light" ? "active" : ""}`}
-            onClick={() => {
-              // 主题切换即时生效，避免保存前视觉不一致
-              setDraft({ ...draft, theme: "light" });
-              document.documentElement.dataset.theme = "light";
-            }}
-          >
-            <div className="theme-preview" />
-            <span>浅色模式</span>
-          </button>
+          {themeOptions.map((opt) => {
+            const active = draft.theme === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`theme-card theme-${opt.id} ${active ? "active" : ""}`}
+                onClick={() => {
+                  // 主题切换即时预览，保存后才全局生效
+                  const nextTheme = opt.id;
+                  setDraft({ ...draft, theme: nextTheme });
+                  applyThemePreview(nextTheme, draft.accentColor);
+                  setError("");
+                }}
+              >
+                <div className="theme-preview" />
+                <span>{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">Font</div>
+        <div className="settings-group-title">字体</div>
         <div className="font-grid">
           {fontOptions.map((opt) => {
             const active = draft.uiFontFamily === opt.value;
@@ -91,7 +89,7 @@ export function AppearanceSection({
             checked={draft.enableEffect}
             disabled={!isMember}
             onChange={(e) => {
-              // 非会员禁用特效，避免保存后被回退产生困惑
+              // 非会员禁用特效，避免保存后被回退产生困扰
               setDraft({ ...draft, enableEffect: e.target.checked });
               setError("");
             }}
@@ -113,7 +111,7 @@ export function AppearanceSection({
                     setError("");
                   }}
                 />
-                代码瀑布
+                代码雨
               </label>
               <label className={`effect-option ${draft.effectType === "warp" ? "active" : ""}`}>
                 <input
@@ -133,7 +131,7 @@ export function AppearanceSection({
         )}
       </div>
 
-      {/* 背景图片为订阅功能：非会员只允许使用默认背景 */}
+      {/* 背景图片为订阅功能：非会员仅可使用默认背景 */}
       <div className="settings-group">
         <div className="settings-group-title">
           <span>背景图片</span>
