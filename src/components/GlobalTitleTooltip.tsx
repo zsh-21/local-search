@@ -113,7 +113,7 @@ export function GlobalTitleTooltip() {
     }
     activeRef.current = el;
 
-    const delayRaw = Number.parseInt(el.getAttribute(TITLE_DELAY_ATTR) || "0", 10);
+    const delayRaw = Number.parseInt(el.getAttribute(TITLE_DELAY_ATTR) || "500", 10);
     const delay = immediate ? 0 : Number.isFinite(delayRaw) && delayRaw > 0 ? delayRaw : 0;
     const hideWhileScroll = el.getAttribute(TITLE_NO_SCROLL_ATTR) === "true";
 

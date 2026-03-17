@@ -132,14 +132,13 @@ export function SettingsViewImpl() {
       <BackgroundImage path={c.draft.backgroundImagePath} opacity={c.draft.backgroundImageOpacity} />
       <ParticleBackground enabled={c.draft.enableEffect} type={c.draft.effectType} />
 
-      <div className="settings-header" title="按住拖拽可移动窗口">
+      <div className="settings-header" >
         <div
           className="settings-title-wrap"
           onDoubleClick={(e) => {
             e.stopPropagation();
             c.onToggleMax();
           }}
-          title="双击全屏/取消全屏"
         >
           <img src="tray.svg" className="settings-logo" alt="logo" />
           <span className="settings-title">设置</span>

@@ -407,15 +407,15 @@ export function useSettingsController() {
   const themeOptions = THEME_STYLE_OPTIONS;
   const fontOptions = [
     {
-      id: "segoe-ui",// 👌
-      label: "Segoe UI",
-      value: DEFAULT_SETTINGS.uiFontFamily,
-      sample: "Aa 123",
-    },
-    {
       id: "microsoft-yahei",// 👌
       label: "Microsoft YaHei",
       value: '"Microsoft YaHei", "Segoe UI", "Noto Sans", Arial, sans-serif',
+      sample: "Aa 123",
+    },
+    {
+      id: "segoe-ui",// 👌
+      label: "Segoe UI",
+      value: '"Segoe UI", "Segoe UI Variable", "SegoeUI", "Noto Sans", "Microsoft YaHei", "PingFang SC", Arial, sans-serif',
       sample: "Aa 123",
     },
     {
