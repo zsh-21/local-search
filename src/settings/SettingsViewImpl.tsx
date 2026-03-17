@@ -304,7 +304,9 @@ export function SettingsViewImpl() {
                     isMember={c.isMember}
                     membershipBadge={membershipBadge}
                     applyThemePreview={c.applyThemePreview}
+                    applyFontPreview={c.applyFontPreview}
                     themeColors={c.themeColors}
+                    fontOptions={c.fontOptions}
                   />
                 ) : null}
               </div>

@@ -32,6 +32,8 @@ export const DEFAULT_SETTINGS = {
   settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
   // 主题：影响渲染端 UI 与部分窗口背景色策略
   theme: "dark",
+  uiFontFamily:
+    '"Segoe UI", "Segoe UI Variable", "SegoeUI", "Noto Sans", "Microsoft YaHei", "PingFang SC", Arial, sans-serif',
   // 历史记录最大展示条数：0 表示不展示历史
   historyLimit: 5,
   // 默认搜索类型：例如 all/app/file/folder...

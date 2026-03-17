@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { login, refreshUserByToken, User } from "../api";
-import { AppSettings } from "../appTypes";
+import { AppSettings, DEFAULT_SETTINGS } from "../appTypes";
 import { MEMBERSHIP_CHANGED_EVENT, getStoredTokenFromLocalStorage, isUserMember, refreshUserStatusSilently } from "../membership";
 import {
   FS_LAST_LOGIN_ACCOUNT_KEY,
@@ -52,6 +52,7 @@ export function useSettingsController() {
     settings.searchShortcut,
     settings.settingsShortcut,
     settings.theme,
+    settings.uiFontFamily,
     settings.historyLimit,
     settings.defaultSearchTypeId,
     settings.customSearchTypes,
@@ -74,6 +75,7 @@ export function useSettingsController() {
       draft.searchShortcut === settings.searchShortcut &&
       draft.settingsShortcut === settings.settingsShortcut &&
       draft.theme === settings.theme &&
+      draft.uiFontFamily === settings.uiFontFamily &&
       draft.historyLimit === settings.historyLimit &&
       draft.defaultSearchTypeId === settings.defaultSearchTypeId &&
       arrEq(draft.customSearchTypes || [], settings.customSearchTypes || []) &&
@@ -117,6 +119,11 @@ export function useSettingsController() {
     }, 240);
   };
 
+  const applyFontPreview = (fontFamily: string) => {
+    const next = typeof fontFamily === "string" && fontFamily.trim() ? fontFamily.trim() : settings.uiFontFamily;
+    document.documentElement.style.setProperty("--fs-font-sans", next);
+  };
+
   useEffect(() => {
     // 设置窗口每次打开时重置到“账号页”，并刷新一次订阅状态
     const handler = () => {
@@ -126,6 +133,7 @@ export function useSettingsController() {
       setActiveKey("account");
       setNewTypeExt("");
       applyThemePreview(settings.theme, settings.accentColor);
+      applyFontPreview(settings.uiFontFamily);
     };
     window.ipcRenderer?.on("settings-window-opened", handler as any);
     return () => {
@@ -140,6 +148,7 @@ export function useSettingsController() {
     setActiveKey("account");
     setNewTypeExt("");
     applyThemePreview(settings.theme, settings.accentColor);
+    applyFontPreview(settings.uiFontFamily);
     window.ipcRenderer?.invoke("hide-window");
   };
 
@@ -163,6 +172,7 @@ export function useSettingsController() {
       return;
     }
     applyThemePreview(nextDraft.theme, nextDraft.accentColor);
+    applyFontPreview(nextDraft.uiFontFamily);
     // 保存后不自动关闭设置窗口：仅提示成功，关闭由用户主动点击右上角完成
     showToast("保存成功", "success");
   };
@@ -393,6 +403,64 @@ export function useSettingsController() {
 
   // 主题色列表已抽离：便于你集中调整颜色、命名或增加新主题色
   const themeColors = THEME_COLOR_OPTIONS;
+  const fontOptions = [
+    {
+      id: "segoe-ui",// 👌
+      label: "Segoe UI",
+      value: DEFAULT_SETTINGS.uiFontFamily,
+      sample: "Aa 123",
+    },
+    {
+      id: "microsoft-yahei",// 👌
+      label: "Microsoft YaHei",
+      value: '"Microsoft YaHei", "Segoe UI", "Noto Sans", Arial, sans-serif',
+      sample: "Aa 123",
+    },
+    {
+      id: "pingfang-sc",// 👌
+      label: "PingFang SC",
+      value: '"PingFang SC", "Microsoft YaHei", "Segoe UI", Arial, sans-serif',
+      sample: "Aa 123",
+    }, 
+    {
+      id: "arial",// 👌
+      label: "Arial",
+      value: "Arial, \"Segoe UI\", sans-serif",
+      sample: "Aa 123",
+    },
+    {
+      id: "microsoft-yahei-ui",// 👌
+      label: "Microsoft YaHei UI",
+      value: '"Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif',
+      sample: "Aa 123",
+    },
+    {
+      id: "simsun",// 👌
+      label: "SimSun",
+      value: '"SimSun", "Songti SC", "Microsoft YaHei", "Segoe UI", serif',
+      sample: "Aa 123",
+    },
+    {
+      id: "harmonyos-sans",
+      label: "HarmonyOS Sans SC",
+      value: '"HarmonyOS Sans SC", "Microsoft YaHei", "Segoe UI", sans-serif',
+      sample: "Aa 123",
+    },
+    // JetBrains Mono
+    {
+      id: "jetbrains-mono",
+      label: "JetBrains Mono",
+      value: '"JetBrains Mono", "Segoe UI", "Noto Sans", Arial, sans-serif',
+      sample: "Aa 123",
+    },
+    //Fira Code
+    {
+      id: "fira-code",
+      label: "Fira Code",
+      value: '"Fira Code", "Segoe UI", "Noto Sans", Arial, sans-serif',
+      sample: "Aa 123",
+    },
+  ];
 
   const formatDateTime = (value: unknown) => {
     if (!value) return "";
@@ -417,6 +485,7 @@ export function useSettingsController() {
     onToggleMax,
     save,
     applyThemePreview,
+    applyFontPreview,
     typeOptions,
     moveTypeId,
     defaultTypeMenuOpen,
@@ -439,6 +508,7 @@ export function useSettingsController() {
     handleLogout,
     toast,
     themeColors,
+    fontOptions,
     formatDateTime,
   };
 }

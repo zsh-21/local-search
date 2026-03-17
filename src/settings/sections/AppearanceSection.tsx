@@ -9,7 +9,9 @@ export function AppearanceSection({
   isMember,
   membershipBadge,
   applyThemePreview,
+  applyFontPreview,
   themeColors,
+  fontOptions,
 }: {
   draft: AppSettings;
   setDraft: (next: AppSettings) => void;
@@ -17,7 +19,9 @@ export function AppearanceSection({
   isMember: boolean;
   membershipBadge: ReactNode;
   applyThemePreview: (theme: AppSettings["theme"], accentColor: string) => void;
+  applyFontPreview: (fontFamily: string) => void;
   themeColors: { name: string; color: string }[];
+  fontOptions: { id: string; label: string; value: string; sample: string }[];
 }) {
   return (
     <div className="settings-content">
@@ -48,6 +52,31 @@ export function AppearanceSection({
             <div className="theme-preview" />
             <span>浅色模式</span>
           </button>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">Font</div>
+        <div className="font-grid">
+          {fontOptions.map((opt) => {
+            const active = draft.uiFontFamily === opt.value;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                className={`font-card ${active ? "active" : ""}`}
+                style={{ fontFamily: opt.value }}
+                onClick={() => {
+                  setDraft({ ...draft, uiFontFamily: opt.value });
+                  applyFontPreview(opt.value);
+                  setError("");
+                }}
+              >
+                <div className="font-preview">{opt.sample}</div>
+                <div className="font-name">{opt.label}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 

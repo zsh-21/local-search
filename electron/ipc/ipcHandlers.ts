@@ -380,9 +380,23 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
     try {
-      if (item?.type === 'command' && typeof item?.path === 'string' && item.path.trim().toLowerCase() === 'clear:cache') {
-        await clearLocalCacheAll();
-        return true;
+      if (item?.type === 'command' && typeof item?.path === 'string') {
+        const cmd = item.path.trim().toLowerCase();
+        if (cmd === 'clear:cache') {
+          await clearLocalCacheAll();
+          return true;
+        }
+        if (cmd === 'system:shutdown' || cmd === 'system:restart') {
+          if (process.platform !== 'win32') return false;
+          const args = cmd === 'system:shutdown' ? ['/s', '/t', '0'] : ['/r', '/t', '0'];
+          try {
+            const child = spawn('shutdown', args, { windowsHide: true, detached: true, stdio: 'ignore' });
+            child.unref();
+            return true;
+          } catch {
+            return false;
+          }
+        }
       }
       if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
         await shell.openExternal(item.path);

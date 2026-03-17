@@ -2337,6 +2337,49 @@ html[data-theme="light"] .settings-group {
   width: 100%;
 }
 
+.font-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.font-card {
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--fs-text);
+}
+
+.font-card:hover {
+  background: var(--fs-surface);
+  border-color: var(--fs-border);
+  transform: translateY(-2px);
+}
+
+.font-card.active {
+  background: var(--fs-surface);
+  border-color: var(--fs-accent);
+  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--fs-accent);
+}
+
+.font-preview {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.font-name {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fs-muted);
+}
+
 .theme-card {
   flex: 1;
   background: var(--fs-surface-2);

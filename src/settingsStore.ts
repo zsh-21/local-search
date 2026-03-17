@@ -6,6 +6,10 @@ import { useStoredMembership } from "./membership";
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
   const theme: AppSettings["theme"] = s?.theme === "light" ? "light" : "dark";
+  const uiFontFamily =
+    typeof s?.uiFontFamily === "string" && s.uiFontFamily.trim()
+      ? s.uiFontFamily.trim().slice(0, 300)
+      : DEFAULT_SETTINGS.uiFontFamily;
   const normalizeWinShortcut = (v: string) => v.replace(/CommandOrControl/g, "Ctrl").trim();
   const searchShortcut = normalizeWinShortcut(
     typeof s?.searchShortcut === "string" && s.searchShortcut.trim()
@@ -175,6 +179,7 @@ export function normalizeSettings(s: any): AppSettings {
     searchShortcut,
     settingsShortcut,
     theme,
+    uiFontFamily,
     historyLimit:
       typeof s?.historyLimit === "number" && Number.isFinite(s.historyLimit)
         ? Math.min(50, Math.max(0, Math.floor(s.historyLimit)))
@@ -415,6 +420,7 @@ export function useSettings() {
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
     document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
+    document.documentElement.style.setProperty("--fs-font-sans", settings.uiFontFamily || DEFAULT_SETTINGS.uiFontFamily);
     const r = parseInt(settings.accentColor.slice(1, 3), 16);
     const g = parseInt(settings.accentColor.slice(3, 5), 16);
     const b = parseInt(settings.accentColor.slice(5, 7), 16);

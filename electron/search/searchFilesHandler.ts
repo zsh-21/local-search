@@ -111,6 +111,50 @@ export async function handleSearchFiles(
 		normalizeExtKey,
 	});
 
+	const commandResults = (() => {
+		if (searchTypeId !== 'all') return [];
+		const items = [
+			{
+				name: '\u5173\u673a',
+				path: 'system:shutdown',
+				description: 'Shut down the computer',
+				keywords: ['shutdown', 'poweroff', '\u5173\u673a'],
+			},
+			{
+				name: '\u91cd\u542f\u7535\u8111',
+				path: 'system:restart',
+				description: 'Restart the computer',
+				keywords: ['restart', 'reboot', '\u91cd\u542f', '\u91cd\u542f\u7535\u8111'],
+			},
+		];
+		const out: any[] = [];
+		for (const it of items) {
+			let best = { weightedScore: 0, matchIndex: 1_000_000, nameLen: 0 };
+			const candidates = [it.name, ...(it.keywords || [])];
+			for (const c of candidates) {
+				const r = computeWeightedNameMatch(c);
+				if (r.weightedScore > best.weightedScore) best = r;
+				else if (r.weightedScore === best.weightedScore) {
+					if (r.matchIndex < best.matchIndex) best = r;
+					else if (r.matchIndex === best.matchIndex && r.nameLen < best.nameLen) best = r;
+				}
+			}
+			if (best.weightedScore <= 0) continue;
+			const score = computeCombinedScore(best.weightedScore, 'command', it.path, getLastUsedMs(it.path));
+			out.push({
+				name: it.name,
+				path: it.path,
+				type: 'command',
+				description: it.description,
+				score,
+				weightedScore: best.weightedScore,
+				matchIndex: best.matchIndex,
+				nameLen: best.nameLen,
+			});
+		}
+		return out;
+	})();
+
 	const getCurrentIconPrefetchToken = () => iconPrefetchToken;
 	const ctx: SearchContext = {
 		event,
@@ -160,6 +204,7 @@ export async function handleSearchFiles(
 
 	const candidates = [
 		...directCandidates,
+		...commandResults,
 		...settingsResults,
 		...appResults,
 		...scoredFiles,

@@ -60,6 +60,10 @@ export function loadSettings(): AppSettings {
     if (existsSync(SETTINGS_PATH)) {
       const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
       const theme = raw?.theme === 'light' ? 'light' : 'dark';
+      const uiFontFamily =
+        typeof raw?.uiFontFamily === 'string' && raw.uiFontFamily.trim()
+          ? raw.uiFontFamily.trim().slice(0, 300)
+          : DEFAULT_SETTINGS.uiFontFamily;
       const effectType = raw?.effectType === 'warp' ? 'warp' : raw?.effectType === 'waves' ? 'waves' : 'particles';
       const backgroundImagePath =
         typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
@@ -206,6 +210,7 @@ export function loadSettings(): AppSettings {
           return v.replace(/CommandOrControl/g, 'Ctrl').trim();
         })(),
         theme,
+        uiFontFamily,
         historyLimit:
           typeof raw?.historyLimit === 'number' && Number.isFinite(raw.historyLimit)
             ? Math.min(50, Math.max(0, Math.floor(raw.historyLimit)))

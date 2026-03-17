@@ -10,6 +10,7 @@ export interface AppSettings {
   searchShortcut: string;
   settingsShortcut: string;
   theme: "dark" | "light";
+  uiFontFamily: string;
   historyLimit: number;
   defaultSearchTypeId: string;
   customSearchTypes: string[];
