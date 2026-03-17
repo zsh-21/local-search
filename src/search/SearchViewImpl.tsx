@@ -161,6 +161,13 @@ export function SearchViewImpl() {
     );
   };
 
+  const buildIconClassName = (icon: string | undefined, extra?: string) => {
+    const classes = ["result-icon"];
+    if (extra) classes.push(extra);
+    if (icon && icon.startsWith("data:image/svg+xml")) classes.push("svg-icon");
+    return classes.join(" ");
+  };
+
   const getExtension = (path: string) => {
     const parts = path.split(".");
     return parts.length > 1 ? parts.pop()?.toUpperCase() : "";
@@ -175,7 +182,7 @@ export function SearchViewImpl() {
   // 根据结果类型渲染不同图标：文件夹/应用/设置/文件
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
     if (item.type === "folder") {
-      // 文件夹图标使用 📂：无需额外图标资源，且在深浅色主题下对比度稳定
+      
       return (
         <span className="result-icon folder-emoji" aria-hidden="true">
           📂
@@ -185,7 +192,7 @@ export function SearchViewImpl() {
 
     if (item.type === "app") {
       if (!item.icon) return <span className="result-icon placeholder" />;
-      return <img className="result-icon" src={item.icon} alt="" />;
+      return <img className={buildIconClassName(item.icon)} src={item.icon} alt="" />;
     }
 
     if (item.type === "settings") {
@@ -199,7 +206,7 @@ export function SearchViewImpl() {
 
     if (item.type === "file") {
       if (item.icon && isImg) return <img className="result-icon image-preview" src={item.icon} alt="" />;
-      if (item.icon) return <img className="result-icon" src={item.icon} alt="" />;
+      if (item.icon) return <img className={buildIconClassName(item.icon)} src={item.icon} alt="" />;
       const ext = (item.path.split(".").pop() || "").trim().toUpperCase();
       const label = ext && ext.length <= 6 ? ext : "FILE";
       return (

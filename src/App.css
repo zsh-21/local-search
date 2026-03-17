@@ -14,13 +14,7 @@
 .settings-cancel,
 .settings-confirm,
 .shortcut-input {
-  font-family:
-    system-ui,
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Arial,
-    sans-serif;
+  font-family: var(--fs-font-sans);
 }
 
 .container button:focus-visible {
@@ -119,6 +113,7 @@ html[data-theme="dark"] {
   --fs-dots: rgba(34, 211, 238, 0.75);
   --fs-glow: 0 0 24px rgba(34, 211, 238, 0.22);
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.15);
 }
 
 html[data-theme="light"] {
@@ -136,6 +131,7 @@ html[data-theme="light"] {
   --fs-dots: rgba(2, 132, 199, 0.08);
   --fs-glow: 0 0 15px rgba(2, 132, 199, 0.08);
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(0) brightness(0.9);
 }
 
 /* 主题色选择网格 */
@@ -988,19 +984,19 @@ input::placeholder {
 }
 
 .search-container.compact .result-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .search-container.compact .result-icon.folder-emoji {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   font-size: 16px;
 }
 
 .search-container.compact .result-icon.image-preview {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
 }
 
 .search-container.compact .app-name {
@@ -1066,12 +1062,16 @@ html[data-theme="light"] .results li.selected {
 }
 
 .result-icon {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   flex: 0 0 auto;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
   transition: all 0.2s ease;
+}
+
+.result-icon.svg-icon {
+  filter: var(--fs-icon-filter) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
 }
 
 .result-icon.folder-icon {
@@ -1082,9 +1082,9 @@ html[data-theme="light"] .results li.selected {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
   line-height: 1;
   filter: none;
 }
@@ -1110,8 +1110,8 @@ html[data-theme="light"] .results li.selected {
 }
 
 .result-icon.image-preview {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 4px;
   object-fit: cover;
   border: 1.5px solid var(--fs-border);

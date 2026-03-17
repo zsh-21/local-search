@@ -1,6 +1,6 @@
 import { app, nativeImage } from 'electron';
 import path from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolveAppId } from '../win/resolveAppId';
 import { resolveLnkByPowerShell, readUrlIconFile } from '../win/shortcuts';
@@ -8,6 +8,156 @@ import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from '../wi
 import { iconDataCache, isTooSmallAppIconDataUrl, setIconCache } from './iconCache';
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
+const IMAGE_FALLBACK_MAX_BYTES = 2 * 1024 * 1024;
+const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none"><rect x="12" y="6" width="40" height="52" rx="6" stroke="#94a3b8" stroke-width="4"/><path d="M36 6v16h16" stroke="#94a3b8" stroke-width="4"/></svg>`;
+const FALLBACK_SVG_DATA_URL = `data:image/svg+xml;base64,${Buffer.from(FALLBACK_SVG).toString('base64')}`;
+
+const BUNDLED_ICON_DIR = (() => {
+	const candidates: string[] = [];
+	try {
+		const cwd = process.cwd();
+		if (cwd) candidates.push(path.join(cwd, 'public'));
+	} catch {}
+	try {
+		const appPath = app.getAppPath();
+		if (appPath) {
+			candidates.push(path.join(appPath, 'public'));
+			candidates.push(path.join(appPath, '..', 'public'));
+		}
+	} catch {}
+	for (const dir of candidates) {
+		const iconDir = path.join(dir, 'file-icons');
+		if (existsSync(iconDir)) return iconDir;
+	}
+	return '';
+})();
+
+const bundledIconDataCache = new Map<string, string>();
+
+const EXT_ICON_MAP: Record<string, string> = {
+	'.doc': 'file-text.svg',
+	'.docx': 'file-text.svg',
+	'.xls': 'file-spreadsheet.svg',
+	'.xlsx': 'file-spreadsheet.svg',
+	'.ppt': 'file-text.svg',
+	'.pptx': 'file-text.svg',
+	'.pdf': 'file-text.svg',
+	'.txt': 'file-text.svg',
+	'.md': 'file-text.svg',
+	'.rtf': 'file-text.svg',
+	'.jpg': 'file-image.svg',
+	'.jpeg': 'file-image.svg',
+	'.png': 'file-image.svg',
+	'.gif': 'file-image.svg',
+	'.bmp': 'file-image.svg',
+	'.webp': 'file-image.svg',
+	'.svg': 'file-image.svg',
+	'.ico': 'file-image.svg',
+	'.mp3': 'file.svg',
+	'.mp4': 'file.svg',
+	'.avi': 'file.svg',
+	'.mkv': 'file.svg',
+	'.zip': 'file-archive.svg',
+	'.rar': 'file-archive.svg',
+	'.7z': 'file-archive.svg',
+	'.iso': 'file-archive.svg',
+	'.exe': 'binary.svg',
+	'.msi': 'package.svg',
+	'.apk': 'package.svg',
+	'.dmg': 'package.svg',
+	'.html': 'file-code.svg',
+	'.htm': 'file-code.svg',
+	'.css': 'file-code.svg',
+	'.js': 'file-code.svg',
+	'.ts': 'file-code.svg',
+	'.vue': 'file-code.svg',
+	'.jsx': 'file-code.svg',
+	'.tsx': 'file-code.svg',
+	'.json': 'file-code.svg',
+	'.py': 'file-code.svg',
+	'.java': 'file-code.svg',
+	'.c': 'file-code.svg',
+	'.cpp': 'file-code.svg',
+	'.go': 'file-code.svg',
+	'.php': 'file-code.svg',
+	'.rb': 'file-code.svg',
+	'.sh': 'file-code.svg',
+	'.bat': 'file-code.svg',
+	'.sql': 'file-code.svg',
+	'.xml': 'file-cog.svg',
+	'.yml': 'file-cog.svg',
+	'.yaml': 'file-cog.svg',
+	'.ini': 'file-cog.svg',
+	'.log': 'file-text.svg',
+	'.dll': 'binary.svg',
+	'.gitignore': 'file-cog.svg',
+	'.msc': 'file-cog.svg',
+};
+
+function getBundledIconDataByName(name: string) {
+	if (!name || !BUNDLED_ICON_DIR) return '';
+	const key = name.toLowerCase();
+	const cached = bundledIconDataCache.get(key);
+	if (cached) return cached;
+	const fullPath = path.join(BUNDLED_ICON_DIR, name);
+	if (!existsSync(fullPath)) return '';
+	try {
+		const buf = readFileSync(fullPath);
+		const dataUrl = `data:image/svg+xml;base64,${buf.toString('base64')}`;
+		bundledIconDataCache.set(key, dataUrl);
+		return dataUrl;
+	} catch {
+		return '';
+	}
+}
+
+function getBundledIconForPath(filePath: string) {
+	if (!filePath) return '';
+	try {
+		if (existsSync(filePath)) {
+			const st = statSync(filePath);
+			if (st.isDirectory()) return getBundledIconDataByName('folder.svg');
+		}
+	} catch {}
+	const ext = path.extname(filePath).toLowerCase();
+	const iconName = EXT_ICON_MAP[ext] || 'file.svg';
+	return getBundledIconDataByName(iconName);
+}
+
+function getImageMimeByExt(ext: string) {
+	switch (ext) {
+		case '.jpg':
+		case '.jpeg':
+			return 'image/jpeg';
+		case '.png':
+			return 'image/png';
+		case '.gif':
+			return 'image/gif';
+		case '.bmp':
+			return 'image/bmp';
+		case '.webp':
+			return 'image/webp';
+		case '.ico':
+			return 'image/x-icon';
+		case '.svg':
+			return 'image/svg+xml';
+		default:
+			return 'application/octet-stream';
+	}
+}
+
+function buildImageDataUrl(filePath: string, ext: string) {
+	try {
+		const st = statSync(filePath);
+		if (!Number.isFinite(st.size) || st.size <= 0) return '';
+		if (st.size > IMAGE_FALLBACK_MAX_BYTES) return '';
+		const buf = readFileSync(filePath);
+		const mime = getImageMimeByExt(ext);
+		return `data:${mime};base64,${buf.toString('base64')}`;
+	} catch {
+		return '';
+	}
+}
 
 function normalizeIconFileSpec(spec: string) {
 	const raw = String(spec || '').trim();
@@ -81,6 +231,10 @@ export async function getFileIconData(filePath: string) {
 			} catch (err) {
 				console.error('Failed to generate image thumbnail:', err);
 			}
+			if (!iconData) {
+				const dataUrl = buildImageDataUrl(filePath, ext);
+				if (dataUrl) iconData = dataUrl;
+			}
 		}
 
 		if (!iconData) {
@@ -88,6 +242,11 @@ export async function getFileIconData(filePath: string) {
 			if (!icon.isEmpty()) iconData = icon.toDataURL();
 		}
 	} catch {}
+	if (!iconData) {
+		const bundled = getBundledIconForPath(filePath);
+		if (bundled) iconData = bundled;
+	}
+	if (!iconData) iconData = FALLBACK_SVG_DATA_URL;
 	if (iconData) setIconCache(key, iconData);
 	return iconData;
 }
@@ -253,6 +412,9 @@ async function getAppIconData(appName: string, appId: string) {
 			}
 		}
 	} catch {}
+	if (!iconData) {
+		iconData = getBundledIconDataByName('app-window.svg') || getBundledIconDataByName('file.svg') || '';
+	}
 	if (iconData) setIconCache(key, iconData);
 	return iconData;
 }

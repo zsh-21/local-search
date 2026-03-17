@@ -537,7 +537,7 @@ export function registerIpcHandlers() {
         await ensureStartMenuShortcutIndex();
         return await getAppIconDataStable(n, p, 3);
       }
-      if (t === 'file') {
+      if (t === 'file' || t === 'folder') {
         return await getFileIconData(p);
       }
       return '';
