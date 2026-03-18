@@ -645,18 +645,18 @@ export function useSearchController() {
   }, [searchTypeId, enabledSearchTypeOptions, settings.defaultSearchTypeId]);
 
   const placeholder = useMemo(() => {
-    if (searchTypeId === "all") return "鎼滅储鎵€鏈夋枃浠朵笌鏂囦欢澶?..";
-    if (searchTypeId === "app") return "鎼滅储搴旂敤...";
-    if (searchTypeId === "file") return "鎼滅储鏂囦欢锛堜笉鍚枃浠跺す锛?..";
-    if (searchTypeId === "folder") return "鎼滅储鏂囦欢澶癸紙涓嶅惈鏂囦欢锛?..";
-    if (searchTypeId === "image") return "鎼滅储鍥剧墖...";
-    if (searchTypeId === "video") return "鎼滅储瑙嗛...";
-    if (searchTypeId === "settings") return "鎼滅储绯荤粺璁剧疆椤?..";
+    if (searchTypeId === "all") return "搜索所有文件与文件夹...";
+    if (searchTypeId === "app") return "搜索应用...";
+    if (searchTypeId === "file") return "搜索文件（不含文件夹）...";
+    if (searchTypeId === "folder") return "搜索文件夹（不含文件）...";
+    if (searchTypeId === "image") return "搜索图片...";
+    if (searchTypeId === "video") return "搜索视频...";
+    if (searchTypeId === "settings") return "搜索系统设置项...";
     if (searchTypeId.startsWith("ext:")) {
       const ext = searchTypeId.slice(4);
-      return `鎼滅储${ext} 鏂囦欢...`;
+      return `搜索${ext} 文件...`;
     }
-    return "鎼滅储鎵€鏈夋枃浠朵笌鏂囦欢澶?..";
+    return "搜索所有文件与文件夹...";
   }, [searchTypeId]);
 
   // 鍒锋柊鍘嗗彶璁板綍锛氱敤浜庘€滅┖杈撳叆鈥濇ā寮忎笅灞曠ず鏈€杩戞墦寮€椤?
@@ -1535,7 +1535,7 @@ export function useSearchController() {
     listHeight,
     showEmptyState,
     showInputHint,
-    statusText: showSearchingIndicator ? "姝ｅ湪鎼滅储..." : isIndexing ? "姝ｅ湪寤虹珛鏈湴鏂囦欢绱㈠紩..." : "",
+    statusText: showSearchingIndicator ? "正在搜索..." : isIndexing ? "正在建立本地文件索引..." : "",
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
     inputRef,
