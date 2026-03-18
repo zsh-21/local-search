@@ -14,6 +14,7 @@ export const FS_BACKUP_SETTINGS_KEY = "fs_backup_settings";
 
 export { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS };
 
+// 主题色中文名称统一维护，避免各处文案不一致或出现乱码。
 export const THEME_COLOR_OPTIONS: Array<{ name: string; color: string }> = [
   { name: "天际蓝", color: "#38bdf8" },
   { name: "罗兰紫", color: "#818cf8" },
@@ -27,9 +28,16 @@ export const THEME_COLOR_OPTIONS: Array<{ name: string; color: string }> = [
   { name: "钛金灰", color: "#64748b" },
 ];
 
+// 主题体系：保留 light/dark，并新增 6 套品牌风格主题。
 export const THEME_STYLE_OPTIONS: Array<{ id: AppSettings["theme"]; label: string }> = [
   { id: "dark", label: "深色" },
-  { id: "light", label: "浅色" }, 
+  { id: "light", label: "浅色" },
+  { id: "steam", label: "Steam" },
+  { id: "trae", label: "Trae" },
+  { id: "chrome", label: "Chrome" },
+  { id: "window11", label: "Windows 11" },
+  { id: "linux", label: "Linux KDE" },
+  { id: "mac", label: "macOS" },
 ];
 
 export const RESULT_ACTION_OPTIONS: Array<{

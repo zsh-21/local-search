@@ -217,9 +217,9 @@ export function useSearchController() {
   const { settings, loaded } = useSettings();
 
   const parseDrivePrefix = (raw: string) => {
-    // 支持 E: / E:  / E： / E： 这四种盘符前缀写法，盘符大小写不敏感
+    // ?? E: / E:  / E? / E? ?????????????
     const s = typeof raw === "string" ? raw.trim() : "";
-    // 避免把完整路径（如 E:\\foo 或 E:/foo）误判成“盘符约束 + 关键词”
+    // ????????? E:\\foo ? E:/foo????????? + ????
     const m = s.match(/^([a-zA-Z])\s*(?::|\uFF1A)\s*(?![\\/])/);
     if (!m) return { term: s, drive: "" };
     const drive = (m[1] || "").toLowerCase();
@@ -230,6 +230,7 @@ export function useSearchController() {
   // 搜索输入与类型选择：驱动查询与结果过滤
   const [query, setQuery] = useState("");
   const [inputValue, setInputValue] = useState("");
+  const [ghostInputValue, setGhostInputValue] = useState("");
   const [searchTypeId, setSearchTypeId] = useState<string>(settings.defaultSearchTypeId || "all");
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -280,16 +281,19 @@ export function useSearchController() {
   const calcItemRef = useRef<AppItem | null>(null);
   // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
   const typeSwitchRequestedRef = useRef(false);
-  const shouldEchoSelectedOnceRef = useRef(false);
   const historyItemsRef = useRef<AppItem[]>(getBootstrapHistoryCache());
   const bootstrapTypeSyncedRef = useRef(false);
 
   const setQueryAndInputValue = (next: string) => {
     setQuery(next);
     setInputValue(next);
-    shouldEchoSelectedOnceRef.current = false;
+    setGhostInputValue("");
     setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
   };
+
+  const clearGhostInputValue = useCallback(() => {
+    setGhostInputValue("");
+  }, []);
 
   // 搜索列表的单项高度已抽离：便于你统一调整紧凑/普通模式的布局密度
   const ITEM_HEIGHT = settings.compactMode ? SEARCH_ITEM_HEIGHT_COMPACT : SEARCH_ITEM_HEIGHT_NORMAL;
@@ -371,11 +375,14 @@ export function useSearchController() {
   }, [results, selectedIndex]);
 
   useEffect(() => {
-    if (!shouldEchoSelectedOnceRef.current) return;
-    const it = results[selectedIndex];
-    if (it?.name) setInputValue(it.name);
-    shouldEchoSelectedOnceRef.current = false;
-  }, [results, selectedIndex]);
+    // 真实查询变化或切换类型后，清空“幽灵提示”避免误导
+    setGhostInputValue("");
+  }, [query, searchTypeId]);
+
+  useEffect(() => {
+    if (results.length > 0) return;
+    setGhostInputValue("");
+  }, [results.length]);
 
   useEffect(() => {
     // 结果集变化时保护 selectedIndex：避免指向越界导致列表滚动/渲染异常
@@ -655,7 +662,7 @@ export function useSearchController() {
     }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
     // 索引期加大防抖，优先保证输入流畅。
-    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 160 : 12;
+    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 160 : 80;
     typeSwitchRequestedRef.current = false;
     const timer = setTimeout(async () => {
       try {
@@ -952,6 +959,69 @@ export function useSearchController() {
     setSelectedActionIndex(-1);
   }, [selectedIndex]);
 
+  const normalizeShortcutMainKey = (raw: string) => {
+    const key = String(raw || "").trim();
+    if (!key) return "";
+    if (key === " ") return "Space";
+    if (key.length === 1) return key.toUpperCase();
+    if (key === "ArrowUp") return "Up";
+    if (key === "ArrowDown") return "Down";
+    if (key === "ArrowLeft") return "Left";
+    if (key === "ArrowRight") return "Right";
+    return key;
+  };
+
+  const parseShortcut = (shortcut: string) => {
+    const parts = String(shortcut || "")
+      .split("+")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const parsed = { ctrl: false, alt: false, shift: false, meta: false, key: "" };
+    for (const part of parts) {
+      const lower = part.toLowerCase();
+      if (lower === "ctrl" || lower === "control" || lower === "commandorcontrol") {
+        parsed.ctrl = true;
+        continue;
+      }
+      if (lower === "alt" || lower === "option") {
+        parsed.alt = true;
+        continue;
+      }
+      if (lower === "shift") {
+        parsed.shift = true;
+        continue;
+      }
+      if (lower === "meta" || lower === "cmd" || lower === "command" || lower === "super") {
+        parsed.meta = true;
+        continue;
+      }
+      parsed.key = normalizeShortcutMainKey(part);
+    }
+    return parsed;
+  };
+
+  const isShortcutPressed = (
+    e: { key: string; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean },
+    shortcut: string,
+  ) => {
+    const parsed = parseShortcut(shortcut);
+    if (!parsed.key) return false;
+    if (Boolean(e.ctrlKey) !== parsed.ctrl) return false;
+    if (Boolean(e.altKey) !== parsed.alt) return false;
+    if (Boolean(e.shiftKey) !== parsed.shift) return false;
+    if (Boolean(e.metaKey) !== parsed.meta) return false;
+    return normalizeShortcutMainKey(e.key) === parsed.key;
+  };
+
+  const acceptSelectedResultToInput = () => {
+    const selected = results[selectedIndex];
+    if (!selected?.name) return false;
+    setQueryAndInputValue(selected.name);
+    setGhostInputValue("");
+    inputRef.current?.focus();
+    return true;
+  };
+
   const handleKeyDownCore = useCallback(
     (e: {
       key: string;
@@ -1067,6 +1137,7 @@ export function useSearchController() {
       const nextIdx = (idx + delta + enabledSearchTypeOptions.length) % enabledSearchTypeOptions.length;
       const next = enabledSearchTypeOptions[nextIdx];
       typeSwitchRequestedRef.current = true;
+      setGhostInputValue("");
       setSelectedActionIndex(-1);
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
@@ -1075,35 +1146,57 @@ export function useSearchController() {
 
     if (results.length === 0) return;
 
+    const acceptShortcut = settings.acceptSelectedResultShortcut || DEFAULT_SETTINGS.acceptSelectedResultShortcut;
+    if (isShortcutPressed(e as any, acceptShortcut)) {
+      if (acceptSelectedResultToInput()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+
     if (e.key === "ArrowDown") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
-      setSelectedIndex((prev) => (prev + 1) % results.length);
+      setSelectedIndex((prev) => {
+        const next = (prev + 1) % results.length;
+        setGhostInputValue(results[next]?.name || "");
+        return next;
+      });
       e.preventDefault();
     } else if (e.key === "ArrowUp") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
-      setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
+      setSelectedIndex((prev) => {
+        const next = (prev - 1 + results.length) % results.length;
+        setGhostInputValue(results[next]?.name || "");
+        return next;
+      });
       e.preventDefault();
     } else if (e.key === "Home") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
+      setGhostInputValue(results[0]?.name || "");
       setSelectedIndex(0);
       e.preventDefault();
     } else if (e.key === "End") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
-      setSelectedIndex(results.length - 1);
+      const next = Math.max(0, results.length - 1);
+      setGhostInputValue(results[next]?.name || "");
+      setSelectedIndex(next);
       e.preventDefault();
     } else if (e.key === "PageDown") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
-      setSelectedIndex((prev) => Math.min(results.length - 1, prev + 10));
+      setSelectedIndex((prev) => {
+        const next = Math.min(results.length - 1, prev + 10);
+        setGhostInputValue(results[next]?.name || "");
+        return next;
+      });
       e.preventDefault();
     } else if (e.key === "PageUp") {
       setLastSelectedBy("keyboard");
-      shouldEchoSelectedOnceRef.current = true;
-      setSelectedIndex((prev) => Math.max(0, prev - 10));
+      setSelectedIndex((prev) => {
+        const next = Math.max(0, prev - 10);
+        setGhostInputValue(results[next]?.name || "");
+        return next;
+      });
       e.preventDefault();
     } else if (e.key === "Enter") {
       const selected = results[selectedIndex];
@@ -1220,6 +1313,7 @@ export function useSearchController() {
     query,
     setQuery: setQueryAndInputValue,
     inputValue,
+    ghostInputValue,
     searchTypeId,
     setSearchTypeId,
     typeMenuOpen,
@@ -1270,5 +1364,6 @@ export function useSearchController() {
     showToast,
     selectedActionId,
     clearActionSelection,
+    clearGhostInputValue,
   };
 }

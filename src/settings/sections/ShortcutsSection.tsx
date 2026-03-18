@@ -1,7 +1,7 @@
 import { AppSettings } from "../../appTypes";
 import { toAccelerator } from "../../settingsStore";
 
-// 快捷键分区：监听用户按键并生成 Electron Accelerator 字符串
+// 快捷键分区：支持全局快捷键与面板内“写入选中项”快捷键自定义。
 export function ShortcutsSection({
   draft,
   setDraft,
@@ -17,36 +17,50 @@ export function ShortcutsSection({
         <div className="settings-group-title">快捷键</div>
         <div className="shortcut-grid">
           <div className="shortcut-row">
-            <div className="shortcut-label">呼出搜索框</div>
+            <div className="shortcut-label">呼出搜索面板</div>
             <input
               className="shortcut-input"
               readOnly
               value={draft.searchShortcut}
-              placeholder="点击设置快捷键"
+              placeholder="点击后按下快捷键"
               onKeyDown={(e) => {
                 e.preventDefault();
                 const acc = toAccelerator(e);
-                if (acc) {
-                  setDraft({ ...draft, searchShortcut: acc });
-                  setError("");
-                }
+                if (!acc) return;
+                setDraft({ ...draft, searchShortcut: acc });
+                setError("");
               }}
             />
           </div>
           <div className="shortcut-row">
-            <div className="shortcut-label">打开设置</div>
+            <div className="shortcut-label">打开设置面板</div>
             <input
               className="shortcut-input"
               readOnly
               value={draft.settingsShortcut}
-              placeholder="点击设置快捷键"
+              placeholder="点击后按下快捷键"
               onKeyDown={(e) => {
                 e.preventDefault();
                 const acc = toAccelerator(e);
-                if (acc) {
-                  setDraft({ ...draft, settingsShortcut: acc });
-                  setError("");
-                }
+                if (!acc) return;
+                setDraft({ ...draft, settingsShortcut: acc });
+                setError("");
+              }}
+            />
+          </div>
+          <div className="shortcut-row">
+            <div className="shortcut-label">写入选中项</div>
+            <input
+              className="shortcut-input"
+              readOnly
+              value={draft.acceptSelectedResultShortcut}
+              placeholder="点击后按下快捷键"
+              onKeyDown={(e) => {
+                e.preventDefault();
+                const acc = toAccelerator(e);
+                if (!acc) return;
+                setDraft({ ...draft, acceptSelectedResultShortcut: acc });
+                setError("");
               }}
             />
           </div>
@@ -64,10 +78,6 @@ export function ShortcutsSection({
             <div className="shortcut-label">切换类型</div>
             <input className="shortcut-input" readOnly value="Tab / Shift+Tab" />
           </div>
-          {/* <div className="shortcut-row">
-            <div className="shortcut-label">聚焦输入</div>
-            <input className="shortcut-input" readOnly value="Ctrl/Cmd+L 或 Ctrl/Cmd+K" />
-          </div> */}
           <div className="shortcut-row">
             <div className="shortcut-label">打开/运行</div>
             <input className="shortcut-input" readOnly value="Enter" />

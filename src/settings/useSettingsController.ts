@@ -52,6 +52,7 @@ export function useSettingsController() {
     settings.autoStart,
     settings.searchShortcut,
     settings.settingsShortcut,
+    settings.acceptSelectedResultShortcut,
     settings.theme,
     settings.uiFontFamily,
     settings.historyLimit,
@@ -75,6 +76,7 @@ export function useSettingsController() {
       draft.autoStart === settings.autoStart &&
       draft.searchShortcut === settings.searchShortcut &&
       draft.settingsShortcut === settings.settingsShortcut &&
+      draft.acceptSelectedResultShortcut === settings.acceptSelectedResultShortcut &&
       draft.theme === settings.theme &&
       draft.uiFontFamily === settings.uiFontFamily &&
       draft.historyLimit === settings.historyLimit &&

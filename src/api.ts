@@ -10,7 +10,7 @@ export interface User {
   phone: string;
   email: string;
   avatarText: string;
-  theme: "light" | "dark" | "dusk" | "forest" | "ocean" | "sunset";
+  theme: "dark" | "light" | "steam" | "trae" | "chrome" | "window11" | "linux" | "mac";
   primaryColor: string;
   // 会员到期时间（ISO 字符串）；后端仅在存在记录时返回
   memberExpiresAt?: string;

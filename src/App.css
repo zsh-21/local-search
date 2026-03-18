@@ -30,9 +30,11 @@
 }
 
 /* 预留：边/角热区的语义类，方便后续扩展不同形态的缩放逻辑 */
-.resize-handle.edge {}
+.resize-handle.edge {
+}
 
-.resize-handle.corner {}
+.resize-handle.corner {
+}
 
 .resize-handle.top {
   top: -6px;
@@ -100,40 +102,282 @@
 
 /* 主题变量：深色/浅色模式统一从这里派生，组件尽量只使用 CSS 变量 */
 html[data-theme="dark"] {
-  --fs-bg: #070b14;
-  --fs-surface: #0b1424;
-  --fs-surface-2: rgba(34, 211, 238, 0.08);
-  --fs-border: rgba(56, 189, 248, 0.24);
-  --fs-text: #dbeafe;
-  --fs-search-text: #ecfeff;
-  --fs-muted: #7f97b8;
-  --fs-accent: #22d3ee;
-  --fs-accent-soft: rgba(34, 211, 238, 0.16);
-  --fs-shadow: 0 24px 50px -16px rgba(2, 6, 23, 0.82);
-  --fs-dots: rgba(34, 211, 238, 0.75);
-  --fs-glow: 0 0 24px rgba(34, 211, 238, 0.22);
+  --fs-bg: #0b1018;
+  --fs-surface: #151d29;
+  --fs-surface-2: rgba(255, 255, 255, 0.06);
+  --fs-surface-active: #1d2838;
+  --fs-border: rgba(124, 161, 214, 0.22);
+  --fs-border-soft: rgba(124, 161, 214, 0.14);
+  --fs-text: #d9e7fb;
+  --fs-text-secondary: #c6d8f1;
+  --fs-search-text: #f4f9ff;
+  --fs-muted: #8ea5c6;
+  --fs-accent: #57b7ff;
+  --fs-accent-soft: rgba(87, 183, 255, 0.18);
+  --fs-shadow: 0 26px 58px -26px rgba(0, 0, 0, 0.86);
+  --fs-dots: rgba(87, 183, 255, 0.52);
+  --fs-glow: 0 0 28px rgba(87, 183, 255, 0.24);
+  --fs-window-bg: radial-gradient(circle at 18% -14%, rgba(88, 156, 255, 0.17), transparent 52%), #0b1018;
+  --fs-window-border: rgba(117, 150, 196, 0.32);
+  --fs-panel-bg: rgba(16, 24, 36, 0.72);
+  --fs-control-bg: rgba(23, 32, 46, 0.9);
+  --fs-control-hover: rgba(30, 42, 60, 0.95);
+  --fs-menu-bg: rgba(18, 28, 42, 0.96);
+  --fs-item-hover: rgba(73, 129, 198, 0.15);
+  --fs-selected-bg: rgba(87, 183, 255, 0.2);
+  --fs-selected-border: rgba(119, 201, 255, 0.58);
+  --fs-focus-shadow: 0 0 0 3px rgba(87, 183, 255, 0.2), 0 16px 34px -18px rgba(0, 0, 0, 0.72);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
-  --fs-icon-filter: invert(1) brightness(1.15);
+  --fs-icon-filter: invert(1) brightness(1.12);
 }
 
 html[data-theme="light"] {
-  --fs-bg: #f1f5f9;
-  /* 更加温润的浅蓝灰 */
+  --fs-bg: #f2f6fb;
   --fs-surface: #ffffff;
-  --fs-surface-2: #e2e8f0;
-  --fs-border: rgba(15, 23, 42, 0.08);
-  --fs-text: #475569;
-  --fs-search-text: #0f172a;
-  --fs-muted: #64748b;
-  --fs-accent: #38bdf8;
-  --fs-accent-soft: #f0f9ff;
-  --fs-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.1), 0 4px 6px -4px rgba(15, 23, 42, 0.05);
-  --fs-dots: rgba(2, 132, 199, 0.08);
-  --fs-glow: 0 0 15px rgba(2, 132, 199, 0.08);
+  --fs-surface-2: #edf3fb;
+  --fs-surface-active: #f8fbff;
+  --fs-border: rgba(27, 57, 91, 0.13);
+  --fs-border-soft: rgba(27, 57, 91, 0.08);
+  --fs-text: #33445f;
+  --fs-text-secondary: #4b5f7d;
+  --fs-search-text: #0f1d32;
+  --fs-muted: #6a7c97;
+  --fs-accent: #3a8df7;
+  --fs-accent-soft: rgba(58, 141, 247, 0.14);
+  --fs-shadow: 0 16px 32px -22px rgba(21, 44, 77, 0.32);
+  --fs-dots: rgba(26, 115, 232, 0.14);
+  --fs-glow: 0 0 18px rgba(58, 141, 247, 0.14);
+  --fs-window-bg: radial-gradient(circle at 82% -26%, rgba(102, 157, 255, 0.2), transparent 52%), #f2f6fb;
+  --fs-window-border: rgba(49, 88, 145, 0.22);
+  --fs-panel-bg: rgba(255, 255, 255, 0.85);
+  --fs-control-bg: rgba(255, 255, 255, 0.96);
+  --fs-control-hover: rgba(245, 250, 255, 0.98);
+  --fs-menu-bg: rgba(255, 255, 255, 0.98);
+  --fs-item-hover: rgba(58, 141, 247, 0.09);
+  --fs-selected-bg: rgba(58, 141, 247, 0.13);
+  --fs-selected-border: rgba(58, 141, 247, 0.42);
+  --fs-focus-shadow: 0 0 0 3px rgba(58, 141, 247, 0.16), 0 12px 24px -18px rgba(21, 44, 77, 0.4);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.9);
 }
- 
+
+/* Steam???? + ???? */
+html[data-theme="steam"] {
+  --fs-bg: #171a21;
+  --fs-surface: #1b2838;
+  --fs-surface-2: rgba(255, 255, 255, 0.06);
+  --fs-surface-active: #27384d;
+  --fs-border: rgba(128, 166, 214, 0.24);
+  --fs-border-soft: rgba(128, 166, 214, 0.15);
+  --fs-text: #d8e4f2;
+  --fs-text-secondary: #c2d4ea;
+  --fs-search-text: #f2f8ff;
+  --fs-muted: #8ea6c5;
+  --fs-accent: #66c0f4;
+  --fs-accent-soft: rgba(102, 192, 244, 0.2);
+  --fs-shadow: 0 30px 62px -26px rgba(3, 8, 15, 0.9);
+  --fs-dots: rgba(102, 192, 244, 0.4);
+  --fs-glow: 0 0 26px rgba(102, 192, 244, 0.24);
+  --fs-window-bg: radial-gradient(circle at 84% -30%, rgba(102, 192, 244, 0.18), transparent 48%), #171a21;
+  --fs-window-border: rgba(123, 159, 204, 0.34);
+  --fs-panel-bg: rgba(24, 36, 51, 0.82);
+  --fs-control-bg: rgba(33, 49, 69, 0.88);
+  --fs-control-hover: rgba(41, 61, 86, 0.95);
+  --fs-menu-bg: rgba(27, 41, 58, 0.97);
+  --fs-item-hover: rgba(102, 192, 244, 0.16);
+  --fs-selected-bg: rgba(102, 192, 244, 0.22);
+  --fs-selected-border: rgba(137, 216, 255, 0.58);
+  --fs-focus-shadow: 0 0 0 3px rgba(102, 192, 244, 0.22), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+}
+
+/* Trae??? IDE + ????? */
+html[data-theme="trae"] {
+  --fs-bg: #0d1117;
+  --fs-surface: #141a24;
+  --fs-surface-2: rgba(255, 255, 255, 0.06);
+  --fs-surface-active: #1e2735;
+  --fs-border: rgba(132, 154, 196, 0.22);
+  --fs-border-soft: rgba(132, 154, 196, 0.12);
+  --fs-text: #d8e2f2;
+  --fs-text-secondary: #c3d2e9;
+  --fs-search-text: #f4f8ff;
+  --fs-muted: #8fa2c2;
+  --fs-accent: #4fd0ff;
+  --fs-accent-soft: rgba(79, 208, 255, 0.2);
+  --fs-shadow: 0 28px 58px -24px rgba(4, 8, 14, 0.9);
+  --fs-dots: rgba(145, 164, 255, 0.35);
+  --fs-glow: 0 0 26px rgba(145, 164, 255, 0.24);
+  --fs-window-bg: radial-gradient(circle at 8% -18%, rgba(114, 119, 255, 0.18), transparent 52%), #0d1117;
+  --fs-window-border: rgba(130, 148, 186, 0.31);
+  --fs-panel-bg: rgba(18, 25, 37, 0.8);
+  --fs-control-bg: rgba(22, 31, 46, 0.9);
+  --fs-control-hover: rgba(29, 42, 62, 0.95);
+  --fs-menu-bg: rgba(18, 27, 42, 0.97);
+  --fs-item-hover: rgba(113, 176, 255, 0.15);
+  --fs-selected-bg: rgba(79, 208, 255, 0.2);
+  --fs-selected-border: rgba(121, 220, 255, 0.58);
+  --fs-focus-shadow: 0 0 0 3px rgba(79, 208, 255, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 10px;
+  --fs-radius-control: 8px;
+  --fs-radius-item: 9px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.1);
+}
+
+/* Chrome?Material ??????? + ????? */
+html[data-theme="chrome"] {
+  --fs-bg: #f1f3f4;
+  --fs-surface: #ffffff;
+  --fs-surface-2: #f8f9fb;
+  --fs-surface-active: #ffffff;
+  --fs-border: rgba(32, 33, 36, 0.15);
+  --fs-border-soft: rgba(32, 33, 36, 0.1);
+  --fs-text: #202124;
+  --fs-text-secondary: #344154;
+  --fs-search-text: #0f172a;
+  --fs-muted: #5f6368;
+  --fs-accent: #1a73e8;
+  --fs-accent-soft: rgba(26, 115, 232, 0.14);
+  --fs-shadow: 0 12px 28px -20px rgba(60, 64, 67, 0.42);
+  --fs-dots: rgba(26, 115, 232, 0.12);
+  --fs-glow: 0 0 16px rgba(26, 115, 232, 0.16);
+  --fs-window-bg: radial-gradient(circle at 12% -24%, rgba(26, 115, 232, 0.12), transparent 54%), #f1f3f4;
+  --fs-window-border: rgba(60, 64, 67, 0.22);
+  --fs-panel-bg: rgba(255, 255, 255, 0.88);
+  --fs-control-bg: #ffffff;
+  --fs-control-hover: #f7faff;
+  --fs-menu-bg: #ffffff;
+  --fs-item-hover: rgba(26, 115, 232, 0.09);
+  --fs-selected-bg: rgba(26, 115, 232, 0.14);
+  --fs-selected-border: rgba(26, 115, 232, 0.42);
+  --fs-focus-shadow: 0 0 0 3px rgba(26, 115, 232, 0.16), 0 14px 24px -20px rgba(60, 64, 67, 0.52);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(0) brightness(0.9);
+}
+
+/* Windows 11?Dark??Fluent + Mica ????? */
+html[data-theme="window11"] {
+  --fs-bg: #11151d;
+  --fs-surface: #1b222d;
+  --fs-surface-2: rgba(255, 255, 255, 0.06);
+  --fs-surface-active: #242d3a;
+  --fs-border: rgba(255, 255, 255, 0.16);
+  --fs-border-soft: rgba(255, 255, 255, 0.09);
+  --fs-text: #e6edf8;
+  --fs-text-secondary: #d5e0ef;
+  --fs-search-text: #f8fbff;
+  --fs-muted: #9fb0c8;
+  --fs-accent: #4cc2ff;
+  --fs-accent-soft: rgba(76, 194, 255, 0.2);
+  --fs-shadow: 0 30px 60px -26px rgba(0, 0, 0, 0.88);
+  --fs-dots: rgba(115, 177, 255, 0.24);
+  --fs-glow: 0 0 24px rgba(76, 194, 255, 0.22);
+  --fs-window-bg: radial-gradient(circle at 2% -20%, rgba(122, 168, 255, 0.2), transparent 52%), #11151d;
+  --fs-window-border: rgba(255, 255, 255, 0.2);
+  --fs-panel-bg: rgba(27, 34, 45, 0.74);
+  --fs-control-bg: rgba(31, 40, 53, 0.86);
+  --fs-control-hover: rgba(41, 52, 69, 0.94);
+  --fs-menu-bg: rgba(25, 32, 43, 0.96);
+  --fs-item-hover: rgba(124, 177, 255, 0.14);
+  --fs-selected-bg: rgba(76, 194, 255, 0.2);
+  --fs-selected-border: rgba(118, 212, 255, 0.58);
+  --fs-focus-shadow: 0 0 0 3px rgba(76, 194, 255, 0.22), 0 16px 38px -20px rgba(0, 0, 0, 0.75);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 9px;
+  --fs-radius-item: 9px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+}
+
+/* Linux?KDE Breeze?????? + KDE ??? */
+html[data-theme="linux"] {
+  --fs-bg: #edf1f6;
+  --fs-surface: #ffffff;
+  --fs-surface-2: #f3f6fb;
+  --fs-surface-active: #ffffff;
+  --fs-border: rgba(85, 110, 140, 0.2);
+  --fs-border-soft: rgba(85, 110, 140, 0.12);
+  --fs-text: #354b63;
+  --fs-text-secondary: #4f6680;
+  --fs-search-text: #1f334a;
+  --fs-muted: #7086a0;
+  --fs-accent: #3daee9;
+  --fs-accent-soft: rgba(61, 174, 233, 0.16);
+  --fs-shadow: 0 12px 24px -18px rgba(31, 55, 84, 0.36);
+  --fs-dots: rgba(61, 174, 233, 0.16);
+  --fs-glow: 0 0 14px rgba(61, 174, 233, 0.14);
+  --fs-window-bg: radial-gradient(circle at 12% -26%, rgba(95, 183, 233, 0.16), transparent 56%), #edf1f6;
+  --fs-window-border: rgba(85, 110, 140, 0.24);
+  --fs-panel-bg: rgba(255, 255, 255, 0.86);
+  --fs-control-bg: rgba(252, 254, 255, 0.97);
+  --fs-control-hover: rgba(245, 250, 255, 0.98);
+  --fs-menu-bg: rgba(255, 255, 255, 0.98);
+  --fs-item-hover: rgba(61, 174, 233, 0.11);
+  --fs-selected-bg: rgba(61, 174, 233, 0.16);
+  --fs-selected-border: rgba(61, 174, 233, 0.45);
+  --fs-focus-shadow: 0 0 0 3px rgba(61, 174, 233, 0.16), 0 12px 24px -20px rgba(31, 55, 84, 0.52);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 10px;
+  --fs-radius-control: 8px;
+  --fs-radius-item: 8px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(0) brightness(0.92);
+}
+
+/* macOS?????? + ???? + ???? */
+html[data-theme="mac"] {
+  --fs-bg: #e9edf3;
+  --fs-surface: rgba(255, 255, 255, 0.7);
+  --fs-surface-2: rgba(248, 250, 255, 0.78);
+  --fs-surface-active: rgba(255, 255, 255, 0.86);
+  --fs-border: rgba(72, 88, 114, 0.18);
+  --fs-border-soft: rgba(72, 88, 114, 0.12);
+  --fs-text: #36465f;
+  --fs-text-secondary: #4e627e;
+  --fs-search-text: #233248;
+  --fs-muted: #72849d;
+  --fs-accent: #0a84ff;
+  --fs-accent-soft: rgba(10, 132, 255, 0.16);
+  --fs-shadow: 0 16px 36px -24px rgba(30, 44, 67, 0.48);
+  --fs-dots: rgba(10, 132, 255, 0.14);
+  --fs-glow: 0 0 16px rgba(10, 132, 255, 0.14);
+  --fs-window-bg: radial-gradient(circle at 80% -18%, rgba(10, 132, 255, 0.14), transparent 56%), #e9edf3;
+  --fs-window-border: rgba(72, 88, 114, 0.2);
+  --fs-panel-bg: rgba(255, 255, 255, 0.72);
+  --fs-control-bg: rgba(255, 255, 255, 0.74);
+  --fs-control-hover: rgba(255, 255, 255, 0.9);
+  --fs-menu-bg: rgba(255, 255, 255, 0.92);
+  --fs-item-hover: rgba(10, 132, 255, 0.1);
+  --fs-selected-bg: rgba(10, 132, 255, 0.15);
+  --fs-selected-border: rgba(10, 132, 255, 0.42);
+  --fs-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.16), 0 14px 28px -20px rgba(30, 44, 67, 0.58);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 14px;
+  --fs-radius-control: 11px;
+  --fs-radius-item: 10px;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(0) brightness(0.92);
+}
 
 /* 主题色选择网格 */
 .accent-color-grid {
@@ -205,62 +449,137 @@ html[data-theme="light"] {
   transform: scale(0.9);
 }
 
-html[data-theme="light"] .container {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .container {
   border-color: rgba(15, 23, 42, 0.05);
   background: rgba(241, 245, 249, 0.95);
 }
 
-html[data-theme="light"] .search-box {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .search-box {
   background: #ffffff;
   border-color: rgba(15, 23, 42, 0.1);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
 }
 
-html[data-theme="light"] .search-box:focus-within {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .search-box:focus-within {
   border-color: var(--fs-accent);
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12), 0 8px 16px -4px rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 0 0 3px rgba(2, 132, 199, 0.12),
+    0 8px 16px -4px rgba(15, 23, 42, 0.1);
 }
 
-html[data-theme="light"] .results li.selected {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .results
+  li.selected {
   background-color: #ffffff;
   border-color: var(--fs-accent);
   box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.08);
 }
 
-html[data-theme="light"] .action-btn {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .action-btn {
   background: #ffffff;
   border-color: rgba(15, 23, 42, 0.08);
   color: #64748b;
 }
 
-html[data-theme="light"] .action-btn:hover {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .action-btn:hover {
   background: var(--fs-accent-soft);
   border-color: var(--fs-accent);
   color: var(--fs-accent);
 }
 
-html[data-theme="light"] .type-select-menu {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .type-select-menu {
   background: #ffffff;
   border-color: #e2e8f0;
   box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.05);
 }
 
-html[data-theme="light"] .type-select-item:hover {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .type-select-item:hover {
   background: #f8fafc;
 }
 
-html[data-theme="light"] .type-select-item.active {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .type-select-item.active {
   background: var(--fs-accent-soft);
   color: var(--fs-accent);
   border-color: var(--fs-accent);
 }
 
-html[data-theme="light"] input::placeholder {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  input::placeholder {
   color: #94a3b8;
 }
 
-html[data-theme="light"] .app-logo-main,
-html[data-theme="light"] .settings-logo {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .app-logo-main,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-logo {
   filter: brightness(0.8) opacity(0.7);
 }
 
@@ -296,7 +615,10 @@ html[data-theme="light"] .settings-logo {
 }
 
 .theme-anim {
-  transition: background-color 0.24s ease, color 0.24s ease, border-color 0.24s ease;
+  transition:
+    background-color 0.24s ease,
+    color 0.24s ease,
+    border-color 0.24s ease;
 }
 
 .container {
@@ -372,7 +694,13 @@ html[data-theme="light"] .settings-logo {
   border: none;
 }
 
-html[data-theme="light"] .container.settings-container {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .container.settings-container {
   background: var(--fs-bg);
 }
 
@@ -403,7 +731,9 @@ html[data-theme="light"] .container.settings-container {
 
 .search-box:focus-within {
   border-color: var(--fs-accent);
-  box-shadow: 0 0 0 3px var(--fs-accent-soft), 0 12px 24px -8px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 0 0 3px var(--fs-accent-soft),
+    0 12px 24px -8px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
 }
 
@@ -604,7 +934,9 @@ html[data-theme="light"] .container.settings-container {
   border: 1px solid var(--fs-border);
   border-radius: 8px;
   padding: 2px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--fs-border);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--fs-border);
   z-index: 99999;
   /* 极大值确保最顶层 */
   max-height: 320px;
@@ -743,7 +1075,34 @@ html[data-theme="light"] .container.settings-container {
   outline: none;
   width: 100%;
   min-width: 0;
+}
+
   /* 防止 input 撑开容器 */
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-input-wrap .search-ghost-value {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  pointer-events: none;
+  color: var(--fs-muted);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-box input.search-input-ghost-mode {
+  color: transparent;
+  caret-color: var(--fs-search-text);
 }
 
 input::placeholder {
@@ -804,7 +1163,11 @@ input::placeholder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .clear-btn:hover {
@@ -850,7 +1213,7 @@ input::placeholder {
   opacity: 0.7;
 }
 
-.ignore-tips{
+.ignore-tips {
   font-size: 10px;
   color: var(--fs-muted);
   opacity: 0.5;
@@ -944,7 +1307,9 @@ input::placeholder {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 按钮处理中状态 */
@@ -1023,7 +1388,14 @@ input::placeholder {
   transform: scale(1.002);
 }
 
-html[data-theme="light"] .results li.selected {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .results
+  li.selected {
   border: 1px solid #bae6fd;
   box-shadow: 0 2px 8px rgba(2, 132, 199, 0.05);
 }
@@ -1115,7 +1487,7 @@ html[data-theme="light"] .results li.selected {
   height: 35px;
   overflow: hidden;
   border-radius: 4px;
-  object-fit:cover;
+  object-fit: cover;
   margin-right: -4px;
   /* 补偿增大的宽度，保持对齐 */
   margin-left: -4px;
@@ -1158,7 +1530,7 @@ html[data-theme="light"] .results li.selected {
 }
 
 .match {
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--fs-text);
   border-radius: 4px;
   padding: 0 2px;
@@ -1277,7 +1649,15 @@ html[data-theme="light"] .results li.selected {
   opacity: 1;
 }
 
-html[data-theme="light"] .results li.selected .action-btn {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .results
+  li.selected
+  .action-btn {
   border-color: rgba(0, 0, 0, 0.05);
 }
 
@@ -1481,7 +1861,9 @@ html[data-theme="light"] .results li.selected .action-btn {
   background-position:
     calc(100% - 18px) 50%,
     calc(100% - 13px) 50%;
-  background-size: 6px 6px, 6px 6px;
+  background-size:
+    6px 6px,
+    6px 6px;
   background-repeat: no-repeat;
 }
 
@@ -1769,7 +2151,7 @@ html[data-theme="light"] .results li.selected .action-btn {
   gap: 10px;
   padding: 10px 10px;
   border-radius: 12px;
-  background: rgba(var(--fs-surface),0.5);
+  background: rgba(var(--fs-surface), 0.5);
   border: 1px solid var(--fs-border);
   color: var(--fs-text);
   cursor: pointer;
@@ -1849,7 +2231,9 @@ html[data-theme="light"] .results li.selected .action-btn {
   position: relative;
   z-index: 1;
   /* 增加跟随主题色的边框 */
-  box-shadow: 0 0 0 2px var(--fs-accent-soft), 0 0 0 4px var(--fs-surface);
+  box-shadow:
+    0 0 0 2px var(--fs-accent-soft),
+    0 0 0 4px var(--fs-surface);
   border: 2px solid var(--fs-surface);
 }
 
@@ -1957,7 +2341,13 @@ html[data-theme="light"] .results li.selected .action-btn {
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-html[data-theme="light"] .settings-nav-item:hover {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-nav-item:hover {
   background: rgba(15, 23, 42, 0.04);
   border-color: rgba(15, 23, 42, 0.04);
 }
@@ -1988,14 +2378,14 @@ html[data-theme="light"] .settings-nav-item:hover {
   flex: 1;
   height: calc(100% - 90px);
   overflow-y: hidden;
-  padding:0 0px 0px 16px;
+  padding: 0 0px 0px 16px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
 }
 
-.settings-main-inner>* {
+.settings-main-inner > * {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
@@ -2077,7 +2467,13 @@ html[data-theme="light"] .settings-nav-item:hover {
   z-index: 1;
 }
 
-html[data-theme="light"] .settings-group {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-group {
   background: rgba(255, 255, 255, 0.74);
 }
 
@@ -2398,7 +2794,9 @@ html[data-theme="light"] .settings-group {
 .font-card.active {
   background: var(--fs-surface);
   border-color: var(--fs-accent);
-  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--fs-accent);
+  box-shadow:
+    0 8px 20px -4px rgba(0, 0, 0, 0.2),
+    0 0 0 1px var(--fs-accent);
 }
 
 .font-preview {
@@ -2440,7 +2838,9 @@ html[data-theme="light"] .settings-group {
 .theme-card.active {
   background: var(--fs-surface);
   border-color: var(--fs-accent);
-  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--fs-accent);
+  box-shadow:
+    0 8px 20px -4px rgba(0, 0, 0, 0.2),
+    0 0 0 1px var(--fs-accent);
 }
 
 .theme-card.active span {
@@ -2510,112 +2910,178 @@ html[data-theme="light"] .settings-group {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.theme-card.theme-dusk .theme-preview {
-  background: linear-gradient(135deg, #1b1433 0%, #2a1f4f 100%);
+.theme-card.theme-steam .theme-preview {
+  background: linear-gradient(135deg, #171a21 0%, #1b2838 100%);
 }
 
-.theme-card.theme-dusk .theme-preview::before {
+.theme-card.theme-steam .theme-preview::before {
+  content: "";
+  position: absolute;
+  top: 14%;
+  left: 9%;
+  width: 60%;
+  height: 8px;
+  background: rgba(102, 192, 244, 0.28);
+  border-radius: 2px;
+}
+
+.theme-card.theme-steam .theme-preview::after {
+  content: "";
+  position: absolute;
+  top: 38%;
+  left: 10%;
+  width: 80%;
+  height: 36%;
+  background: rgba(34, 49, 69, 0.92);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px rgba(102, 192, 244, 0.38),
+    inset 0 -8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.theme-card.theme-trae .theme-preview {
+  background: linear-gradient(135deg, #0d1117 0%, #161d2b 100%);
+}
+
+.theme-card.theme-trae .theme-preview::before {
+  content: "";
+  position: absolute;
+  top: 14%;
+  left: 9%;
+  width: 58%;
+  height: 8px;
+  background: linear-gradient(90deg, rgba(143, 159, 255, 0.3), rgba(79, 208, 255, 0.24));
+  border-radius: 2px;
+}
+
+.theme-card.theme-trae .theme-preview::after {
+  content: "";
+  position: absolute;
+  top: 38%;
+  left: 10%;
+  width: 80%;
+  height: 36%;
+  background: rgba(24, 34, 52, 0.92);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px rgba(118, 211, 255, 0.4),
+    inset 0 -8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.theme-card.theme-chrome .theme-preview {
+  background: linear-gradient(135deg, #f1f3f4 0%, #e9edf3 100%);
+}
+
+.theme-card.theme-chrome .theme-preview::before {
+  content: "";
+  position: absolute;
+  top: 13%;
+  left: 10%;
+  width: 58%;
+  height: 8px;
+  background: rgba(26, 115, 232, 0.2);
+  border-radius: 2px;
+}
+
+.theme-card.theme-chrome .theme-preview::after {
+  content: "";
+  position: absolute;
+  top: 38%;
+  left: 10%;
+  width: 80%;
+  height: 34%;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 0 1px rgba(60, 64, 67, 0.14),
+    0 5px 10px rgba(60, 64, 67, 0.15);
+}
+
+.theme-card.theme-window11 .theme-preview {
+  background: linear-gradient(135deg, #11151d 0%, #1b222d 100%);
+}
+
+.theme-card.theme-window11 .theme-preview::before {
   content: "";
   position: absolute;
   top: 14%;
   left: 10%;
-  width: 55%;
+  width: 56%;
   height: 8px;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(76, 194, 255, 0.25);
   border-radius: 2px;
 }
 
-.theme-card.theme-dusk .theme-preview::after {
+.theme-card.theme-window11 .theme-preview::after {
   content: "";
   position: absolute;
-  top: 40%;
+  top: 38%;
   left: 10%;
   width: 80%;
-  height: 32%;
-  background: rgba(30, 25, 60, 0.85);
+  height: 35%;
+  background: rgba(31, 40, 53, 0.92);
   border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.35);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 -8px 16px rgba(0, 0, 0, 0.3);
 }
 
-.theme-card.theme-forest .theme-preview {
-  background: linear-gradient(135deg, #0c1e16 0%, #113326 100%);
+.theme-card.theme-linux .theme-preview {
+  background: linear-gradient(135deg, #edf1f6 0%, #e6edf5 100%);
 }
 
-.theme-card.theme-forest .theme-preview::before {
+.theme-card.theme-linux .theme-preview::before {
   content: "";
   position: absolute;
   top: 14%;
   left: 10%;
-  width: 55%;
+  width: 56%;
   height: 8px;
-  background: rgba(220, 252, 231, 0.2);
+  background: rgba(61, 174, 233, 0.2);
   border-radius: 2px;
 }
 
-.theme-card.theme-forest .theme-preview::after {
+.theme-card.theme-linux .theme-preview::after {
   content: "";
   position: absolute;
-  top: 40%;
+  top: 38%;
   left: 10%;
   width: 80%;
-  height: 32%;
-  background: rgba(13, 35, 25, 0.9);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
+  height: 34%;
+  background: #ffffff;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(93, 122, 159, 0.22),
+    0 2px 6px rgba(61, 89, 126, 0.14);
 }
 
-.theme-card.theme-ocean .theme-preview {
-  background: linear-gradient(135deg, #0a1830 0%, #11284a 100%);
+.theme-card.theme-mac .theme-preview {
+  background: linear-gradient(135deg, #e9edf3 0%, #e4eaf3 100%);
 }
 
-.theme-card.theme-ocean .theme-preview::before {
+.theme-card.theme-mac .theme-preview::before {
   content: "";
   position: absolute;
   top: 14%;
   left: 10%;
-  width: 55%;
+  width: 56%;
   height: 8px;
-  background: rgba(219, 234, 254, 0.2);
+  background: rgba(10, 132, 255, 0.18);
   border-radius: 2px;
 }
 
-.theme-card.theme-ocean .theme-preview::after {
+.theme-card.theme-mac .theme-preview::after {
   content: "";
   position: absolute;
-  top: 40%;
+  top: 38%;
   left: 10%;
   width: 80%;
-  height: 32%;
-  background: rgba(11, 28, 52, 0.9);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
-}
-
-.theme-card.theme-sunset .theme-preview {
-  background: linear-gradient(135deg, #2a1114 0%, #3b141a 100%);
-}
-
-.theme-card.theme-sunset .theme-preview::before {
-  content: "";
-  position: absolute;
-  top: 14%;
-  left: 10%;
-  width: 55%;
-  height: 8px;
-  background: rgba(255, 228, 230, 0.2);
-  border-radius: 2px;
-}
-
-.theme-card.theme-sunset .theme-preview::after {
-  content: "";
-  position: absolute;
-  top: 40%;
-  left: 10%;
-  width: 80%;
-  height: 32%;
-  background: rgba(44, 18, 22, 0.9);
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgba(251, 113, 133, 0.35);
+  height: 34%;
+  background: rgba(255, 255, 255, 0.76);
+  border-radius: 9px;
+  box-shadow:
+    inset 0 0 0 1px rgba(72, 88, 114, 0.16),
+    0 6px 12px rgba(47, 65, 93, 0.14);
 }
 
 .theme-card span {
@@ -2628,7 +3094,7 @@ html[data-theme="light"] .settings-group {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding:12px 0 0 0;
+  padding: 12px 0 0 0;
   background: transparent;
   border-top: 1px solid var(--fs-border);
   -webkit-app-region: no-drag;
@@ -2683,10 +3149,18 @@ html[data-theme="light"] .settings-group {
 .settings-confirm:hover {
   transform: translateY(-1px);
   filter: brightness(1.08);
-  box-shadow: 0 14px 30px -20px rgba(0, 0, 0, 0.75), 0 0 0 3px var(--fs-accent-soft);
+  box-shadow:
+    0 14px 30px -20px rgba(0, 0, 0, 0.75),
+    0 0 0 3px var(--fs-accent-soft);
 }
 
-html[data-theme="light"] .settings-confirm {
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-confirm {
   color: #ffffff;
 }
 
@@ -2728,7 +3202,9 @@ html[data-theme="light"] .settings-confirm {
   /* toast 文案更轻量：避免遮挡搜索内容 */
   font-size: 12px;
   font-weight: 500;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18), 0 3px 6px -4px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.18),
+    0 3px 6px -4px rgba(0, 0, 0, 0.2);
   max-width: min(420px, calc(100vw - 24px));
   pointer-events: none;
   display: inline-flex;
@@ -3062,4 +3538,122 @@ html[data-theme="light"] .settings-confirm {
   opacity: 0.7;
   cursor: not-allowed;
   transform: none;
+}
+
+/* 主题质感强化：统一提升窗口、控件、列表与设置卡片层次 */
+.container {
+  border-radius: var(--fs-radius-window, 8px);
+  border-color: var(--fs-window-border, var(--fs-border));
+  background: var(--fs-window-bg, var(--fs-bg));
+}
+
+.settings-container {
+  border-radius: var(--fs-radius-window, 16px);
+  border-color: var(--fs-window-border, var(--fs-border));
+  background: var(--fs-window-bg, var(--fs-bg));
+}
+
+.search-box {
+  border-radius: var(--fs-radius-control, 10px);
+  background: var(--fs-control-bg, var(--fs-surface));
+  border-color: var(--fs-border);
+}
+
+.search-box:hover {
+  background: var(--fs-control-hover, var(--fs-surface));
+}
+
+.search-box:focus-within {
+  box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
+}
+
+.type-select-btn {
+  border-radius: var(--fs-radius-control, 10px);
+  background: var(--fs-control-bg, var(--fs-surface-2));
+}
+
+.type-select-menu {
+  border-radius: calc(var(--fs-radius-control, 10px) + 2px);
+  background: var(--fs-menu-bg, var(--fs-surface));
+  border-color: var(--fs-border);
+}
+
+.type-select-item:hover {
+  background: var(--fs-item-hover, var(--fs-surface-2));
+}
+
+.results li {
+  border-radius: var(--fs-radius-item, 10px);
+}
+
+.results li:hover {
+  background: var(--fs-item-hover, var(--fs-surface-2));
+}
+
+.results li.selected {
+  background: var(--fs-selected-bg, var(--fs-accent-soft));
+  border-color: var(--fs-selected-border, var(--fs-accent));
+  box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
+}
+
+.action-btn,
+.small-btn,
+.text-input,
+.select-input,
+.shortcut-input {
+  border-radius: var(--fs-radius-control, 10px);
+  background: var(--fs-control-bg, var(--fs-surface-2));
+  border-color: var(--fs-border-soft, var(--fs-border));
+}
+
+.action-btn:hover,
+.small-btn:hover,
+.text-input:hover,
+.select-input:hover,
+.shortcut-input:hover {
+  background: var(--fs-control-hover, var(--fs-surface));
+}
+
+.settings-group {
+  border-radius: var(--fs-radius-panel, 12px);
+  background: var(--fs-panel-bg, rgba(11, 20, 36, 0.62));
+  border-color: var(--fs-border);
+}
+
+html[data-theme="steam"] .container,
+html[data-theme="steam"] .settings-container {
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+}
+
+html[data-theme="trae"] .container,
+html[data-theme="trae"] .settings-container {
+  backdrop-filter: blur(14px) saturate(124%);
+  -webkit-backdrop-filter: blur(14px) saturate(124%);
+}
+
+html[data-theme="chrome"] .container,
+html[data-theme="chrome"] .settings-container {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 14px 28px -22px rgba(60, 64, 67, 0.58);
+}
+
+html[data-theme="window11"] .container,
+html[data-theme="window11"] .settings-container {
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+
+html[data-theme="linux"] .container,
+html[data-theme="linux"] .settings-container {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 10px 20px -16px rgba(31, 55, 84, 0.42);
+}
+
+html[data-theme="mac"] .container,
+html[data-theme="mac"] .settings-container {
+  backdrop-filter: blur(22px) saturate(138%);
+  -webkit-backdrop-filter: blur(22px) saturate(138%);
 }

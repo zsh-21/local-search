@@ -363,6 +363,9 @@ export function SearchViewImpl() {
       >
         <li
           className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}
+          title={item.name}
+          data-title-address={tooltipAddress}
+          data-title-delay="500"
           data-title-no-scroll="true"
         >
           <span className="result-index">{index + 1}</span>
@@ -371,8 +374,6 @@ export function SearchViewImpl() {
             <div className="result-name-row">
               <span
                 className="app-name"
-                title={item.name}
-                data-title-delay="500"
               >
                 {renderHighlightedText(item.name)}
               </span>
@@ -382,11 +383,7 @@ export function SearchViewImpl() {
               {isSelected && <span className="shortcut-hint">ENTER</span>}
             </div>
             {showPathLine ? (
-              <span
-                className="app-path"
-                title={tooltipAddress}
-                data-title-delay="500"
-              >
+              <span className="app-path">
                 {renderHighlightedText(item.path)}
               </span>
             ) : null}
@@ -660,17 +657,25 @@ export function SearchViewImpl() {
             />
           </svg>
         </div>
-        <input
-          ref={c.inputRef}
-          type="text"
-          value={c.inputValue}
-          onChange={(e) => {
-            c.clearActionSelection();
-            c.setQuery(e.target.value);
-          }}
-          placeholder={c.placeholder}
-          autoFocus
-        />
+        <div className="search-input-wrap">
+          <input
+            ref={c.inputRef}
+            type="text"
+            className={c.ghostInputValue ? "search-input-ghost-mode" : ""}
+            value={c.inputValue}
+            onChange={(e) => {
+              c.clearActionSelection();
+              c.setQuery(e.target.value);
+            }}
+            placeholder={c.placeholder}
+            autoFocus
+          />
+          {c.ghostInputValue ? (
+            <span className="search-ghost-value" aria-hidden="true">
+              {c.ghostInputValue}
+            </span>
+          ) : null}
+        </div>
 
         <div className="search-box-right">
           {c.inputValue.trim().length > 0 ? (
@@ -819,10 +824,12 @@ export function SearchViewImpl() {
                 style={{ maxHeight: c.MAX_LIST_HEIGHT, overflowY: "auto" }}
                 onWheel={() => {
                   c.clearActionSelection();
+                  c.clearGhostInputValue();
                   c.setLastSelectedBy("mouse");
                 }}
                 onMouseDown={() => {
                   c.clearActionSelection();
+                  c.clearGhostInputValue();
                   c.setLastSelectedBy("mouse");
                 }}
                 onMouseLeave={() => c.setHoveredKey("")}

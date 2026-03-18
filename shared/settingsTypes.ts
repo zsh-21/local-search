@@ -9,7 +9,9 @@ export interface AppSettings {
   autoStart: boolean;
   searchShortcut: string;
   settingsShortcut: string;
-  theme: "dark" | "light" | "dusk" | "forest" | "ocean" | "sunset";
+  // 面板内“写入选中项到输入框”的快捷键（默认 Alt+Enter）
+  acceptSelectedResultShortcut: string;
+  theme: "dark" | "light" | "steam" | "trae" | "chrome" | "window11" | "linux" | "mac";
   uiFontFamily: string;
   historyLimit: number;
   defaultSearchTypeId: string;

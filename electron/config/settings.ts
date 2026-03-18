@@ -6,6 +6,7 @@ import type { AppSettings, ResultActionButtonId } from '../../shared/settingsTyp
 export type { AppSettings, ResultActionButtonId } from '../../shared/settingsTypes';
 import {
   BASE_SEARCH_TYPE_IDS,
+  DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT,
   DEFAULT_RESULT_ACTION_BUTTONS,
   DEFAULT_SEARCH_SHORTCUT,
   DEFAULT_SETTINGS,
@@ -27,7 +28,7 @@ export const SETTINGS_PATH = getSettingsPath();
 export const SETTINGS_WINDOW_CONFIG_PATH = getSettingsWindowConfigPath();
 
 // 默认值已抽离到单独文件：便于你集中调整主进程侧默认行为
-export { DEFAULT_SEARCH_SHORTCUT, DEFAULT_SETTINGS_SHORTCUT, DEFAULT_RESULT_ACTION_BUTTONS };
+export { DEFAULT_SEARCH_SHORTCUT, DEFAULT_SETTINGS_SHORTCUT, DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT, DEFAULT_RESULT_ACTION_BUTTONS };
 
 export function loadConfig() {
   try {
@@ -59,7 +60,9 @@ export function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
       const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
-      const theme = raw?.theme === 'light' ? 'light' : 'dark';
+      // 主题值归一化：旧主题值（dusk/forest/ocean/sunset）统一回退到 dark
+      const allowedThemes: AppSettings['theme'][] = ['dark', 'light', 'steam', 'trae', 'chrome', 'window11', 'linux', 'mac'];
+      const theme: AppSettings['theme'] = allowedThemes.includes(raw?.theme) ? raw.theme : 'dark';
       const uiFontFamily =
         typeof raw?.uiFontFamily === 'string' && raw.uiFontFamily.trim()
           ? raw.uiFontFamily.trim().slice(0, 300)
@@ -207,6 +210,13 @@ export function loadSettings(): AppSettings {
             typeof raw?.settingsShortcut === 'string' && raw.settingsShortcut.trim()
               ? raw.settingsShortcut.trim()
               : DEFAULT_SETTINGS_SHORTCUT;
+          return v.replace(/CommandOrControl/g, 'Ctrl').trim();
+        })(),
+        acceptSelectedResultShortcut: (() => {
+          const v =
+            typeof raw?.acceptSelectedResultShortcut === 'string' && raw.acceptSelectedResultShortcut.trim()
+              ? raw.acceptSelectedResultShortcut.trim()
+              : DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT;
           return v.replace(/CommandOrControl/g, 'Ctrl').trim();
         })(),
         theme,

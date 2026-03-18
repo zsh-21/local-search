@@ -5,7 +5,8 @@ import { useStoredMembership } from "./membership";
 
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
-  const allowedThemes: AppSettings["theme"][] = ["dark", "light", "dusk", "forest", "ocean", "sunset"];
+  // 主题值归一化：旧主题值统一回退 dark，避免配置中出现已下线主题
+  const allowedThemes: AppSettings["theme"][] = ["dark", "light", "steam", "trae", "chrome", "window11", "linux", "mac"];
   const theme: AppSettings["theme"] = allowedThemes.includes(s?.theme) ? s.theme : DEFAULT_SETTINGS.theme;
   const uiFontFamily =
     typeof s?.uiFontFamily === "string" && s.uiFontFamily.trim()
@@ -21,6 +22,11 @@ export function normalizeSettings(s: any): AppSettings {
     typeof s?.settingsShortcut === "string" && s.settingsShortcut.trim()
       ? s.settingsShortcut.trim()
       : DEFAULT_SETTINGS.settingsShortcut,
+  );
+  const acceptSelectedResultShortcut = normalizeWinShortcut(
+    typeof s?.acceptSelectedResultShortcut === "string" && s.acceptSelectedResultShortcut.trim()
+      ? s.acceptSelectedResultShortcut.trim()
+      : DEFAULT_SETTINGS.acceptSelectedResultShortcut,
   );
 
   const customSearchTypes: string[] = Array.isArray(s?.customSearchTypes)
@@ -179,6 +185,7 @@ export function normalizeSettings(s: any): AppSettings {
     autoStart: Boolean(s?.autoStart),
     searchShortcut,
     settingsShortcut,
+    acceptSelectedResultShortcut,
     theme,
     uiFontFamily,
     historyLimit:

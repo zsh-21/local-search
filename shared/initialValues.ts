@@ -13,6 +13,9 @@ export const DEFAULT_SEARCH_SHORTCUT = "Alt+S";
 // 默认“打开设置窗口”的快捷键：
 // - 同样需要与主进程注册保持一致
 export const DEFAULT_SETTINGS_SHORTCUT = "Alt+Shift+S";
+// 默认“写入选中项到输入框”的面板内快捷键：
+// - 避免使用 Alt+Tab（系统保留），使用应用内可稳定捕获的组合键
+export const DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT = "Alt+Enter";
 
 // 默认搜索结果“右侧操作按钮”顺序：
 // - 当用户未配置或配置被清空时回落到这里
@@ -30,6 +33,8 @@ export const DEFAULT_SETTINGS = {
   searchShortcut: DEFAULT_SEARCH_SHORTCUT,
   // 打开设置窗口快捷键
   settingsShortcut: DEFAULT_SETTINGS_SHORTCUT,
+  // 面板内写入选中项快捷键
+  acceptSelectedResultShortcut: DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT,
   // 主题：影响渲染端 UI 与部分窗口背景色策略
   theme: "dark",
   uiFontFamily:

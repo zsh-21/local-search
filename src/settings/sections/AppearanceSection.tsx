@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { AppSettings } from "../../appTypes";
 
-// 外观分区：主题模式、特效开关、类型、背景图片、主题色（含会员禁用）
+// 外观分区：主题模式、特效、背景图、主题色与字体预览。
 export function AppearanceSection({
   draft,
   setDraft,
@@ -38,7 +38,7 @@ export function AppearanceSection({
                 type="button"
                 className={`theme-card theme-${opt.id} ${active ? "active" : ""}`}
                 onClick={() => {
-                  // 主题切换即时预览，保存后才全局生效
+                  // 主题切换立即预览，确认保存后再全局持久化生效。
                   const nextTheme = opt.id;
                   setDraft({ ...draft, theme: nextTheme });
                   applyThemePreview(nextTheme, draft.accentColor);
@@ -89,7 +89,7 @@ export function AppearanceSection({
             checked={draft.enableEffect}
             disabled={!isMember}
             onChange={(e) => {
-              // 非会员禁用特效，避免保存后被回退产生困扰
+              // 非会员禁用高级特效，避免保存后被系统回退造成困惑。
               setDraft({ ...draft, enableEffect: e.target.checked });
               setError("");
             }}
@@ -111,7 +111,7 @@ export function AppearanceSection({
                     setError("");
                   }}
                 />
-                代码雨
+                粒子
               </label>
               <label className={`effect-option ${draft.effectType === "warp" ? "active" : ""}`}>
                 <input
@@ -124,14 +124,14 @@ export function AppearanceSection({
                     setError("");
                   }}
                 />
-                极速穿梭
+                穿梭
               </label>
             </div>
           </div>
         )}
       </div>
 
-      {/* 背景图片为订阅功能：非会员仅可使用默认背景 */}
+      {/* 背景图片为会员能力：非会员可看见入口但不可修改。 */}
       <div className="settings-group">
         <div className="settings-group-title">
           <span>背景图片</span>
