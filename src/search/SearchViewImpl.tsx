@@ -11,6 +11,7 @@ export function SearchViewImpl() {
   const c = useSearchController();
 
   const isHistoryMode = c.query.trim().length === 0;
+  const isCalcMode = c.isCalcMode;
 
   const [actionTooltip, setActionTooltip] = useState<null | {
     text: string;
@@ -152,7 +153,7 @@ export function SearchViewImpl() {
   }, [actionTooltip, c.selectedActionId]);
 
   const getVisibleActionIdsForItem = (item: AppItem) => {
-    if (item.type === "calc") return [];
+    if (item.type === "calc") return isCalcMode ? ["deleteHistory"] : [];
     const raw = Array.isArray(c.settings.resultActionButtons)
       ? c.settings.resultActionButtons
       : [];
@@ -328,11 +329,18 @@ export function SearchViewImpl() {
     const isImg = item.type === "file" && isImageFile(item.path);
     const lowerPath = (item.path || "").toLowerCase();
     const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
+    const isCalcItem = item.type === "calc";
+    const calcExpression = isCalcItem ? String(item.path || "").trim() : "";
+    const calcResult = isCalcItem ? String(item.name || "").trim() : "";
+    const displayName =
+      isCalcItem && calcExpression && calcResult
+        ? `${calcExpression}=${calcResult}`
+        : item.name;
     const hasPath =
       typeof item.path === "string" && item.path.trim().length > 0;
     // 仅展示盘符开头的完整路径，避免显示非路径字符串（如 ms-settings:）。
     const isDrivePath = /^[a-zA-Z]:\\/.test(item.path || "");
-    const showPathLine = c.settings.showResultPath && hasPath && isDrivePath;
+    const showPathLine = !isCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
     const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
@@ -363,7 +371,7 @@ export function SearchViewImpl() {
       >
         <li
           className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}
-          title={item.name}
+          title={displayName}
           data-title-address={tooltipAddress}
           data-title-delay="500"
           data-title-no-scroll="true"
@@ -375,7 +383,7 @@ export function SearchViewImpl() {
               <span
                 className="app-name"
               >
-                {renderHighlightedText(item.name)}
+                {renderHighlightedText(displayName)}
               </span>
               {badgeText ? (
                 <span className="file-ext-badge">{badgeText}</span>
@@ -515,7 +523,7 @@ export function SearchViewImpl() {
                     onMouseDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      void c.deleteHistoryItem(item.path);
+                      void c.deleteResultItem(item);
                     }}
                     onClick={(e) => {
                       e.stopPropagation();

@@ -45,6 +45,7 @@ export function BackgroundImage({ path, opacity }: { path: string; opacity: numb
         transition: "opacity 120ms ease",
         backgroundImage: `url("${dataUrl}")`,
         backgroundRepeat: "no-repeat",
+        // 背景图左上角固定到窗口左上角，避免窗口高度变化时出现“图片位移”。
         backgroundPosition: "center",
         backgroundSize: "cover",
       }}

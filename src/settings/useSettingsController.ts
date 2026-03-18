@@ -7,7 +7,6 @@ import {
   FS_LAST_LOGIN_PASSWORD_KEY,
   FS_TOKEN_KEY,
   FS_USER_KEY,
-  THEME_COLOR_OPTIONS,
   THEME_STYLE_OPTIONS,
 } from "../constants/initialValues";
 import { applyMembershipRestrictionsToSettings, getSearchTypeOptions, useSettings } from "../settingsStore";
@@ -62,7 +61,6 @@ export function useSettingsController() {
     settings.disabledSearchTypeIds,
     settings.ignoredPaths,
     settings.showResultPath,
-    settings.accentColor,
     settings.enableEffect,
     settings.effectType,
     settings.backgroundImagePath,
@@ -88,7 +86,6 @@ export function useSettingsController() {
       draft.keepStateOnClose === settings.keepStateOnClose &&
       draft.showResultPath === settings.showResultPath &&
       draft.enableHistory === settings.enableHistory &&
-      draft.accentColor === settings.accentColor &&
       draft.enableEffect === settings.enableEffect &&
       draft.effectType === settings.effectType &&
       draft.backgroundImagePath === settings.backgroundImagePath &&
@@ -105,16 +102,9 @@ export function useSettingsController() {
     window.ipcRenderer?.invoke("settings-view-ready");
   }, [loaded, isDraftSynced]);
 
-  const applyThemePreview = (theme: AppSettings["theme"], accentColor: string) => {
+  const applyThemePreview = (theme: AppSettings["theme"]) => {
     // 主题预览即时应用到 document：保存前也能看到真实效果
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.setProperty("--fs-accent", accentColor);
-    const r = parseInt(accentColor.slice(1, 3), 16);
-    const g = parseInt(accentColor.slice(3, 5), 16);
-    const b = parseInt(accentColor.slice(5, 7), 16);
-    document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
-    document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
-    document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
 
     document.documentElement.classList.add("theme-anim");
     window.setTimeout(() => {
@@ -135,7 +125,7 @@ export function useSettingsController() {
       setError("");
       setActiveKey("account");
       setNewTypeExt("");
-      applyThemePreview(settings.theme, settings.accentColor);
+      applyThemePreview(settings.theme);
       applyFontPreview(settings.uiFontFamily);
     };
     window.ipcRenderer?.on("settings-window-opened", handler as any);
@@ -150,7 +140,7 @@ export function useSettingsController() {
     setDraft(settings);
     setActiveKey("account");
     setNewTypeExt("");
-    applyThemePreview(settings.theme, settings.accentColor);
+    applyThemePreview(settings.theme);
     applyFontPreview(settings.uiFontFamily);
     window.ipcRenderer?.invoke("hide-window");
   };
@@ -174,7 +164,7 @@ export function useSettingsController() {
       showToast(resp.message || "设置保存失败", "error");
       return;
     }
-    applyThemePreview(nextDraft.theme, nextDraft.accentColor);
+    applyThemePreview(nextDraft.theme);
     applyFontPreview(nextDraft.uiFontFamily);
     // 保存后不自动关闭设置窗口：仅提示成功，关闭由用户主动点击右上角完成
     showToast("保存成功", "success");
@@ -404,8 +394,6 @@ export function useSettingsController() {
     }
   };
 
-  // 主题色列表已抽离：便于你集中调整颜色、命名或增加新主题色
-  const themeColors = THEME_COLOR_OPTIONS;
   const themeOptions = THEME_STYLE_OPTIONS;
   const fontOptions = [
     {
@@ -511,7 +499,6 @@ export function useSettingsController() {
     isLoggingOut,
     handleLogout,
     toast,
-    themeColors,
     themeOptions,
     fontOptions,
     formatDateTime,

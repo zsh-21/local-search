@@ -1,10 +1,10 @@
-/* 全局基础样式：统一盒模型与禁止选中文本（符合快捷搜索的交互预期） */
+/* 全局基础样式：统一盒模型与禁止选中文本（符合快捷搜索的交互预期�?*/
 * {
   box-sizing: border-box;
   user-select: none;
 }
 
-/* 全局字体应用：保证搜索/设置两套界面字体一致 */
+/* 全局字体应用：保证搜�?设置两套界面字体一�?*/
 .container,
 .settings-panel,
 .search-box,
@@ -100,7 +100,7 @@
   cursor: nwse-resize;
 }
 
-/* 主题变量：深色/浅色模式统一从这里派生，组件尽量只使用 CSS 变量 */
+/* 主题变量：深�?浅色模式统一从这里派生，组件尽量只使�?CSS 变量 */
 html[data-theme="dark"] {
   --fs-bg: #0b1018;
   --fs-surface: #151d29;
@@ -131,6 +131,10 @@ html[data-theme="dark"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.12);
 }
@@ -165,6 +169,10 @@ html[data-theme="light"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.9);
 }
@@ -200,6 +208,10 @@ html[data-theme="steam"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
 }
@@ -270,6 +282,10 @@ html[data-theme="chrome"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.9);
 }
@@ -375,79 +391,16 @@ html[data-theme="mac"] {
   --fs-radius-panel: 14px;
   --fs-radius-control: 11px;
   --fs-radius-item: 10px;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.92);
 }
 
-/* 主题色选择网格 */
-.accent-color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-  padding: 4px;
-}
 
-.accent-color-item {
-  aspect-ratio: 1;
-  background: var(--fs-surface-2);
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
-  outline: none;
-}
 
-.accent-color-item:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.accent-color-item:disabled:hover {
-  background: var(--fs-surface-2);
-  border-color: transparent;
-  transform: none;
-}
-
-.small-btn:disabled,
-.select-input:disabled,
-.text-input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.accent-color-item:hover {
-  background: var(--fs-surface);
-  border-color: var(--fs-border);
-  transform: translateY(-2px);
-}
-
-.accent-color-item.active {
-  background: var(--fs-surface);
-  border-color: var(--item-color);
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.1);
-}
-
-.accent-color-dot {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--item-color);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s;
-}
-
-.accent-color-item:hover .accent-color-dot {
-  transform: scale(1.1);
-}
-
-.accent-color-item.active .accent-color-dot {
-  transform: scale(0.9);
-}
 
 html:is(
     [data-theme="light"],
@@ -638,7 +591,7 @@ html:is(
   backdrop-filter: blur(20px) saturate(1.5);
   -webkit-backdrop-filter: blur(20px) saturate(1.5);
   -webkit-app-region: drag;
-  /* 默认容器可拖拽 */
+  /* 默认容器可拖�?*/
 }
 
 /* 官网链接按钮 */
@@ -828,7 +781,7 @@ html:is(
   height: 28px;
   /* 减小高度 */
   max-width: 140px;
-  /* 减小最大宽度 */
+  /* 减小最大宽�?*/
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1038,7 +991,7 @@ html:is(
   font-weight: 600;
 }
 
-/* 移除之前的 after 勾选，改用显式的 span */
+/* 移除之前�?after 勾选，改用显式�?span */
 .type-select-item.active::after {
   content: none;
 }
@@ -1150,9 +1103,9 @@ input::placeholder {
   /* 减小间距，使其更紧凑 */
   padding-right: 8px;
   flex-shrink: 0;
-  /* 防止右侧区域被压缩 */
+  /* 防止右侧区域被压�?*/
   position: relative;
-  /* 为下拉菜单提供定位基准 */
+  /* 为下拉菜单提供定位基�?*/
 }
 
 .clear-btn {
@@ -1230,7 +1183,7 @@ input::placeholder {
   margin: 10px 0 0 0;
   padding: 0;
   -webkit-app-region: no-drag;
-  /* 结果列表不可拖拽，保证滚动 */
+  /* 结果列表不可拖拽，保证滚�?*/
   position: relative;
   z-index: 1;
   /* 保证在搜索框之下 */
@@ -1296,7 +1249,7 @@ input::placeholder {
   background-clip: padding-box;
 }
 
-/* 小尺寸 loading 动画 */
+/* 小尺�?loading 动画 */
 .spinner-sm {
   width: 14px;
   height: 14px;
@@ -1316,7 +1269,7 @@ input::placeholder {
   }
 }
 
-/* 按钮处理中状态 */
+/* 按钮处理中状�?*/
 .small-btn.processing {
   opacity: 0.9;
   cursor: not-allowed;
@@ -1692,7 +1645,7 @@ html:is(
   color: var(--fs-text);
   padding: 0;
   border-bottom: 1px solid var(--fs-border);
-  /* 添加分隔线 */
+  /* 添加分隔�?*/
   background: transparent;
 }
 
@@ -1804,7 +1757,7 @@ html:is(
   font-size: 12px;
   font-weight: 600;
   width: 92px;
-  /* 原 grid-template-columns 的第一列宽度 */
+  /* �?grid-template-columns 的第一列宽�?*/
   flex-shrink: 0;
 }
 
@@ -1829,7 +1782,7 @@ html:is(
   font-size: 12px;
   font-weight: 600;
   width: 92px;
-  /* 原 grid-template-columns 的第一列宽度 */
+  /* �?grid-template-columns 的第一列宽�?*/
   flex-shrink: 0;
 }
 
@@ -1839,7 +1792,7 @@ html:is(
   flex: 1;
   /* 占据剩余空间 */
   min-width: 0;
-  /* 允许 flex 项目缩小到其最小内容大小以下 */
+  /* 允许 flex 项目缩小到其最小内容大小以�?*/
   background: var(--fs-bg);
   border: 1px solid var(--fs-border);
   color: var(--fs-text);
@@ -1945,7 +1898,7 @@ html:is(
   border-style: dashed;
 }
 
-/* 拖拽位置标识线 */
+/* 拖拽位置标识�?*/
 .type-order-item.drag-over-top::before,
 .type-order-item.drag-over-bottom::after {
   content: "";
@@ -2391,8 +2344,9 @@ html:is(
 
 .settings-main-inner > * {
   width: 100%;
-  max-width: 760px;
+  max-width: 780px;
   margin: 0 auto;
+  padding: 0 10px;
 }
 
 /* 设置页主内容顶部标题区域 */
@@ -2400,7 +2354,7 @@ html:is(
   position: relative;
   top: 0;
   z-index: 3;
-  padding: 14px 2px 0;
+  padding: 14px 2px 0 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2454,7 +2408,7 @@ html:is(
   }
 }
 
-/* 设置页分组卡片样式 */
+/* 设置页分组卡片样�?*/
 .settings-group {
   background: rgba(11, 20, 36, 0.62);
   border: 1px solid var(--fs-border);
@@ -2463,7 +2417,7 @@ html:is(
   display: flex;
   flex-direction: column;
   gap: 16px;
-  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+  box-shadow: 0 0px 5px rgba(2, 6, 23, 0.2);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   width: 100%;
@@ -2513,7 +2467,7 @@ html:is(
   opacity: 0.5;
 }
 
-/* 设置页分组内的提示文本 */
+/* 设置页分组内的提示文�?*/
 .settings-hint {
   color: var(--fs-muted);
   font-size: 12px;
@@ -2700,7 +2654,7 @@ html:is(
   width: 40px;
   height: 22px;
   border-radius: 11px;
-  /* 圆角半径改为高度的一半 */
+  /* 圆角半径改为高度的一�?*/
   background: rgba(0, 0, 0, 0.16);
   border: 1px solid var(--fs-border);
   position: relative;
@@ -2716,7 +2670,7 @@ html:is(
   width: 18px;
   height: 18px;
   border-radius: 9px;
-  /* 圆角半径改为宽度的一半 */
+  /* 圆角半径改为宽度的一�?*/
   background: rgba(255, 255, 255, 0.95);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   transition:
@@ -3109,7 +3063,7 @@ html:is(
   color: var(--fs-text);
   border: 1px solid var(--fs-border);
   padding: 0 16px;
-  /* 稍微减小内边距 */
+  /* 稍微减小内边�?*/
   height: 34px;
   /* 减小高度 */
   border-radius: 6px;
@@ -3134,7 +3088,7 @@ html:is(
   color: white;
   border: none;
   padding: 0 16px;
-  /* 稍微减小内边距 */
+  /* 稍微减小内边�?*/
   height: 34px;
   /* 减小高度 */
   border-radius: 6px;
@@ -3229,7 +3183,7 @@ html:is(
 }
 
 .settings-toast-text {
-  /* toast 文案单行展示：超出窗口宽度时省略，避免换行挤占搜索区域 */
+  /* toast 文案单行展示：超出窗口宽度时省略，避免换行挤占搜索区�?*/
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
@@ -3260,7 +3214,7 @@ html:is(
   background: var(--fs-accent);
 }
 
-/* 特效选择器样式 */
+/* 特效选择器样�?*/
 .effect-type-options {
   display: flex;
   gap: 12px;
@@ -3351,7 +3305,7 @@ html:is(
   cursor: default;
   opacity: 1;
   color: var(--fs-accent);
-  /* loading 时保持高亮颜色 */
+  /* loading 时保持高亮颜�?*/
   border-color: var(--fs-accent);
   box-shadow: none;
   transform: none;
@@ -3374,7 +3328,7 @@ html:is(
   cursor: pointer;
 }
 
-/* 自定义头像图片：与 avatar-placeholder 同尺寸，使用 cover 保证裁剪自然 */
+/* 自定义头像图片：�?avatar-placeholder 同尺寸，使用 cover 保证裁剪自然 */
 .avatar-img {
   width: 100%;
   height: 100%;
@@ -3383,7 +3337,7 @@ html:is(
   display: block;
 }
 
-/* 头像自定义弹层：复用现有主题变量，保持与设置面板风格一致 */
+/* 头像自定义弹层：复用现有主题变量，保持与设置面板风格一�?*/
 .avatar-menu {
   position: absolute;
   left: 0;
@@ -3483,19 +3437,8 @@ html:is(
   gap: 8px;
 }
 
-.account-color-swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.12);
-}
 
-.account-color-text {
-  color: var(--fs-muted);
-  font-weight: 700;
-  font-size: 12px;
-}
+
 
 .logout-btn {
   align-self: stretch;
@@ -3660,4 +3603,40 @@ html[data-theme="mac"] .container,
 html[data-theme="mac"] .settings-container {
   backdrop-filter: blur(22px) saturate(138%);
   -webkit-backdrop-filter: blur(22px) saturate(138%);
+}
+
+/* Chrome �����ɫ������������������������Ӧ��Ʒ�Ʒ�� */
+html[data-theme="chrome"] .type-select-btn,
+html[data-theme="chrome"] .settings-type-select .type-select-btn,
+html[data-theme="chrome"] .select-input {
+  background-image: linear-gradient(
+    95deg,
+    rgba(26, 115, 232, 0.08) 0%,
+    rgba(234, 67, 53, 0.06) 36%,
+    rgba(251, 188, 5, 0.06) 68%,
+    rgba(52, 168, 83, 0.08) 100%
+  );
+  border-color: rgba(26, 115, 232, 0.26);
+}
+
+html[data-theme="chrome"] .type-select-item.active {
+  background: linear-gradient(
+    92deg,
+    rgba(26, 115, 232, 0.16) 0%,
+    rgba(234, 67, 53, 0.1) 35%,
+    rgba(251, 188, 5, 0.1) 67%,
+    rgba(52, 168, 83, 0.14) 100%
+  );
+  border-color: rgba(26, 115, 232, 0.34);
+}
+
+html[data-theme="chrome"] .results li.selected {
+  background: linear-gradient(
+    96deg,
+    rgba(26, 115, 232, 0.16) 0%,
+    rgba(234, 67, 53, 0.1) 34%,
+    rgba(251, 188, 5, 0.1) 67%,
+    rgba(52, 168, 83, 0.14) 100%
+  );
+  border-color: rgba(26, 115, 232, 0.42);
 }

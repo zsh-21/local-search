@@ -28,6 +28,11 @@ import {
   clearHistory,
   deleteHistoryItemFunc,
 } from '../history/history';
+import {
+  loadCalcHistory,
+  recordCalcHistoryItem,
+  deleteCalcHistoryItem,
+} from '../history/calcHistory';
 import { getInstalledAppsCache } from '../apps/installedApps';
 import { iconDataCache, isTooSmallAppIconDataUrl } from '../icon/iconCache';
 import { getAppIconDataStable, getFileIconData } from '../icon/iconService';
@@ -124,6 +129,18 @@ async function broadcastHistoryUpdated() {
   } catch {}
   try {
     getSettingsWindow()?.webContents.send('history-updated', { results });
+  } catch {}
+  return { results };
+}
+
+// 计算历史广播与文件历史拆分，避免两类数据互相污染。
+function broadcastCalcHistoryUpdated() {
+  const results = loadCalcHistory();
+  try {
+    getSearchWindow()?.webContents.send('calc-history-updated', { results });
+  } catch {}
+  try {
+    getSettingsWindow()?.webContents.send('calc-history-updated', { results });
   } catch {}
   return { results };
 }
@@ -384,6 +401,26 @@ export function registerIpcHandlers() {
     deleteHistoryItemFunc(targetPath);
     await broadcastHistoryUpdated();
     return { ok: true };
+  });
+
+  ipcMain.handle('get-calc-history', async () => {
+    return { results: loadCalcHistory() };
+  });
+
+  ipcMain.handle(
+    'record-calc-history-item',
+    async (_event, payload: { expression?: string; result?: string }) => {
+      recordCalcHistoryItem({
+        expression: typeof payload?.expression === 'string' ? payload.expression : '',
+        result: typeof payload?.result === 'string' ? payload.result : '',
+      });
+      return broadcastCalcHistoryUpdated();
+    },
+  );
+
+  ipcMain.handle('delete-calc-history-item', async (_event, expression: string) => {
+    deleteCalcHistoryItem(expression);
+    return broadcastCalcHistoryUpdated();
   });
 
   ipcMain.handle('clear-cache', async () => {

@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { AppSettings } from "../../appTypes";
 
-// 外观分区：主题模式、特效、背景图、主题色与字体预览。
+// 外观分区：主题、字体、特效与背景图。
 export function AppearanceSection({
   draft,
   setDraft,
@@ -10,7 +10,6 @@ export function AppearanceSection({
   membershipBadge,
   applyThemePreview,
   applyFontPreview,
-  themeColors,
   themeOptions,
   fontOptions,
 }: {
@@ -19,9 +18,8 @@ export function AppearanceSection({
   setError: (msg: string) => void;
   isMember: boolean;
   membershipBadge: ReactNode;
-  applyThemePreview: (theme: AppSettings["theme"], accentColor: string) => void;
+  applyThemePreview: (theme: AppSettings["theme"]) => void;
   applyFontPreview: (fontFamily: string) => void;
-  themeColors: { name: string; color: string }[];
   themeOptions: { id: AppSettings["theme"]; label: string }[];
   fontOptions: { id: string; label: string; value: string; sample: string }[];
 }) {
@@ -38,10 +36,9 @@ export function AppearanceSection({
                 type="button"
                 className={`theme-card theme-${opt.id} ${active ? "active" : ""}`}
                 onClick={() => {
-                  // 主题切换立即预览，确认保存后再全局持久化生效。
                   const nextTheme = opt.id;
                   setDraft({ ...draft, theme: nextTheme });
-                  applyThemePreview(nextTheme, draft.accentColor);
+                  applyThemePreview(nextTheme);
                   setError("");
                 }}
               >
@@ -89,7 +86,6 @@ export function AppearanceSection({
             checked={draft.enableEffect}
             disabled={!isMember}
             onChange={(e) => {
-              // 非会员禁用高级特效，避免保存后被系统回退造成困惑。
               setDraft({ ...draft, enableEffect: e.target.checked });
               setError("");
             }}
@@ -131,7 +127,6 @@ export function AppearanceSection({
         )}
       </div>
 
-      {/* 背景图片为会员能力：非会员可看见入口但不可修改。 */}
       <div className="settings-group">
         <div className="settings-group-title">
           <span>背景图片</span>
@@ -199,31 +194,6 @@ export function AppearanceSection({
               {Math.round((draft.backgroundImageOpacity || 0) * 100)}%
             </span>
           </div>
-        </div>
-      </div>
-
-      <div className="settings-group">
-        <div className="settings-group-title">
-          <span>主题色</span>
-          {membershipBadge}
-        </div>
-        <div className="accent-color-grid">
-          {themeColors.map((item) => (
-            <button
-              key={item.color}
-              type="button"
-              className={`accent-color-item ${draft.accentColor === item.color ? "active" : ""}`}
-              style={{ "--item-color": item.color } as any}
-              disabled={!isMember}
-              onClick={() => {
-                setDraft({ ...draft, accentColor: item.color });
-                applyThemePreview(draft.theme, item.color);
-              }}
-              title={isMember ? item.name : undefined}
-            >
-              <div className="accent-color-dot" />
-            </button>
-          ))}
         </div>
       </div>
     </div>

@@ -21,6 +21,8 @@ export const USER_DATA_FILENAMES = {
 
   // 历史记录：用于“空输入时展示最近使用”等能力
   history: "history.json",
+  // 计算历史：用于“输入 = 时展示历史计算”
+  calcHistory: "calc-history.json",
   // 历史统计：用于综合排序（频次/最近使用/类型偏好/扩展名偏好）
   historyStats: "history-stats.json",
 
@@ -79,6 +81,11 @@ export function getDeviceIdPath(): string {
 export function getHistoryPath(): string {
   // 历史记录文件路径（history.json）
   return getUserDataPath(USER_DATA_FILENAMES.history);
+}
+
+export function getCalcHistoryPath(): string {
+  // 计算历史文件路径（calc-history.json）
+  return getUserDataPath(USER_DATA_FILENAMES.calcHistory);
 }
 
 export function getHistoryStatsPath(): string {

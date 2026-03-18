@@ -14,21 +14,7 @@ export const FS_BACKUP_SETTINGS_KEY = "fs_backup_settings";
 
 export { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS };
 
-// 主题色中文名称统一维护，避免各处文案不一致或出现乱码。
-export const THEME_COLOR_OPTIONS: Array<{ name: string; color: string }> = [
-  { name: "天际蓝", color: "#38bdf8" },
-  { name: "罗兰紫", color: "#818cf8" },
-  { name: "极光绿", color: "#34d399" },
-  { name: "珊瑚粉", color: "#fb7185" },
-  { name: "琥珀橙", color: "#fbbf24" },
-  { name: "翡翠绿", color: "#10b981" },
-  { name: "深海蓝", color: "#2563eb" },
-  { name: "丁香紫", color: "#a855f7" },
-  { name: "玫瑰红", color: "#f43f5e" },
-  { name: "钛金灰", color: "#64748b" },
-];
-
-// 主题体系：保留 light/dark，并新增 6 套品牌风格主题。
+// 主题体系：保留 light/dark，并提供 6 套应用风格主题。
 export const THEME_STYLE_OPTIONS: Array<{ id: AppSettings["theme"]; label: string }> = [
   { id: "dark", label: "深色" },
   { id: "light", label: "浅色" },

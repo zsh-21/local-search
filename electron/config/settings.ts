@@ -234,7 +234,6 @@ export function loadSettings(): AppSettings {
         // 结果路径默认显示：当用户未显式配置时，默认开启
         showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : DEFAULT_SETTINGS.showResultPath,
         enableHistory: raw?.enableHistory !== false,
-        accentColor: typeof raw?.accentColor === 'string' ? raw.accentColor : DEFAULT_SETTINGS.accentColor,
         enableEffect: Boolean(raw?.enableEffect),
         effectType,
         backgroundImagePath,

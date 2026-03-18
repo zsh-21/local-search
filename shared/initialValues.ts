@@ -57,8 +57,6 @@ export const DEFAULT_SETTINGS = {
   showResultPath: true,
   // 是否启用历史记录：关闭后不写入 history.json
   enableHistory: true,
-  // 强调色：影响按钮/高亮等视觉元素
-  accentColor: "#38bdf8",
   // 是否启用背景特效
   enableEffect: false,
   // 背景特效类型：粒子/星际/波纹

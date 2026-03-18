@@ -22,7 +22,6 @@ export interface AppSettings {
   keepStateOnClose: boolean;
   showResultPath: boolean;
   enableHistory: boolean;
-  accentColor: string;
   enableEffect: boolean;
   effectType: "particles" | "warp" | "waves";
   backgroundImagePath: string;

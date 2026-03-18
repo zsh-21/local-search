@@ -21,6 +21,7 @@ import {
 } from "./searchResultUtils";
 
 type RefreshHistoryOpts = { typeId?: string; preserveSelectedPath?: string };
+type CalcHistoryRecord = { expression: string; result: string; lastUsed: number };
 
 const CALC_CONSTANTS: Record<string, number> = {
   pi: Math.PI,
@@ -204,18 +205,46 @@ function buildCalcItem(queryTerm: string): AppItem | null {
   if (!trimmed.startsWith("=")) return null;
   const expression = trimmed.slice(1).trim();
   if (!expression) return null;
-  const value = evaluateCalcExpression(expression);
-  if (value == null) return null;
+  const result = evaluateCalcExpression(expression);
+  if (result == null) return null;
+  return createCalcItem(expression, formatCalcNumber(result));
+}
+
+function createCalcItem(expression: string, result: string): AppItem {
   return {
-    name: formatCalcNumber(value),
+    // 计算项内部仍保留“结果”和“表达式”两个字段，便于复制结果与删除历史。
+    name: result,
     path: expression,
     type: "calc",
     description: `= ${expression}`,
   };
 }
 
+function parseCalcMode(rawQuery: string) {
+  const trimmed = (rawQuery || "").trim();
+  const isCalcMode = trimmed.startsWith("=");
+  const expression = isCalcMode ? trimmed.slice(1).trim() : "";
+  return { isCalcMode, expression };
+}
+
+function normalizeCalcHistoryPayload(payload: unknown): CalcHistoryRecord[] {
+  if (!Array.isArray(payload)) return [];
+  return payload
+    .map((it) => ({
+      expression: typeof (it as any)?.expression === "string" ? (it as any).expression.trim() : "",
+      result: typeof (it as any)?.result === "string" ? (it as any).result.trim() : "",
+      lastUsed: typeof (it as any)?.lastUsed === "number" ? (it as any).lastUsed : 0,
+    }))
+    .filter((it) => it.expression && it.result)
+    .sort((a, b) => b.lastUsed - a.lastUsed);
+}
+
+function mapCalcHistoryToItems(records: CalcHistoryRecord[]): AppItem[] {
+  return records.map((it) => createCalcItem(it.expression, it.result));
+}
+
 export function useSearchController() {
-  // 统一读取设置：搜索页会用到默认类型、类型顺序、主题与背景相关配置
+  // 缁熶竴璇诲彇璁剧疆锛氭悳绱㈤〉浼氱敤鍒伴粯璁ょ被鍨嬨€佺被鍨嬮『搴忋€佷富棰樹笌鑳屾櫙鐩稿叧閰嶇疆
   const { settings, loaded } = useSettings();
 
   const parseDrivePrefix = (raw: string) => {
@@ -229,7 +258,7 @@ export function useSearchController() {
     return { term, drive };
   };
 
-  // 搜索输入与类型选择：驱动查询与结果过滤
+  // 鎼滅储杈撳叆涓庣被鍨嬮€夋嫨锛氶┍鍔ㄦ煡璇笌缁撴灉杩囨护
   const [query, setQuery] = useState("");
   const [inputValue, setInputValue] = useState("");
   const [ghostInputValue, setGhostInputValue] = useState("");
@@ -258,7 +287,7 @@ export function useSearchController() {
     }, 1600);
   };
 
-  // 关键元素引用：输入框聚焦、列表滚动、下拉菜单点击外部关闭等
+  // 鍏抽敭鍏冪礌寮曠敤锛氳緭鍏ユ鑱氱劍銆佸垪琛ㄦ粴鍔ㄣ€佷笅鎷夎彍鍗曠偣鍑诲閮ㄥ叧闂瓑
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<any>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -266,21 +295,22 @@ export function useSearchController() {
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 窗口高度自适应：减少频繁 resize 的抖动与重复调用
+  // 绐楀彛楂樺害鑷€傚簲锛氬噺灏戦绻?resize 鐨勬姈鍔ㄤ笌閲嶅璋冪敤
   const lastResizeHeightRef = useRef(0);
   const resizeRafRef = useRef<number | null>(null);
   const searchingIndicatorTimerRef = useRef<number | null>(null);
-  // 竞态保护：异步搜索返回时对齐“当前 query/type”，避免旧请求覆盖新结果
+  // 绔炴€佷繚鎶わ細寮傛鎼滅储杩斿洖鏃跺榻愨€滃綋鍓?query/type鈥濓紝閬垮厤鏃ц姹傝鐩栨柊缁撴灉
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
   const searchRequestIdRef = useRef(0);
-  // 搜索会话 ID：用于关联主进程分批推送的 more-results，避免切换类型/重复搜索导致重复项与数量不一致
+  // 鎼滅储浼氳瘽 ID锛氱敤浜庡叧鑱斾富杩涚▼鍒嗘壒鎺ㄩ€佺殑 more-results锛岄伩鍏嶅垏鎹㈢被鍨?閲嶅鎼滅储瀵艰嚧閲嶅椤逛笌鏁伴噺涓嶄竴鑷?
   const searchSessionIdRef = useRef("");
   const pendingAppendRef = useRef<AppItem[]>([]);
   const flushAppendTimerRef = useRef<number | null>(null);
   const calcItemRef = useRef<AppItem | null>(null);
-  // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
+  const calcHistoryItemsRef = useRef<AppItem[]>([]);
+  // Tab/Shift+Tab 鍒囨崲绫诲瀷鏃朵笉璧?120ms 闃叉姈锛屼繚璇佸垏鎹㈠悗绔嬪嵆鐪嬪埌鏂扮被鍨嬬粨鏋?
   const typeSwitchRequestedRef = useRef(false);
   const historyItemsRef = useRef<AppItem[]>(getBootstrapHistoryCache());
   const bootstrapTypeSyncedRef = useRef(false);
@@ -311,10 +341,8 @@ export function useSearchController() {
 
   const syncWindowHeight = useCallback(
     (opts?: { includeTypeMenu?: boolean }) => {
-      // 先同步当前帧，避免窗口层和内容层出现短暂高度错位。
-      resizeWindowToContent(opts);
-      // 下一帧复核一次，覆盖虚拟列表与异步渲染带来的延迟高度变化。
-      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+      // 鍏堝悓姝ュ綋鍓嶅抚锛岄伩鍏嶇獥鍙ｅ眰鍜屽唴瀹瑰眰鍑虹幇鐭殏楂樺害閿欎綅銆?      resizeWindowToContent(opts);
+      // 涓嬩竴甯у鏍镐竴娆★紝瑕嗙洊铏氭嫙鍒楄〃涓庡紓姝ユ覆鏌撳甫鏉ョ殑寤惰繜楂樺害鍙樺寲銆?      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
       resizeRafRef.current = requestAnimationFrame(() => {
         resizeWindowToContent(opts);
       });
@@ -333,7 +361,7 @@ export function useSearchController() {
     setGhostInputValue("");
   }, []);
 
-  // 搜索列表的单项高度已抽离：便于你统一调整紧凑/普通模式的布局密度
+  // 鎼滅储鍒楄〃鐨勫崟椤归珮搴﹀凡鎶界锛氫究浜庝綘缁熶竴璋冩暣绱у噾/鏅€氭ā寮忕殑甯冨眬瀵嗗害
   const ITEM_HEIGHT = settings.compactMode ? SEARCH_ITEM_HEIGHT_COMPACT : SEARCH_ITEM_HEIGHT_NORMAL;
   const deviceMaxHeight = Math.floor((window.screen as any)?.availHeight || 0);
   const maxWindowHeight = Math.min(
@@ -354,7 +382,7 @@ export function useSearchController() {
   useEffect(() => {
     let mounted = true;
 
-    // 启动阶段先拿主进程预热好的快照：首开搜索面板时直接复用这份历史与默认类型。
+    // 鍚姩闃舵鍏堟嬁涓昏繘绋嬮鐑ソ鐨勫揩鐓э細棣栧紑鎼滅储闈㈡澘鏃剁洿鎺ュ鐢ㄨ繖浠藉巻鍙蹭笌榛樿绫诲瀷銆?
     void loadBootstrapState().then((snapshot) => {
       if (!mounted) return;
       historyItemsRef.current = Array.isArray(snapshot.history) ? snapshot.history : [];
@@ -417,8 +445,7 @@ export function useSearchController() {
       setShowSearchingIndicator(false);
       return;
     }
-    // 仅在慢查询时显示“正在搜索”，避免索引完成后的伪加载感。
-    setShowSearchingIndicator(false);
+    // 浠呭湪鎱㈡煡璇㈡椂鏄剧ず鈥滄鍦ㄦ悳绱⑩€濓紝閬垮厤绱㈠紩瀹屾垚鍚庣殑浼姞杞芥劅銆?    setShowSearchingIndicator(false);
     searchingIndicatorTimerRef.current = window.setTimeout(() => {
       setShowSearchingIndicator(true);
       searchingIndicatorTimerRef.current = null;
@@ -444,7 +471,7 @@ export function useSearchController() {
   }, [results, selectedIndex]);
 
   useEffect(() => {
-    // 真实查询变化或切换类型后，清空“幽灵提示”避免误导
+    // 鐪熷疄鏌ヨ鍙樺寲鎴栧垏鎹㈢被鍨嬪悗锛屾竻绌衡€滃菇鐏垫彁绀衡€濋伩鍏嶈瀵?
     setGhostInputValue("");
   }, [query, searchTypeId]);
 
@@ -454,7 +481,7 @@ export function useSearchController() {
   }, [results.length]);
 
   useEffect(() => {
-    // 结果集变化时保护 selectedIndex：避免指向越界导致列表滚动/渲染异常
+    // 缁撴灉闆嗗彉鍖栨椂淇濇姢 selectedIndex锛氶伩鍏嶆寚鍚戣秺鐣屽鑷村垪琛ㄦ粴鍔?娓叉煋寮傚父
     if (results.length === 0) return;
     if (selectedIndex < 0) {
       setSelectedIndex(0);
@@ -464,19 +491,61 @@ export function useSearchController() {
       setSelectedIndex(results.length - 1);
     }
   }, [results.length, selectedIndex]);
-  // 根据当前选择的搜索类型对结果做二次过滤（历史/增量结果都会走这里）
+  // 鏍规嵁褰撳墠閫夋嫨鐨勬悳绱㈢被鍨嬪缁撴灉鍋氫簩娆¤繃婊わ紙鍘嗗彶/澧為噺缁撴灉閮戒細璧拌繖閲岋級
   const filterItemsBySearchType = (items: AppItem[], typeId: string) => {
     return filterItemsBySearchTypeUtil(items, typeId, settings.customSearchTypes || []);
   };
 
   const limitResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
-  const withCalcResult = (items: AppItem[]) => {
-    const calcItem = calcItemRef.current;
-    if (!calcItem) return items;
-    const nonCalcItems = items.filter((item) => item.type !== "calc");
-    return limitResults([calcItem, ...nonCalcItems]);
-  };
-  const getCalcOffset = () => (calcItemRef.current ? 1 : 0);
+  const applyCalcResults = useCallback((currentCalcItem: AppItem | null, preservePath?: string) => {
+    // 纯计算模式：只显示计算相关结果，避免与文件搜索结果混排。
+    const history = calcHistoryItemsRef.current;
+    const merged = currentCalcItem
+      ? [currentCalcItem, ...history.filter((it) => it.path !== currentCalcItem.path)]
+      : history.slice();
+    const deduped = dedupeResults(merged);
+    setResults(deduped);
+    setTotalCount(deduped.length);
+    if (preservePath) {
+      const idx = deduped.findIndex((x) => x.path === preservePath);
+      setSelectedIndex(idx >= 0 ? idx : 0);
+    } else {
+      setSelectedIndex(0);
+    }
+    setIsSearching(false);
+    setIsIndexing(false);
+    setHasMore(false);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    // 计算历史独立订阅：进入“=”模式时直接切换为纯计算结果面板。
+    const applyPayload = (payload?: { results?: unknown }) => {
+      const records = normalizeCalcHistoryPayload(payload?.results);
+      calcHistoryItemsRef.current = mapCalcHistoryToItems(records);
+      if (!mounted) return;
+      const { isCalcMode } = parseCalcMode(queryRef.current);
+      if (!isCalcMode) return;
+      applyCalcResults(calcItemRef.current, selectedPathRef.current);
+    };
+
+    void window.ipcRenderer
+      ?.invoke("get-calc-history")
+      .then((resp: any) => {
+        applyPayload(resp as { results?: unknown });
+      })
+      .catch(() => {});
+
+    const handleCalcHistoryUpdated = (_event: any, payload?: { results?: unknown }) => {
+      applyPayload(payload);
+    };
+    window.ipcRenderer?.on("calc-history-updated", handleCalcHistoryUpdated as any);
+    return () => {
+      mounted = false;
+      window.ipcRenderer?.off("calc-history-updated", handleCalcHistoryUpdated as any);
+    };
+  }, [applyCalcResults]);
 
   const flushPendingAppends = () => {
     if (flushAppendTimerRef.current != null) {
@@ -488,7 +557,7 @@ export function useSearchController() {
     pendingAppendRef.current = [];
     startTransition(() => {
       setResults((prev) => {
-         const next = withCalcResult(limitResults(mergeResultsStable(prev, batch)));
+        const next = limitResults(mergeResultsStable(prev, batch));
         setTotalCount((c) => Math.max(c, next.length));
         return next;
       });
@@ -496,7 +565,7 @@ export function useSearchController() {
   };
 
   useEffect(() => {
-    // 点击下拉选择器之外时关闭菜单，避免菜单悬浮影响键盘操作
+    // 鐐瑰嚮涓嬫媺閫夋嫨鍣ㄤ箣澶栨椂鍏抽棴鑿滃崟锛岄伩鍏嶈彍鍗曟偓娴奖鍝嶉敭鐩樻搷浣?
     const handleClickOutside = (e: MouseEvent) => {
       if (typeSelectRef.current && !typeSelectRef.current.contains(e.target as Node)) {
         setTypeMenuOpen(false);
@@ -522,7 +591,7 @@ export function useSearchController() {
   );
 
   const enabledSearchTypeOptions = useMemo(() => {
-    // 搜索类型开关：设置面板可关闭某些类型（“所有类型”永远保留）
+    // 鎼滅储绫诲瀷寮€鍏筹細璁剧疆闈㈡澘鍙叧闂煇浜涚被鍨嬶紙鈥滄墍鏈夌被鍨嬧€濇案杩滀繚鐣欙級
     const disabled = Array.isArray(settings.disabledSearchTypeIds) ? settings.disabledSearchTypeIds : [];
     return searchTypeOptions.filter((t) => t.id === "all" || !disabled.includes(t.id));
   }, [searchTypeOptions, settings.disabledSearchTypeIds]);
@@ -533,21 +602,21 @@ export function useSearchController() {
   }, [searchTypeId, enabledSearchTypeOptions, settings.defaultSearchTypeId]);
 
   const placeholder = useMemo(() => {
-    if (searchTypeId === "all") return "搜索所有文件与文件夹...";
-    if (searchTypeId === "app") return "搜索应用...";
-    if (searchTypeId === "file") return "搜索文件（不含文件夹）...";
-    if (searchTypeId === "folder") return "搜索文件夹（不含文件）...";
-    if (searchTypeId === "image") return "搜索图片...";
-    if (searchTypeId === "video") return "搜索视频...";
-    if (searchTypeId === "settings") return "搜索系统设置项...";
+    if (searchTypeId === "all") return "鎼滅储鎵€鏈夋枃浠朵笌鏂囦欢澶?..";
+    if (searchTypeId === "app") return "鎼滅储搴旂敤...";
+    if (searchTypeId === "file") return "鎼滅储鏂囦欢锛堜笉鍚枃浠跺す锛?..";
+    if (searchTypeId === "folder") return "鎼滅储鏂囦欢澶癸紙涓嶅惈鏂囦欢锛?..";
+    if (searchTypeId === "image") return "鎼滅储鍥剧墖...";
+    if (searchTypeId === "video") return "鎼滅储瑙嗛...";
+    if (searchTypeId === "settings") return "鎼滅储绯荤粺璁剧疆椤?..";
     if (searchTypeId.startsWith("ext:")) {
       const ext = searchTypeId.slice(4);
-      return `搜索${ext} 文件...`;
+      return `鎼滅储${ext} 鏂囦欢...`;
     }
-    return "搜索所有文件与文件夹...";
+    return "鎼滅储鎵€鏈夋枃浠朵笌鏂囦欢澶?..";
   }, [searchTypeId]);
 
-  // 刷新历史记录：用于“空输入”模式下展示最近打开项
+  // 鍒锋柊鍘嗗彶璁板綍锛氱敤浜庘€滅┖杈撳叆鈥濇ā寮忎笅灞曠ず鏈€杩戞墦寮€椤?
   const applyHistoryResults = (historyItems: AppItem[], opts?: RefreshHistoryOpts) => {
     const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
     const filtered = filterItemsBySearchType(historyItems, typeId);
@@ -574,9 +643,27 @@ export function useSearchController() {
     await window.ipcRenderer?.invoke("delete-history-item", targetPath);
   };
 
+  const deleteCalcHistoryItem = async (expression: string) => {
+    if (!expression) return;
+    await window.ipcRenderer?.invoke("delete-calc-history-item", expression);
+  };
+
+  const deleteResultItem = useCallback(
+    async (item: AppItem | undefined) => {
+      if (!item?.path) return;
+      // 删除入口统一分流：文件历史与计算历史各走各自通道，避免误删。
+      if (parseCalcMode(queryRef.current).isCalcMode && item.type === "calc") {
+        await deleteCalcHistoryItem(item.path);
+        return;
+      }
+      await deleteHistoryItem(item.path);
+    },
+    [],
+  );
+
   useEffect(() => {
     inputRef.current?.focus();
-    // 主进程通知“需要重置搜索页”时触发：按用户设置决定是否保留上次状态
+    // 涓昏繘绋嬮€氱煡鈥滈渶瑕侀噸缃悳绱㈤〉鈥濇椂瑙﹀彂锛氭寜鐢ㄦ埛璁剧疆鍐冲畾鏄惁淇濈暀涓婃鐘舵€?
     const handleReset = async () => {
       void refreshUserStatusSilently();
       lastResizeHeightRef.current = 0;
@@ -620,8 +707,10 @@ export function useSearchController() {
       inputRef.current?.focus();
       window.ipcRenderer?.invoke("search-view-ready");
       lastResizeHeightRef.current = 0;
-      const p =
-        queryRef.current.trim().length === 0
+      const queryMode = parseCalcMode(queryRef.current);
+      const p = queryMode.isCalcMode
+        ? Promise.resolve(applyCalcResults(calcItemRef.current, selectedPathRef.current))
+        : queryRef.current.trim().length === 0
           ? refreshHistory({
               typeId: searchTypeIdRef.current,
               preserveSelectedPath: selectedPathRef.current,
@@ -635,11 +724,11 @@ export function useSearchController() {
     return () => {
       window.ipcRenderer?.off("search-window-opened", handler as any);
     };
-  }, [syncWindowHeight]);
+  }, [syncWindowHeight, applyCalcResults]);
 
   useEffect(() => {
-    // more-results 事件用于主进程“增量回填图标/更多结果”
-    // 这里必须常驻监听（不要随 query/searchTypeId 反复解绑/绑定），否则极易在首搜阶段丢事件，表现为“第一次没图标，第二次才有”
+    // more-results 浜嬩欢鐢ㄤ簬涓昏繘绋嬧€滃閲忓洖濉浘鏍?鏇村缁撴灉鈥?
+    // 杩欓噷蹇呴』甯搁┗鐩戝惉锛堜笉瑕侀殢 query/searchTypeId 鍙嶅瑙ｇ粦/缁戝畾锛夛紝鍚﹀垯鏋佹槗鍦ㄩ鎼滈樁娈典涪浜嬩欢锛岃〃鐜颁负鈥滅涓€娆℃病鍥炬爣锛岀浜屾鎵嶆湁鈥?
     const handler = (_event: any, payload: { query: string; results: AppItem[] }) => {
       const currentQuery = parseDrivePrefix(queryRef.current).term;
       const currentTypeId = searchTypeIdRef.current;
@@ -674,10 +763,24 @@ export function useSearchController() {
   }, []);
 
   useEffect(() => {
-    const { term: trimmed, drive } = parseDrivePrefix(query);
+    const { term, drive } = parseDrivePrefix(query);
+    const trimmed = term.trim();
+    const calcMode = parseCalcMode(trimmed);
     calcItemRef.current = buildCalcItem(trimmed);
+    if (calcMode.isCalcMode) {
+      // 鈥?鈥濇ā寮忕洿鎺ヨ繘鍏ョ函璁＄畻鍒楄〃锛屼笉瑙﹀彂鏂囦欢鎼滅储銆?      searchRequestIdRef.current += 1;
+      searchSessionIdRef.current = "";
+      typeSwitchRequestedRef.current = false;
+      pendingAppendRef.current = [];
+      if (flushAppendTimerRef.current != null) {
+        window.clearTimeout(flushAppendTimerRef.current);
+        flushAppendTimerRef.current = null;
+      }
+      applyCalcResults(calcItemRef.current, selectedPathRef.current);
+      return;
+    }
     if (!trimmed || trimmed.length < 1) {
-      // 空输入不触发搜索：显示历史；其余交由后续流程处理（支持单字符搜索）
+      // 绌鸿緭鍏ヤ笉瑙﹀彂鎼滅储锛氭樉绀哄巻鍙诧紱鍏朵綑浜ょ敱鍚庣画娴佺▼澶勭悊锛堟敮鎸佸崟瀛楃鎼滅储锛?
       searchRequestIdRef.current += 1;
       if (trimmed.length === 0) {
         refreshHistory();
@@ -702,8 +805,8 @@ export function useSearchController() {
       window.clearTimeout(flushAppendTimerRef.current);
       flushAppendTimerRef.current = null;
     }
-    // 防抖：避免连续输入触发过多 IPC 搜索请求
-    // 索引期加大防抖，优先保证输入流畅。
+    // 闃叉姈锛氶伩鍏嶈繛缁緭鍏ヨЕ鍙戣繃澶?IPC 鎼滅储璇锋眰
+    // 绱㈠紩鏈熷姞澶ч槻鎶栵紝浼樺厛淇濊瘉杈撳叆娴佺晠銆?
     const delay = typeSwitchRequestedRef.current
       ? 0
       : isIndexing
@@ -719,19 +822,19 @@ export function useSearchController() {
           trimmed,
           { searchTypeId, searchSessionId, drive },
         )) as (SearchResponse & { hasMore?: boolean }) | undefined;
-        // 竞态保护：只接受“最新请求 + 当前 query/type”对应的结果
+        // 绔炴€佷繚鎶わ細鍙帴鍙椻€滄渶鏂拌姹?+ 褰撳墠 query/type鈥濆搴旂殑缁撴灉
         if (searchRequestIdRef.current !== requestId) return;
         if (parseDrivePrefix(queryRef.current).term !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
         setSelectedIndex(0);
         startTransition(() => {
-          const limited = withCalcResult(limitResults(dedupeResults(nextResults)));
+          const limited = limitResults(dedupeResults(nextResults));
           setResults(limited);
           const rawTotal = typeof resp?.totalCount === "number" ? resp.totalCount : limited.length;
-          // 如果没有更多结果，且当前结果数量小于后端返回的总数（说明前端去重了），则以当前结果数量为准，避免界面显示“12条结果”但列表只有3项
+          // 濡傛灉娌℃湁鏇村缁撴灉锛屼笖褰撳墠缁撴灉鏁伴噺灏忎簬鍚庣杩斿洖鐨勬€绘暟锛堣鏄庡墠绔幓閲嶄簡锛夛紝鍒欎互褰撳墠缁撴灉鏁伴噺涓哄噯锛岄伩鍏嶇晫闈㈡樉绀衡€?2鏉＄粨鏋溾€濅絾鍒楄〃鍙湁3椤?
           const finalTotal = (!resp?.hasMore && limited.length < rawTotal) ? limited.length : rawTotal;
-          setTotalCount(finalTotal + getCalcOffset());
+          setTotalCount(finalTotal);
           setIsIndexing(Boolean(resp?.isIndexing));
           setHasMore(Boolean(resp?.hasMore));
         });
@@ -741,15 +844,14 @@ export function useSearchController() {
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [query, searchTypeId]);
+  }, [query, searchTypeId, isIndexing, applyCalcResults]);
 
   useEffect(() => {
-    // 渲染层图标补抓已下沉到主进程缓存链路，这里直接禁用，避免前后端重复抓取。
-    return;
+    // 娓叉煋灞傚浘鏍囪ˉ鎶撳凡涓嬫矇鍒颁富杩涚▼缂撳瓨閾捐矾锛岃繖閲岀洿鎺ョ鐢紝閬垮厤鍓嶅悗绔噸澶嶆姄鍙栥€?    return;
     /*
     if (searchTypeId !== "app") return;
-    // 搜索进行中时结果会频繁变化：此时抢占式补齐图标会导致频繁 setState，引发列表短暂卡顿/闪动
-    // 这里等本轮搜索结束后再拉取首屏缺失图标，并批量合并到 results，减少渲染压力
+    // 鎼滅储杩涜涓椂缁撴灉浼氶绻佸彉鍖栵細姝ゆ椂鎶㈠崰寮忚ˉ榻愬浘鏍囦細瀵艰嚧棰戠箒 setState锛屽紩鍙戝垪琛ㄧ煭鏆傚崱椤?闂姩
+    // 杩欓噷绛夋湰杞悳绱㈢粨鏉熷悗鍐嶆媺鍙栭灞忕己澶卞浘鏍囷紝骞舵壒閲忓悎骞跺埌 results锛屽噺灏戞覆鏌撳帇鍔?
     if (isSearching) return;
     const now = Date.now();
     if (iconFetchStartedTokenRef.current > 0 && now - iconFetchStartedTokenRef.current < 120) return;
@@ -791,7 +893,7 @@ export function useSearchController() {
             }
             continue;
           }
-          // 将图标回填统一走“批量合并”队列：避免每个 icon 都触发一次列表重渲染导致卡顿
+          // 灏嗗浘鏍囧洖濉粺涓€璧扳€滄壒閲忓悎骞垛€濋槦鍒楋細閬垮厤姣忎釜 icon 閮借Е鍙戜竴娆″垪琛ㄩ噸娓叉煋瀵艰嚧鍗￠】
           pendingAppendRef.current = [...pendingAppendRef.current, { ...it, icon }];
           if (flushAppendTimerRef.current == null) {
             flushAppendTimerRef.current = window.setTimeout(() => flushPendingAppends(), 24);
@@ -811,6 +913,7 @@ export function useSearchController() {
 
   useEffect(() => {
     const trimmed = parseDrivePrefix(query).term;
+    if (parseCalcMode(trimmed).isCalcMode) return;
     if (!trimmed || trimmed.length < 1) return;
     if (!isIndexing) return;
     if (isSearching) return;
@@ -845,9 +948,9 @@ export function useSearchController() {
         const serverOrdered = limitResults(dedupeResults(nextResults));
         startTransition(() => {
           setResults((prev) => {
-            // 增量回填/索引刷新时只“补齐/更新”数据，不重排已加载的列表顺序，避免拖拽/操作时出现跳动
-            const merged = withCalcResult(limitResults(mergeResultsStable(prev, serverOrdered)));
-            setTotalCount((c) => Math.max(c, respTotal + getCalcOffset(), merged.length));
+            // 澧為噺鍥炲～/绱㈠紩鍒锋柊鏃跺彧鈥滆ˉ榻?鏇存柊鈥濇暟鎹紝涓嶉噸鎺掑凡鍔犺浇鐨勫垪琛ㄩ『搴忥紝閬垮厤鎷栨嫿/鎿嶄綔鏃跺嚭鐜拌烦鍔?
+            const merged = limitResults(mergeResultsStable(prev, serverOrdered));
+            setTotalCount((c) => Math.max(c, respTotal, merged.length));
             return merged;
           });
           setIsIndexing(Boolean(resp?.isIndexing));
@@ -856,7 +959,7 @@ export function useSearchController() {
       } catch {}
     };
 
-    // 索引期不做高频轮询刷新，改为输入稳定后触发一次轻量刷新。
+    // 绱㈠紩鏈熶笉鍋氶珮棰戣疆璇㈠埛鏂帮紝鏀逛负杈撳叆绋冲畾鍚庤Е鍙戜竴娆¤交閲忓埛鏂般€?
     const timerId = window.setTimeout(() => {
       void refreshOnce();
     }, 800);
@@ -905,8 +1008,14 @@ export function useSearchController() {
 
   const copyCalcResult = (item: AppItem | undefined) => {
     if (!item || item.type !== "calc") return;
+    const expressionText = String(item.path || "").trim();
     const resultText = String(item.name || "").trim();
-    if (!resultText) return;
+    if (!expressionText || !resultText) return;
+    // 复制或确认计算结果时写入独立计算历史，便于“=”模式快速回看。
+    void window.ipcRenderer?.invoke("record-calc-history-item", {
+      expression: expressionText,
+      result: resultText,
+    });
     navigator.clipboard
       .writeText(resultText)
       .then(() => showToast("已复制计算结果", "success"))
@@ -923,7 +1032,7 @@ export function useSearchController() {
       });
       return;
     }
-    // “打开目录”需要在主进程区分 app/file/folder：应用优先定位到开始菜单快捷方式所在目录，而不是打开 AppsFolder 虚拟目录
+    // 鈥滄墦寮€鐩綍鈥濋渶瑕佸湪涓昏繘绋嬪尯鍒?app/file/folder锛氬簲鐢ㄤ紭鍏堝畾浣嶅埌寮€濮嬭彍鍗曞揩鎹锋柟寮忔墍鍦ㄧ洰褰曪紝鑰屼笉鏄墦寮€ AppsFolder 铏氭嫙鐩綍
     window.ipcRenderer?.invoke("open-folder", { type: app.type, path: app.path, name: app.name });
   };
 
@@ -940,7 +1049,7 @@ export function useSearchController() {
   };
 
   const runAsAdmin = (app: AppItem) => {
-    // 以管理员身份运行可能失败（UAC 拒绝/不支持的类型）：这里用 toast 给出明确反馈，避免“点击没反应”
+    // 以管理员身份运行可能失败（UAC 拒绝或目标类型不支持），这里统一给出明确反馈。
     (async () => {
       try {
         const resp = (await window.ipcRenderer?.invoke("run-as-admin", {
@@ -952,7 +1061,6 @@ export function useSearchController() {
         if (!resp) return;
         const ok = typeof resp === "boolean" ? resp : Boolean(resp?.ok);
         const msg = typeof resp === "object" && resp ? (resp as any).message : "";
-        // toast 文案不换行：将可能出现的换行符压缩为一个空格，配合 CSS 省略号显示
         const safeMsg = String(msg || "").replace(/\s*\r?\n\s*/g, " ").trim();
 
         if (ok) {
@@ -974,11 +1082,16 @@ export function useSearchController() {
       .catch(() => showToast("复制失败", "error"));
   };
 
-  const isHistoryMode = query.trim().length === 0;
+  const isCalcMode = parseCalcMode(query).isCalcMode;
+  const isHistoryMode = !isCalcMode && query.trim().length === 0;
 
   const getVisibleActionIdsForItem = useCallback(
     (item: AppItem | undefined) => {
-      if (!item || item.type === "calc") return [] as AppSettings["resultActionButtons"]; 
+      if (!item) return [] as AppSettings["resultActionButtons"];
+      // 计算模式仅保留“删除历史”动作，满足右侧 × 删除需求。
+      if (item.type === "calc") {
+        return isCalcMode ? (["deleteHistory"] as AppSettings["resultActionButtons"]) : ([] as AppSettings["resultActionButtons"]);
+      }
       const raw = Array.isArray(settings.resultActionButtons) ? settings.resultActionButtons : [];
       const out: AppSettings["resultActionButtons"][number][] = [];
       for (const id of raw) {
@@ -991,7 +1104,7 @@ export function useSearchController() {
       }
       return out;
     },
-    [settings.resultActionButtons, isHistoryMode],
+    [settings.resultActionButtons, isHistoryMode, isCalcMode],
   );
 
   const selectedActionIds = useMemo(() => {
@@ -1087,7 +1200,7 @@ export function useSearchController() {
     }) => {
       if ((e as any).isComposing) return;
 
-      // 任意非左右键操作都会让“左右键选中右侧按钮”的效果失效，避免状态残留造成误触
+      // 浠绘剰闈炲乏鍙抽敭鎿嶄綔閮戒細璁┾€滃乏鍙抽敭閫変腑鍙充晶鎸夐挳鈥濈殑鏁堟灉澶辨晥锛岄伩鍏嶇姸鎬佹畫鐣欓€犳垚璇Е
       if (selectedActionIndex >= 0 && e.key !== "ArrowLeft" && e.key !== "ArrowRight") {
         setSelectedActionIndex(-1);
       }
@@ -1103,7 +1216,7 @@ export function useSearchController() {
         setSelectedActionIndex((prev) => {
           const nextPrev = typeof prev === "number" ? prev : -1;
 
-          // 第一次左右切换：必须先选中第一个按钮，再根据方向继续切
+          // 绗竴娆″乏鍙冲垏鎹細蹇呴』鍏堥€変腑绗竴涓寜閽紝鍐嶆牴鎹柟鍚戠户缁垏
           if (nextPrev < 0) return 0;
 
           const delta = e.key === "ArrowRight" ? 1 : -1;
@@ -1129,7 +1242,7 @@ export function useSearchController() {
         if (id === "openFolder") openFolder(item);
         else if (id === "copyPath") copyPath(item);
         else if (id === "runAsAdmin") runAsAdmin(item);
-        else if (id === "deleteHistory") void deleteHistoryItem(item.path);
+        else if (id === "deleteHistory") void deleteResultItem(item);
         return;
       }
 
@@ -1148,7 +1261,7 @@ export function useSearchController() {
       getVisibleActionIdsForItem,
       openFolder,
       runAsAdmin,
-      deleteHistoryItem,
+      deleteResultItem,
     ],
   );
 
@@ -1264,7 +1377,7 @@ export function useSearchController() {
     }
   };
 
-  // 列表使用虚拟滚动（react-window v2），这里直接使用全量 results，避免“选中索引超出可见切片”导致空白渲染
+  // 鍒楄〃浣跨敤铏氭嫙婊氬姩锛坮eact-window v2锛夛紝杩欓噷鐩存帴浣跨敤鍏ㄩ噺 results锛岄伩鍏嶁€滈€変腑绱㈠紩瓒呭嚭鍙鍒囩墖鈥濆鑷寸┖鐧芥覆鏌?
   const visibleResults = results;
   const currentTypeLabel = useMemo(() => {
     return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
@@ -1327,9 +1440,9 @@ export function useSearchController() {
   };
 
   const statusText = showSearchingIndicator
-    ? "正在搜索…"
+    ? "正在搜索..."
     : isIndexing
-      ? "正在建立本地文件索引…"
+      ? "正在建立本地文件索引..."
       : "";
 
   return {
@@ -1352,6 +1465,7 @@ export function useSearchController() {
     isIndexing,
     hasMore,
     totalCount,
+    isCalcMode,
     placeholder,
     searchTypeOptions: enabledSearchTypeOptions,
     currentTypeLabel: currentTypeLabelSafe,
@@ -1359,7 +1473,7 @@ export function useSearchController() {
     listHeight,
     showEmptyState,
     showInputHint,
-    statusText: showSearchingIndicator ? "正在搜索..." : isIndexing ? "正在建立本地文件索引..." : "",
+    statusText: showSearchingIndicator ? "姝ｅ湪鎼滅储..." : isIndexing ? "姝ｅ湪寤虹珛鏈湴鏂囦欢绱㈠紩..." : "",
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
     inputRef,
@@ -1379,6 +1493,7 @@ export function useSearchController() {
     hideWindow,
     refreshHistory,
     deleteHistoryItem,
+    deleteResultItem,
     scrollToTop,
     onItemsRendered,
     trimmedQuery,
@@ -1392,3 +1507,5 @@ export function useSearchController() {
     clearGhostInputValue,
   };
 }
+
+

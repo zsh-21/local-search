@@ -201,7 +201,6 @@ export function normalizeSettings(s: any): AppSettings {
     // 默认显示路径：当配置缺失时回落到默认值，避免 Boolean(undefined) 误判为 false
     showResultPath: typeof s?.showResultPath === "boolean" ? s.showResultPath : DEFAULT_SETTINGS.showResultPath,
     enableHistory: s?.enableHistory !== false,
-    accentColor: typeof s?.accentColor === "string" ? s.accentColor : DEFAULT_SETTINGS.accentColor,
     enableEffect: Boolean(s?.enableEffect),
     effectType,
     backgroundImagePath,
@@ -289,7 +288,6 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
 
   return normalizeSettings({
     ...settings,
-    accentColor: DEFAULT_SETTINGS.accentColor,
     defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
     customSearchTypes: [],
     searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
@@ -378,7 +376,6 @@ export function useSettings() {
         setBaseSettings((prev) => {
           const next = {
             ...prev,
-            accentColor: backup.accentColor ?? prev.accentColor,
             defaultSearchTypeId: backup.defaultSearchTypeId ?? prev.defaultSearchTypeId,
             customSearchTypes: backup.customSearchTypes ?? prev.customSearchTypes,
             searchTypeOrder: backup.searchTypeOrder ?? prev.searchTypeOrder,
@@ -397,7 +394,6 @@ export function useSettings() {
       setBaseSettings((prev) => {
         const arrEq = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
         const hasCustomSettings =
-          prev.accentColor !== DEFAULT_SETTINGS.accentColor ||
           prev.defaultSearchTypeId !== DEFAULT_SETTINGS.defaultSearchTypeId ||
           (prev.customSearchTypes && prev.customSearchTypes.length > 0) ||
           prev.enableEffect !== false ||
@@ -408,7 +404,6 @@ export function useSettings() {
 
         if (hasCustomSettings) {
           saveBackupSettings({
-            accentColor: prev.accentColor,
             defaultSearchTypeId: prev.defaultSearchTypeId,
             customSearchTypes: prev.customSearchTypes,
             searchTypeOrder: prev.searchTypeOrder,
@@ -421,7 +416,6 @@ export function useSettings() {
 
           const reset = {
             ...prev,
-            accentColor: DEFAULT_SETTINGS.accentColor,
             defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
             customSearchTypes: [],
             searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
@@ -476,14 +470,7 @@ export function useSettings() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme;
-    document.documentElement.style.setProperty("--fs-accent", settings.accentColor);
     document.documentElement.style.setProperty("--fs-font-sans", settings.uiFontFamily || DEFAULT_SETTINGS.uiFontFamily);
-    const r = parseInt(settings.accentColor.slice(1, 3), 16);
-    const g = parseInt(settings.accentColor.slice(3, 5), 16);
-    const b = parseInt(settings.accentColor.slice(5, 7), 16);
-    document.documentElement.style.setProperty("--fs-accent-soft", `rgba(${r}, ${g}, ${b}, 0.1)`);
-    document.documentElement.style.setProperty("--fs-dots", `rgba(${r}, ${g}, ${b}, 0.2)`);
-    document.documentElement.style.setProperty("--fs-glow", `rgba(${r}, ${g}, ${b}, 0.15)`);
   }, [settings]);
 
   return { settings, loaded };

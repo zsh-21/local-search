@@ -56,7 +56,7 @@ const SECTION_META: Record<SettingsTabKey, { title: string; desc: string }> = {
   general: { title: "通用", desc: "启动、状态与历史记录" },
   search: { title: "搜索", desc: "默认类型、自定义类型与顺序" },
   shortcuts: { title: "快捷键", desc: "呼出搜索与打开设置" },
-  appearance: { title: "外观", desc: "主题模式与主题色" },
+  appearance: { title: "外观", desc: "主题模式与交互风格" },
   account: { title: "账号", desc: "登录与账号状态" },
 };
 
@@ -304,7 +304,6 @@ export function SettingsViewImpl() {
                     membershipBadge={membershipBadge}
                     applyThemePreview={c.applyThemePreview}
                     applyFontPreview={c.applyFontPreview}
-                    themeColors={c.themeColors}
                     themeOptions={c.themeOptions}
                     fontOptions={c.fontOptions}
                   />

@@ -253,19 +253,6 @@ export function AccountSection({
                   <div className="account-detail-val">{themeLabelMap.get(draft.theme) || draft.theme}</div>
                 </div>
               ) : null}
-              {draft.accentColor ? (
-                <div className="account-detail-row">
-                  <div className="account-detail-key">主题色</div>
-                  <div className="account-detail-val">
-                    <span
-                      className="account-color-swatch"
-                      style={{ background: draft.accentColor }}
-                      aria-hidden="true"
-                    />
-                    <span className="account-color-text">{draft.accentColor}</span>
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             <button
