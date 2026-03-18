@@ -11,7 +11,11 @@ function isShortcutPath(p: string) {
 export const fileIndexStrategy: SearchStrategy = {
   id: "fileIndex",
   async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
-    const fileSearchLimit = ctx.searchTypeId === "all" || ctx.searchTypeId === "file" ? 500 : 5000;
+    // 索引期降载：降低 fileIndex 查询上限，优先保证输入响应。
+    const baseLimit = ctx.searchTypeId === "all" || ctx.searchTypeId === "file" ? 500 : 5000;
+    const fileSearchLimit = ctx.isIndexingHint
+      ? Math.min(baseLimit, ctx.searchTypeId === "all" || ctx.searchTypeId === "file" ? 120 : 600)
+      : baseLimit;
 
     const currentSettings = deps.loadSettings();
     const customExts = Array.isArray(currentSettings.customSearchTypes)
@@ -66,7 +70,9 @@ export const fileIndexStrategy: SearchStrategy = {
     const scoredFiles: SearchCandidate[] = [];
     for (const r of filteredFiles) {
       const type = r.isDirectory ? "folder" : "file";
-      const { weightedScore, matchIndex, nameLen } = ctx.nameScorer.computeWeightedNameMatch(r.name);
+      // 路径查询时用 path 参与匹配，提升路径片段搜索命中率。
+      const matchTarget = ctx.isPathQuery ? r.path : r.name;
+      const { weightedScore, matchIndex, nameLen } = ctx.nameScorer.computeWeightedNameMatch(matchTarget);
       const baseScore = weightedScore * 100 + (matchIndex <= 2 ? 300 : 0) - Math.min(80, Math.floor(nameLen / 10));
       const timeMs = typeof r.timeMs === "number" ? r.timeMs : 0;
       const score = ctx.scoreComputer.computeCombinedScore(baseScore, type, r.path, timeMs);

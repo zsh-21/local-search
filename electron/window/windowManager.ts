@@ -24,6 +24,9 @@ import { refreshBootstrapHistory } from '../app/bootstrapState';
 
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
+let searchReadyToShow = false;
+let pendingSearchShow = false;
+let searchShowFallbackTimer: NodeJS.Timeout | null = null;
 
 let ignoreSearchBlurUntil = 0;
 let searchHideTimer: NodeJS.Timeout | null = null;
@@ -51,6 +54,37 @@ export function getSearchWindow() {
 
 export function getSettingsWindow() {
   return settingsWin;
+}
+
+function clearSearchShowFallbackTimer() {
+  if (searchShowFallbackTimer) {
+    clearTimeout(searchShowFallbackTimer);
+    searchShowFallbackTimer = null;
+  }
+}
+
+function showSearchWindowIfReady() {
+  if (!pendingSearchShow) return;
+  if (!searchReadyToShow) return;
+  if (!win || win.isDestroyed()) return;
+  pendingSearchShow = false;
+  clearSearchShowFallbackTimer();
+  win.show();
+  win.focus();
+  searchVisibleAt = Date.now();
+  setTimeout(() => {
+    if (win && !win.isDestroyed() && win.isVisible()) win.focus();
+  }, 80);
+}
+
+function prepareSearchShowFallback() {
+  // 首次呼出或重置时等待渲染就绪，避免白屏；兜底超时保证可见性。
+  clearSearchShowFallbackTimer();
+  searchShowFallbackTimer = setTimeout(() => {
+    if (!pendingSearchShow) return;
+    searchReadyToShow = true;
+    showSearchWindowIfReady();
+  }, 1200);
 }
 
 export function createWindow() {
@@ -111,7 +145,13 @@ export function createWindow() {
     if (win) saveConfig(win.getBounds());
   });
   win.on('closed', () => {
+    clearSearchShowFallbackTimer();
     win = null;
+  });
+
+  win.webContents.on('did-start-loading', () => {
+    // 页面重新加载时重置渲染就绪标记，避免提前显示导致白屏闪现。
+    searchReadyToShow = false;
   });
 
   win.on('focus', () => {
@@ -253,17 +293,16 @@ export function openSearchWindow() {
     // 这里等待 did-finish-load 后再 show，避免短时间“空白面板”体验；如果已加载则立即显示
     if (!win || win.isDestroyed()) return;
     const wc = win.webContents;
-    const doShow = () => {
+    const doOpen = () => {
       if (!win || win.isDestroyed()) return;
-      win.show();
-      win.focus();
       sendOpenEvent();
+      showSearchWindowIfReady();
     };
     if (typeof wc?.isLoading === 'function' && wc.isLoading()) {
-      wc.once('did-finish-load', () => doShow());
+      wc.once('did-finish-load', () => doOpen());
       return;
     }
-    doShow();
+    doOpen();
   };
   if (win && !win.isDestroyed()) {
     if (win.isVisible()) {
@@ -280,6 +319,10 @@ export function openSearchWindow() {
     fileIndex.setSearchWindowVisible(true);
     searchWasFocusedSinceShow = false;
     searchAllowBlurHide = false;
+    // 先等待渲染就绪再显示，避免首屏白屏闪现。
+    pendingSearchShow = true;
+    searchReadyToShow = false;
+    prepareSearchShowFallback();
     if (searchHideTimer) {
       clearTimeout(searchHideTimer);
       searchHideTimer = null;
@@ -287,15 +330,15 @@ export function openSearchWindow() {
     ignoreSearchBlurUntil = Date.now() + 900;
     showWhenReady();
     void reconcileRecentIndex().catch(() => {});
-    searchVisibleAt = Date.now();
-    setTimeout(() => {
-      if (win && !win.isDestroyed() && win.isVisible()) win.focus();
-    }, 80);
     return;
   }
   win = null;
   createWindow();
   fileIndex.setSearchWindowVisible(true);
+  // 新建窗口同样等待渲染就绪，兜底超时保证可见性。
+  pendingSearchShow = true;
+  searchReadyToShow = false;
+  prepareSearchShowFallback();
   // 新建窗口时同样等页面首帧准备好再 show 与发事件，避免首次呼出空白
   showWhenReady();
 }
@@ -373,6 +416,12 @@ export function setSearchAllowBlurHide(allow: boolean) {
   searchAllowBlurHide = allow;
 }
 
+export function setSearchViewReady(ready: boolean) {
+  // 渲染就绪后再显示窗口，避免首屏白屏闪现。
+  searchReadyToShow = ready;
+  if (ready) showSearchWindowIfReady();
+}
+
 export function setSettingsReadyToShow(ready: boolean) {
   settingsReadyToShow = ready;
 }
@@ -386,4 +435,6 @@ export function clearSettingsShowFallbackTimer() {
 
 export function closeAllWindows() {
   win = null;
+  pendingSearchShow = false;
+  clearSearchShowFallbackTimer();
 }

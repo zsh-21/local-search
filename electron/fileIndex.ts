@@ -48,7 +48,8 @@ interface FlexSearchDoc {
 
 const tokenizeCache = new Map<string, string[]>();
 const flexsearchEncode = (raw: string) => {
-	const s = (raw || '').toLowerCase();
+	// 先做 NFKC 归一化：统一全角/半角及兼容字符，提升中英文与特殊字符混输的一致性
+	const s = (raw || '').normalize('NFKC').toLowerCase();
 	if (!s) return [];
 	const cached = tokenizeCache.get(s);
 	if (cached) return cached.slice();
@@ -71,10 +72,12 @@ const flexsearchEncode = (raw: string) => {
 		out.push(t);
 	};
 
-	const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
+	// 覆盖更广的 Unicode 字母/数字：不仅支持 ASCII，也支持多语种字母与数字混合
+	const segs = s.match(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu) || [];
 	for (const seg of segs) {
 		if (!seg) continue;
 		const isAscii = /^[a-z0-9]+$/.test(seg);
+		const isHan = /[\p{Script=Han}]/u.test(seg);
 		if (isAscii) {
 			push(seg);
 			// 长前缀适度放宽：仅对较短英文词扩大前缀长度，避免长词生成过多 token
@@ -95,16 +98,21 @@ const flexsearchEncode = (raw: string) => {
 
 		push(seg);
 
-		// 中文分词增强：支持“前缀组合检索”（例如：目录名“测试目录”，搜索“测试”也能命中）
-		// 控制 token 数量：只添加 2/3 字前缀，避免 tokens 爆炸
-		if (seg.length >= 2) push(seg.slice(0, 2));
-		if (seg.length >= 3) push(seg.slice(0, 3));
-
-		// 单字匹配会显著增加 token 数量，且容易带来噪声
-		// 这里只对“极短中文词”（长度<=2）启用逐字 token，满足常用检索（如“简 历”）
-		if (seg.length <= 2) {
-			for (let i = 0; i < seg.length; i++) push(seg[i]);
+		if (isHan) {
+			// 中文分词增强：支持“前缀组合检索”（例如：目录名“测试目录”，搜索“测试”也能命中）
+			if (seg.length >= 2) push(seg.slice(0, 2));
+			if (seg.length >= 3) push(seg.slice(0, 3));
+			// 单字匹配会显著增加 token 数量，且容易带来噪声
+			// 这里只对“极短中文词”（长度<=2）启用逐字 token，满足常用检索（如“简 历”）
+			if (seg.length <= 2) {
+				for (let i = 0; i < seg.length; i++) push(seg[i]);
+			}
+			continue;
 		}
+
+		// 非中文的 Unicode 字母序列也补充短前缀，兼顾召回与 token 体积
+		const maxPrefix = Math.min(seg.length, 6);
+		for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
 	}
 
 	tokenizeCache.set(s, out.slice());
@@ -399,9 +407,9 @@ export class FileIndex {
 		// 从用户输入中提取“更可能有效”的检?token?
 		// - 支持用户把一段总结/说明直接粘贴到搜索框
 		// - 丢弃大量无意义停用词，保留目录名/数字/扩展?英文缩写?
-		const s = (rawQuery || '').toLowerCase();
+		const s = (rawQuery || '').normalize('NFKC').toLowerCase();
 		if (!s) return [];
-		const segs = s.match(/[\u3400-\u4dbf\u4e00-\u9fff]+|[a-z0-9]+/g) || [];
+		const segs = s.match(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu) || [];
 		const stop = new Set([
 			'比如',
 			'例如',
@@ -432,11 +440,15 @@ export class FileIndex {
 
 			const isDigits = /^[0-9]+$/.test(token);
 			const isAscii = /^[a-z0-9]+$/.test(token);
+			const isHan = /[\p{Script=Han}]/u.test(token);
 			if (isAscii) {
 				// 过滤掉无意义的单字符英文，但保留数字（如 3?
 				if (!isDigits && token.length <= 1) continue;
-			} else {
+			} else if (isHan) {
 				// 中文 token 太短往往噪声较大：长度为 1 的中文默认跳?
+				if (token.length <= 1) continue;
+			} else {
+				// 其他 Unicode 语言默认保留长度 >= 2 的 token，避免符号噪声
 				if (token.length <= 1) continue;
 			}
 
@@ -841,7 +853,7 @@ export class FileIndex {
 		options?: { where?: any }
 	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number; rawCount: number }> {
 		const index = await this.ensureIndex();
-		const queryLower = query.trim().toLowerCase();
+		const queryLower = query.trim().normalize('NFKC').toLowerCase();
 		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0, rawCount: 0 };
 
 		const matchesWhere = (doc: FlexSearchDoc, where?: any) => {

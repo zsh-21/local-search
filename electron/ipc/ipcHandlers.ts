@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, dialog, screen, shell } from 'electron';
 import { getDeviceId } from '../config/deviceId';
 import {
   setSearchAllowBlurHide,
+  setSearchViewReady,
   setSettingsReadyToShow,
   clearSettingsShowFallbackTimer,
   showSettingsWindow,
@@ -134,6 +135,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('search-view-ready', () => {
     setSearchAllowBlurHide(true);
+    // 渲染就绪握手：主进程收到后才允许显示搜索窗，避免首屏白屏。
+    setSearchViewReady(true);
   });
 
   ipcMain.handle('settings-view-ready', (event) => {

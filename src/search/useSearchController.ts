@@ -217,10 +217,10 @@ export function useSearchController() {
   const { settings, loaded } = useSettings();
 
   const parseDrivePrefix = (raw: string) => {
-    // 输入支持“盘符前缀”：例如 C:、c:、C：，用于将搜索范围限制到指定盘符并提升速度
+    // 支持 E: / E:  / E： / E： 这四种盘符前缀写法，盘符大小写不敏感
     const s = typeof raw === "string" ? raw.trim() : "";
-    // 注意：不要把完整路径（例如 E:\foo\bar）误识别为“盘符前缀模式”，否则会把查询变成 \foo\bar（缺盘符）导致搜不到
-    const m = s.match(/^([a-zA-Z])\s*[:：](?=\s|$)\s*/);
+    // 避免把完整路径（如 E:\\foo 或 E:/foo）误判成“盘符约束 + 关键词”
+    const m = s.match(/^([a-zA-Z])\s*(?::|\uFF1A)\s*(?![\\/])/);
     if (!m) return { term: s, drive: "" };
     const drive = (m[1] || "").toLowerCase();
     const term = s.slice(m[0].length).trim();
@@ -654,7 +654,8 @@ export function useSearchController() {
       flushAppendTimerRef.current = null;
     }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
-    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 80 : 12;
+    // 索引期加大防抖，优先保证输入流畅。
+    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 160 : 12;
     typeSwitchRequestedRef.current = false;
     const timer = setTimeout(async () => {
       try {
@@ -796,13 +797,14 @@ export function useSearchController() {
       } catch {}
     };
 
-    const intervalId = window.setInterval(() => {
+    // 索引期不做高频轮询刷新，改为输入稳定后触发一次轻量刷新。
+    const timerId = window.setTimeout(() => {
       void refreshOnce();
-    }, 1000);
+    }, 800);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      window.clearTimeout(timerId);
     };
   }, [query, isIndexing, isSearching]);
 

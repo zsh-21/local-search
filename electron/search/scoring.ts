@@ -1,10 +1,62 @@
 import { hasChineseChar, toPinyinFull, toPinyinInitials } from '../pinyin';
 
+const NON_PATH_SYMBOL_RE = /[^\p{L}\p{N}\\/]+/gu;
+const COMPACT_SYMBOL_RE = /[^\p{L}\p{N}]+/gu;
+const COMPACT_SYMBOL_KEEP_PATH_RE = /[^\p{L}\p{N}\\/]+/gu;
+
+function normalizeTextForSearch(input: string) {
+	// 统一走 NFKC：把全角/半角、兼容字符等先折叠，再做小写比较，减少中英文混输偏差
+	return String(input || '')
+		.normalize('NFKC')
+		.toLowerCase()
+		.trim();
+}
+
+function tokenizeForScore(input: string) {
+	// 除路径语义字符（/、\）外，其他符号都当分隔符，保证“UI-Ux”与“UI Ux”一致可检索
+	const normalized = normalizeTextForSearch(input);
+	if (!normalized) return [] as string[];
+	return normalized
+		.replace(NON_PATH_SYMBOL_RE, ' ')
+		.split(/[\\/\s]+/)
+		.map((x) => x.trim())
+		.filter(Boolean);
+}
+
+function toCompactKey(input: string, keepPathSeparators: boolean) {
+	const normalized = normalizeTextForSearch(input);
+	if (!normalized) return '';
+	return normalized.replace(keepPathSeparators ? COMPACT_SYMBOL_KEEP_PATH_RE : COMPACT_SYMBOL_RE, '');
+}
+
+function compactSubsequenceScore(target: string, query: string) {
+	if (!target || !query) return -1;
+	let t = 0;
+	let q = 0;
+	let score = 0;
+	let streak = 0;
+	while (t < target.length && q < query.length) {
+		if (target[t] === query[q]) {
+			streak += 1;
+			score += 2 + Math.min(streak, 8);
+			q += 1;
+		} else {
+			streak = 0;
+			score -= 0.08;
+		}
+		t += 1;
+	}
+	if (q !== query.length) return -1;
+	return Math.max(1, Math.round(score));
+}
+
 export function createNameScorer(query: string) {
-	const lowerQuery = String(query || '').trim().toLowerCase();
-	const queryParts = lowerQuery.split(/\s+/).filter(Boolean);
-	const normalizeForMatchName = (name: string) => String(name || '').replace(/\.(exe|lnk)$/i, '').toLowerCase();
-	const tokenizeForScore = (q: string) => q.split(/[\s._\-+\\/]+/).filter(Boolean);
+	const lowerQuery = normalizeTextForSearch(query);
+	const queryParts = tokenizeForScore(lowerQuery);
+	const queryKeepPathSeparators = /[\\/]/.test(lowerQuery);
+	const queryCompact = toCompactKey(lowerQuery, queryKeepPathSeparators);
+	const normalizeForMatchName = (name: string) =>
+		normalizeTextForSearch(String(name || '').replace(/\.(exe|lnk)$/i, ''));
 	const scoreTokens = tokenizeForScore(lowerQuery);
 
 	const countOccurrences = (hay: string, needle: string) => {
@@ -43,20 +95,29 @@ export function createNameScorer(query: string) {
 		if (!nameLower) return { weightedScore: 0, matchIndex: 1_000_000, nameLen: 0 };
 		const noExt = nameLower.replace(/\.[^./\\]+$/, '');
 		const candidates = noExt && noExt !== nameLower ? [nameLower, noExt] : [nameLower];
-		const isAsciiQuery = /^[a-z0-9\s._\-+\\/]+$/.test(lowerQuery);
-		if (isAsciiQuery && hasChineseChar(rawName)) {
-			const py = toPinyinFull(rawName);
-			const ini = toPinyinInitials(rawName);
+		// 让归一化查询也能参与拼音候选比较，避免中英混合输入时拼音链路退化
+		const hasLatinOrNumberQuery = /[a-z0-9]/.test(queryCompact);
+		if (hasLatinOrNumberQuery && hasChineseChar(rawName)) {
+			const py = normalizeTextForSearch(toPinyinFull(rawName));
+			const ini = normalizeTextForSearch(toPinyinInitials(rawName));
 			if (py) candidates.push(py);
 			if (ini) candidates.push(ini);
 		}
 
 		const scoreOne = (target: string) => {
 			let score = 0;
+			const targetCompact = toCompactKey(target, queryKeepPathSeparators);
 			if (target === lowerQuery) score += 100;
 			if (target.startsWith(lowerQuery)) score += 80;
 			if (target.endsWith(lowerQuery)) score += 60;
 			if (target.includes(lowerQuery)) score += 40;
+			if (queryCompact && targetCompact) {
+				if (targetCompact === queryCompact) score += 90;
+				if (targetCompact.startsWith(queryCompact)) score += 70;
+				if (targetCompact.includes(queryCompact)) score += 56;
+				const compactSubScore = compactSubsequenceScore(targetCompact, queryCompact);
+				if (compactSubScore > 0) score += Math.min(48, compactSubScore);
+			}
 
 			const matchedTokens = scoreTokens.filter((t) => t && target.includes(t));
 			if (scoreTokens.length > 0 && matchedTokens.length === scoreTokens.length) score += 20;
@@ -69,6 +130,8 @@ export function createNameScorer(query: string) {
 
 			const idxFull = target.indexOf(lowerQuery);
 			let bestIdx = idxFull >= 0 ? idxFull : 1_000_000;
+			const idxCompact = queryCompact ? targetCompact.indexOf(queryCompact) : -1;
+			if (idxCompact >= 0) bestIdx = Math.min(bestIdx, idxCompact);
 			for (const t of matchedTokens) {
 				const i = target.indexOf(t);
 				if (i >= 0 && i < bestIdx) bestIdx = i;
@@ -92,14 +155,21 @@ export function createNameScorer(query: string) {
 	const scoreRecentName = (name: string) => {
 		const base = normalizeForMatchName(name);
 		if (!base) return 0;
-		if (queryParts.length > 0 && !queryParts.every((p) => base.includes(p))) return 0;
+		const baseCompact = toCompactKey(base, queryKeepPathSeparators);
+		const compactSubScore = compactSubsequenceScore(baseCompact, queryCompact);
+		if (queryParts.length > 0 && !queryParts.every((p) => base.includes(p))) {
+			const compactHit = queryCompact && baseCompact && baseCompact.includes(queryCompact);
+			if (!compactHit && compactSubScore <= 0) return 0;
+		}
 		let score = 0;
 		score += queryParts.length * 500;
 		if (base === lowerQuery) score += 2000;
 		if (base.startsWith(lowerQuery)) score += 1200;
 		if (base.includes(lowerQuery)) score += 900;
+		if (queryCompact && baseCompact && baseCompact.includes(queryCompact)) score += 640;
 		const subseq = fuzzySubsequenceScore(base, lowerQuery);
 		if (subseq > 0) score += subseq;
+		if (compactSubScore > 0) score += Math.min(500, compactSubScore * 8);
 		return score;
 	};
 

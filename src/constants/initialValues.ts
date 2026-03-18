@@ -29,11 +29,7 @@ export const THEME_COLOR_OPTIONS: Array<{ name: string; color: string }> = [
 
 export const THEME_STYLE_OPTIONS: Array<{ id: AppSettings["theme"]; label: string }> = [
   { id: "dark", label: "深色" },
-  { id: "light", label: "浅色" },
-  { id: "dusk", label: "暮光" },
-  { id: "forest", label: "林影" },
-  { id: "ocean", label: "海流" },
-  { id: "sunset", label: "落日" },
+  { id: "light", label: "浅色" }, 
 ];
 
 export const RESULT_ACTION_OPTIONS: Array<{

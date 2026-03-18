@@ -330,8 +330,10 @@ export function SearchViewImpl() {
     const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
     const hasPath =
       typeof item.path === "string" && item.path.trim().length > 0;
-    const showPathLine = c.settings.showResultPath && hasPath;
-    const tooltipAddress = hasPath ? item.path : undefined;
+    // 仅展示盘符开头的完整路径，避免显示非路径字符串（如 ms-settings:）。
+    const isDrivePath = /^[a-zA-Z]:\\/.test(item.path || "");
+    const showPathLine = c.settings.showResultPath && hasPath && isDrivePath;
+    const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
     const badgeText =

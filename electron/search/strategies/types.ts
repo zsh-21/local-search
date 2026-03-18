@@ -23,6 +23,10 @@ export type SearchContext = {
   event: Electron.IpcMainInvokeEvent;
   query: string;
   lowerQuery: string;
+  // 索引状态提示：用于策略在索引期降低负载、优先响应输入。
+  isIndexingHint: boolean;
+  // 路径型查询提示：用于调整评分与匹配字段。
+  isPathQuery: boolean;
   searchTypeId: SearchTypeId;
   searchSessionId: string;
   driveFilter: string;

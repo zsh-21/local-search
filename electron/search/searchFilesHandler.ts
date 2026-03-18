@@ -26,7 +26,9 @@ function deriveSearchTerm(input: string) {
 	const s = stripInvisibleChars(input);
 	if (!s) return '';
 	const normalized = s.replace(/\//g, '\\');
-	if (normalized.includes('\\')) return path.win32.basename(normalized);
+	// 路径型输入直接用完整路径参与检索，提升路径片段命中率。
+	const isPathLike = normalized.includes('\\') || normalized.startsWith('\\\\') || /^[a-zA-Z]:\\/.test(normalized);
+	if (isPathLike) return normalized;
 	return s;
 }
 
@@ -63,10 +65,13 @@ export async function handleSearchFiles(
 	const { fileIndex, reconcileRecentIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey, iconDataCache } = deps;
 	const rawQueryForEvents = typeof query === 'string' ? query : '';
 	const queryForSearch = deriveSearchTerm(rawQueryForEvents);
+	const isPathQuery = queryForSearch.includes('\\') || queryForSearch.startsWith('\\\\') || /^[a-zA-Z]:\\/.test(queryForSearch);
+	const status = await fileIndex.getStatus();
 	// 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里仅做空值拦截
 	if (!queryForSearch || queryForSearch.trim().length < 1)
-		return { results: [], isIndexing: (await fileIndex.getStatus()).isIndexing };
-	fileIndex.pauseIndexingFor(900);
+		return { results: [], isIndexing: status.isIndexing };
+	// 索引未完成时加大暂停时长，把主线程响应优先级放到搜索输入上。
+	fileIndex.pauseIndexingFor(status.isIndexing ? 2000 : 900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
 	void Promise.resolve(reconcileRecentIndex()).catch(() => {});
 
@@ -160,6 +165,9 @@ export async function handleSearchFiles(
 		event,
 		query: queryForSearch,
 		lowerQuery,
+		// 传递索引与路径查询状态，便于策略在高负载时降载与路径匹配调权。
+		isIndexingHint: status.isIndexing,
+		isPathQuery,
 		searchTypeId,
 		searchSessionId,
 		driveFilter,
@@ -231,18 +239,21 @@ export async function handleSearchFiles(
 
 	const stripMeta = ({ score, weightedScore, matchIndex, nameLen, timeMs, size, ...rest }: any) => rest;
 	const merged = firstBatch.map(stripMeta);
-	prefetchIconsInBackground({
-		event,
-		query: rawQueryForEvents,
-		searchTypeId,
-		searchSessionId,
-		items: top500.map(stripMeta),
-		iconDataCache,
-		getFileIconData: deps.getFileIconData,
-		getAppIconDataStable: deps.getAppIconDataStable,
-		getCurrentIconPrefetchToken,
-		iconPrefetchToken: currentIconPrefetchToken,
-	});
+	// 索引未完成时暂停图标预取，减少 I/O 与主线程压力。
+	if (!status.isIndexing) {
+		prefetchIconsInBackground({
+			event,
+			query: rawQueryForEvents,
+			searchTypeId,
+			searchSessionId,
+			items: top500.map(stripMeta),
+			iconDataCache,
+			getFileIconData: deps.getFileIconData,
+			getAppIconDataStable: deps.getAppIconDataStable,
+			getCurrentIconPrefetchToken,
+			iconPrefetchToken: currentIconPrefetchToken,
+		});
+	}
 
 	if (remainingBatch.length > 0) {
 		(async () => {
