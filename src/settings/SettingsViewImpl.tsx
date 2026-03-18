@@ -7,57 +7,23 @@ import { SearchSection } from "./sections/SearchSection";
 import { AccountSection } from "./sections/AccountSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
+import { IconAppearance, IconGeneral, IconSearch, IconShortcuts } from "../components/icons/SettingsIcons";
 
 // 设置页渲染层：负责整体布局与导航，具体逻辑集中在 useSettingsController，分区 UI 下沉到 sections
 const NAV_ITEMS: { key: Exclude<SettingsTabKey, "account">; label: string; icon: JSX.Element }[] = [
-  {
-    key: "general",
-    label: "通用",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 25 25" fill="none" aria-hidden="true">
-        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z" stroke="currentColor" strokeWidth="1.8" />
-      </svg>
-    ),
-  },
-  {
-    key: "search",
-    label: "搜索",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 22 22" fill="none" aria-hidden="true">
-        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" />
-        <path d="m20 20-3.3-3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    key: "shortcuts",
-    label: "快捷键",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-        <path d="M7 15a4 4 0 1 1 0-8h6a4 4 0 1 1 0 8H7Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-        <path d="M10 9v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M14 9v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    key: "appearance",
-    label: "外观",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 3a9 9 0 1 0 9 9c0-.4-.03-.8-.08-1.19A7 7 0 0 1 12 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
+  // 设置侧栏图标统一复用组件，避免在业务组件中继续堆叠内联 SVG。
+  { key: "general", label: "通用", icon: <IconGeneral size={17} /> },
+  { key: "search", label: "搜索", icon: <IconSearch size={17} /> },
+  { key: "shortcuts", label: "快捷键", icon: <IconShortcuts size={17} /> },
+  { key: "appearance", label: "外观", icon: <IconAppearance size={17} /> },
 ];
 
 const SECTION_META: Record<SettingsTabKey, { title: string; desc: string }> = {
   general: { title: "通用", desc: "启动、状态与历史记录" },
-  search: { title: "搜索", desc: "默认类型、自定义类型与顺序" },
-  shortcuts: { title: "快捷键", desc: "呼出搜索与打开设置" },
-  appearance: { title: "外观", desc: "主题模式与交互风格" },
-  account: { title: "账号", desc: "登录与账号状态" },
+  search: { title: "搜索", desc: "默认类型、窗口参数与结果行为" },
+  shortcuts: { title: "快捷键", desc: "呼出搜索与面板内快捷操作" },
+  appearance: { title: "外观", desc: "主题、字体、背景图与视觉效果" },
+  account: { title: "账号", desc: "登录状态与订阅信息" },
 };
 
 export function SettingsViewImpl() {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { List } from "react-window";
 import { BackgroundImage } from "../components/BackgroundImage";
+import { IconPin, IconPinOff } from "../components/icons/SettingsIcons";
 import { ParticleBackground } from "../components/ParticleBackground";
 import { AppItem } from "../appTypes";
 import { useSearchController } from "./useSearchController";
@@ -340,7 +341,8 @@ export function SearchViewImpl() {
       typeof item.path === "string" && item.path.trim().length > 0;
     // 仅展示盘符开头的完整路径，避免显示非路径字符串（如 ms-settings:）。
     const isDrivePath = /^[a-zA-Z]:\\/.test(item.path || "");
-    const showPathLine = !isCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
+    const showPathLine =
+      !isCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
     const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
@@ -380,9 +382,7 @@ export function SearchViewImpl() {
           {renderResultIcon(item, isImg)}
           <div className="result-meta">
             <div className="result-name-row">
-              <span
-                className="app-name"
-              >
+              <span className="app-name">
                 {renderHighlightedText(displayName)}
               </span>
               {badgeText ? (
@@ -589,6 +589,8 @@ export function SearchViewImpl() {
       onMouseDownCapture={(e) => {
         c.clearActionSelection();
         if (e.target !== e.currentTarget) return;
+        // 固定状态下点击面板空白不自动隐藏，保持面板常驻。
+        if (c.isPanelPinned) return;
         c.hideWindow();
       }}
     >
@@ -784,6 +786,7 @@ export function SearchViewImpl() {
             c.openSettings();
           }}
           type="button"
+          title={`打开设置面板 (${c.settings.settingsShortcut})`}
         >
           <svg
             width="18"
@@ -806,8 +809,25 @@ export function SearchViewImpl() {
             />
           </svg>
         </button>
+        <button
+          type="button"
+          className={`pin-btn ${c.isPanelPinned ? "active" : ""}`}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            c.togglePanelPinned();
+          }}
+          aria-label={c.isPanelPinned ? "取消固定搜索面板" : "固定搜索面板"}
+          title={
+            c.isPanelPinned
+              ? "取消固定（恢复失焦自动隐藏）"
+              : "固定（Alt+T）"
+          }
+        >
+          {c.isPanelPinned ? <IconPin size={18} /> : <IconPinOff size={18} />}
+        </button>
 
-        <div className="drag-icon" title="按住拖拽移动" />
+        {/* <div className="drag-icon" title="按住拖拽移动" /> */}
       </div>
 
       {c.statusText && (

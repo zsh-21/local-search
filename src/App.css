@@ -12,8 +12,9 @@
 .action-btn,
 .settings-btn,
 .settings-cancel,
-.settings-confirm,
-.shortcut-input {
+ .settings-confirm,
+.shortcut-input,
+input {
   font-family: var(--fs-font-sans);
 }
 
@@ -117,7 +118,13 @@ html[data-theme="dark"] {
   --fs-shadow: 0 26px 58px -26px rgba(0, 0, 0, 0.86);
   --fs-dots: rgba(87, 183, 255, 0.52);
   --fs-glow: 0 0 28px rgba(87, 183, 255, 0.24);
-  --fs-window-bg: radial-gradient(circle at 18% -14%, rgba(88, 156, 255, 0.17), transparent 52%), #0b1018;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 18% -14%,
+      rgba(88, 156, 255, 0.17),
+      transparent 52%
+    ),
+    #0b1018;
   --fs-window-border: rgba(117, 150, 196, 0.32);
   --fs-panel-bg: rgba(16, 24, 36, 0.72);
   --fs-control-bg: rgba(23, 32, 46, 0.9);
@@ -126,7 +133,8 @@ html[data-theme="dark"] {
   --fs-item-hover: rgba(73, 129, 198, 0.15);
   --fs-selected-bg: rgba(87, 183, 255, 0.2);
   --fs-selected-border: rgba(119, 201, 255, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(87, 183, 255, 0.2), 0 16px 34px -18px rgba(0, 0, 0, 0.72);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(87, 183, 255, 0.2), 0 16px 34px -18px rgba(0, 0, 0, 0.72);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
@@ -155,7 +163,13 @@ html[data-theme="light"] {
   --fs-shadow: 0 16px 32px -22px rgba(21, 44, 77, 0.32);
   --fs-dots: rgba(26, 115, 232, 0.14);
   --fs-glow: 0 0 18px rgba(58, 141, 247, 0.14);
-  --fs-window-bg: radial-gradient(circle at 82% -26%, rgba(102, 157, 255, 0.2), transparent 52%), #f2f6fb;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 82% -26%,
+      rgba(102, 157, 255, 0.2),
+      transparent 52%
+    ),
+    #f2f6fb;
   --fs-window-border: rgba(49, 88, 145, 0.22);
   --fs-panel-bg: rgba(255, 255, 255, 0.85);
   --fs-control-bg: rgba(255, 255, 255, 0.96);
@@ -164,7 +178,8 @@ html[data-theme="light"] {
   --fs-item-hover: rgba(58, 141, 247, 0.09);
   --fs-selected-bg: rgba(58, 141, 247, 0.13);
   --fs-selected-border: rgba(58, 141, 247, 0.42);
-  --fs-focus-shadow: 0 0 0 3px rgba(58, 141, 247, 0.16), 0 12px 24px -18px rgba(21, 44, 77, 0.4);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(58, 141, 247, 0.16), 0 12px 24px -18px rgba(21, 44, 77, 0.4);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
@@ -194,7 +209,13 @@ html[data-theme="steam"] {
   --fs-shadow: 0 30px 62px -26px rgba(3, 8, 15, 0.9);
   --fs-dots: rgba(102, 192, 244, 0.4);
   --fs-glow: 0 0 26px rgba(102, 192, 244, 0.24);
-  --fs-window-bg: radial-gradient(circle at 84% -30%, rgba(102, 192, 244, 0.18), transparent 48%), #171a21;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 84% -30%,
+      rgba(102, 192, 244, 0.18),
+      transparent 48%
+    ),
+    #171a21;
   --fs-window-border: rgba(123, 159, 204, 0.34);
   --fs-panel-bg: rgba(24, 36, 51, 0.82);
   --fs-control-bg: rgba(33, 49, 69, 0.88);
@@ -203,7 +224,8 @@ html[data-theme="steam"] {
   --fs-item-hover: rgba(102, 192, 244, 0.16);
   --fs-selected-bg: rgba(102, 192, 244, 0.22);
   --fs-selected-border: rgba(137, 216, 255, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(102, 192, 244, 0.22), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(102, 192, 244, 0.22), 0 18px 40px -20px rgba(0, 0, 0, 0.8);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
@@ -233,7 +255,13 @@ html[data-theme="trae"] {
   --fs-shadow: 0 28px 58px -24px rgba(4, 8, 14, 0.9);
   --fs-dots: rgba(145, 164, 255, 0.35);
   --fs-glow: 0 0 26px rgba(145, 164, 255, 0.24);
-  --fs-window-bg: radial-gradient(circle at 8% -18%, rgba(114, 119, 255, 0.18), transparent 52%), #0d1117;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 8% -18%,
+      rgba(114, 119, 255, 0.18),
+      transparent 52%
+    ),
+    #0d1117;
   --fs-window-border: rgba(130, 148, 186, 0.31);
   --fs-panel-bg: rgba(18, 25, 37, 0.8);
   --fs-control-bg: rgba(22, 31, 46, 0.9);
@@ -242,7 +270,8 @@ html[data-theme="trae"] {
   --fs-item-hover: rgba(113, 176, 255, 0.15);
   --fs-selected-bg: rgba(79, 208, 255, 0.2);
   --fs-selected-border: rgba(121, 220, 255, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(79, 208, 255, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(79, 208, 255, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
   --fs-radius-window: 8px;
   --fs-radius-panel: 10px;
   --fs-radius-control: 8px;
@@ -268,7 +297,13 @@ html[data-theme="chrome"] {
   --fs-shadow: 0 12px 28px -20px rgba(60, 64, 67, 0.42);
   --fs-dots: rgba(26, 115, 232, 0.12);
   --fs-glow: 0 0 16px rgba(26, 115, 232, 0.16);
-  --fs-window-bg: radial-gradient(circle at 12% -24%, rgba(26, 115, 232, 0.12), transparent 54%), #f1f3f4;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 12% -24%,
+      rgba(26, 115, 232, 0.12),
+      transparent 54%
+    ),
+    #f1f3f4;
   --fs-window-border: rgba(60, 64, 67, 0.22);
   --fs-panel-bg: rgba(255, 255, 255, 0.88);
   --fs-control-bg: #ffffff;
@@ -277,7 +312,8 @@ html[data-theme="chrome"] {
   --fs-item-hover: rgba(26, 115, 232, 0.09);
   --fs-selected-bg: rgba(26, 115, 232, 0.14);
   --fs-selected-border: rgba(26, 115, 232, 0.42);
-  --fs-focus-shadow: 0 0 0 3px rgba(26, 115, 232, 0.16), 0 14px 24px -20px rgba(60, 64, 67, 0.52);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(26, 115, 232, 0.16), 0 14px 24px -20px rgba(60, 64, 67, 0.52);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
@@ -307,7 +343,13 @@ html[data-theme="window11"] {
   --fs-shadow: 0 30px 60px -26px rgba(0, 0, 0, 0.88);
   --fs-dots: rgba(115, 177, 255, 0.24);
   --fs-glow: 0 0 24px rgba(76, 194, 255, 0.22);
-  --fs-window-bg: radial-gradient(circle at 2% -20%, rgba(122, 168, 255, 0.2), transparent 52%), #11151d;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 2% -20%,
+      rgba(122, 168, 255, 0.2),
+      transparent 52%
+    ),
+    #11151d;
   --fs-window-border: rgba(255, 255, 255, 0.2);
   --fs-panel-bg: rgba(27, 34, 45, 0.74);
   --fs-control-bg: rgba(31, 40, 53, 0.86);
@@ -316,7 +358,8 @@ html[data-theme="window11"] {
   --fs-item-hover: rgba(124, 177, 255, 0.14);
   --fs-selected-bg: rgba(76, 194, 255, 0.2);
   --fs-selected-border: rgba(118, 212, 255, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(76, 194, 255, 0.22), 0 16px 38px -20px rgba(0, 0, 0, 0.75);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(76, 194, 255, 0.22), 0 16px 38px -20px rgba(0, 0, 0, 0.75);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 9px;
@@ -342,7 +385,13 @@ html[data-theme="linux"] {
   --fs-shadow: 0 12px 24px -18px rgba(31, 55, 84, 0.36);
   --fs-dots: rgba(61, 174, 233, 0.16);
   --fs-glow: 0 0 14px rgba(61, 174, 233, 0.14);
-  --fs-window-bg: radial-gradient(circle at 12% -26%, rgba(95, 183, 233, 0.16), transparent 56%), #edf1f6;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 12% -26%,
+      rgba(95, 183, 233, 0.16),
+      transparent 56%
+    ),
+    #edf1f6;
   --fs-window-border: rgba(85, 110, 140, 0.24);
   --fs-panel-bg: rgba(255, 255, 255, 0.86);
   --fs-control-bg: rgba(252, 254, 255, 0.97);
@@ -351,7 +400,8 @@ html[data-theme="linux"] {
   --fs-item-hover: rgba(61, 174, 233, 0.11);
   --fs-selected-bg: rgba(61, 174, 233, 0.16);
   --fs-selected-border: rgba(61, 174, 233, 0.45);
-  --fs-focus-shadow: 0 0 0 3px rgba(61, 174, 233, 0.16), 0 12px 24px -20px rgba(31, 55, 84, 0.52);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(61, 174, 233, 0.16), 0 12px 24px -20px rgba(31, 55, 84, 0.52);
   --fs-radius-window: 8px;
   --fs-radius-panel: 10px;
   --fs-radius-control: 8px;
@@ -377,7 +427,13 @@ html[data-theme="mac"] {
   --fs-shadow: 0 16px 36px -24px rgba(30, 44, 67, 0.48);
   --fs-dots: rgba(10, 132, 255, 0.14);
   --fs-glow: 0 0 16px rgba(10, 132, 255, 0.14);
-  --fs-window-bg: radial-gradient(circle at 80% -18%, rgba(10, 132, 255, 0.14), transparent 56%), #e9edf3;
+  --fs-window-bg:
+    radial-gradient(
+      circle at 80% -18%,
+      rgba(10, 132, 255, 0.14),
+      transparent 56%
+    ),
+    #e9edf3;
   --fs-window-border: rgba(72, 88, 114, 0.2);
   --fs-panel-bg: rgba(255, 255, 255, 0.72);
   --fs-control-bg: rgba(255, 255, 255, 0.74);
@@ -386,7 +442,8 @@ html[data-theme="mac"] {
   --fs-item-hover: rgba(10, 132, 255, 0.1);
   --fs-selected-bg: rgba(10, 132, 255, 0.15);
   --fs-selected-border: rgba(10, 132, 255, 0.42);
-  --fs-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.16), 0 14px 28px -20px rgba(30, 44, 67, 0.58);
+  --fs-focus-shadow:
+    0 0 0 3px rgba(10, 132, 255, 0.16), 0 14px 28px -20px rgba(30, 44, 67, 0.58);
   --fs-radius-window: 8px;
   --fs-radius-panel: 14px;
   --fs-radius-control: 11px;
@@ -398,9 +455,6 @@ html[data-theme="mac"] {
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.92);
 }
-
-
-
 
 html:is(
     [data-theme="light"],
@@ -433,9 +487,9 @@ html:is(
   )
   .search-box:focus-within {
   border-color: var(--fs-accent);
-  box-shadow:
+  /* box-shadow:
     0 0 0 3px rgba(2, 132, 199, 0.12),
-    0 8px 16px -4px rgba(15, 23, 42, 0.1);
+    0 8px 16px -4px rgba(15, 23, 42, 0.1); */
 }
 
 html:is(
@@ -683,11 +737,11 @@ html:is(
 }
 
 .search-box:focus-within {
-  border-color: var(--fs-accent);
+  /* border-color: var(--fs-accent);
   box-shadow:
     0 0 0 3px var(--fs-accent-soft),
     0 12px 24px -8px rgba(0, 0, 0, 0.15);
-  transform: translateY(-1px);
+  transform: translateY(-1px); */
 }
 
 .shortcut-hint {
@@ -760,15 +814,14 @@ html:is(
   cursor: pointer;
   padding: 0;
   border-radius: 6px;
-  margin-right: 4px;
   -webkit-app-region: no-drag;
   transition: all 0.2s;
 }
 
 .settings-btn:hover {
-  background: var(--fs-surface-2);
+  /* background: var(--fs-surface-2); */
   color: var(--fs-accent);
-  border-color: var(--fs-border);
+  /* border-color: var(--fs-border); */
 }
 
 .type-select {
@@ -1030,7 +1083,7 @@ html:is(
   min-width: 0;
 }
 
-  /* 防止 input 撑开容器 */
+/* 防止 input 撑开容器 */
 .search-input-wrap {
   position: relative;
   display: flex;
@@ -1099,9 +1152,6 @@ input::placeholder {
 .search-box-right {
   display: flex;
   align-items: center;
-  gap: 4px;
-  /* 减小间距，使其更紧凑 */
-  padding-right: 8px;
   flex-shrink: 0;
   /* 防止右侧区域被压�?*/
   position: relative;
@@ -1135,6 +1185,35 @@ input::placeholder {
 
 .clear-btn:active {
   transform: translateY(0);
+}
+
+.pin-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+  margin-right: 4px;
+}
+
+.pin-btn:hover {
+  color: var(--fs-text);
+  transform: translateY(-1px);
+}
+
+.pin-btn.active {
+  color: var(--fs-accent);
+  background: transparent;
 }
 
 .result-count {
@@ -2908,7 +2987,11 @@ html:is(
   left: 9%;
   width: 58%;
   height: 8px;
-  background: linear-gradient(90deg, rgba(143, 159, 255, 0.3), rgba(79, 208, 255, 0.24));
+  background: linear-gradient(
+    90deg,
+    rgba(143, 159, 255, 0.3),
+    rgba(79, 208, 255, 0.24)
+  );
   border-radius: 2px;
 }
 
@@ -3437,9 +3520,6 @@ html:is(
   gap: 8px;
 }
 
-
-
-
 .logout-btn {
   align-self: stretch;
   margin-top: 10px;
@@ -3511,7 +3591,7 @@ html:is(
 }
 
 .search-box:focus-within {
-  box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
+  /* box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft)); */
 }
 
 .type-select-btn {
@@ -3639,4 +3719,303 @@ html[data-theme="chrome"] .results li.selected {
     rgba(52, 168, 83, 0.14) 100%
   );
   border-color: rgba(26, 115, 232, 0.42);
+}
+
+/* ===== 搜索置顶 + 背景图可读性增强 ===== */
+:root {
+  --fs-adaptive-text: var(--fs-text);
+  --fs-adaptive-muted: var(--fs-muted);
+  --fs-adaptive-shadow: none;
+  --fs-bg-overlay-alpha: 0.28;
+}
+
+.container,
+.settings-container,
+.search-box input,
+.settings-title,
+.settings-section-title,
+.settings-nav-item,
+.settings-nav-account-name,
+.setting-item-title,
+.app-name,
+.result-count,
+.settings-toast-text {
+  color: var(--fs-adaptive-text, var(--fs-text));
+}
+
+input::placeholder,
+.app-path,
+.settings-section-desc,
+.settings-nav-account-sub,
+.setting-item-desc,
+.result-count,
+.no-more-results,
+.settings-hint,
+.form-label {
+  color: var(--fs-adaptive-muted, var(--fs-muted));
+}
+
+html[data-bg-tone="light"] .app-name,
+html[data-bg-tone="light"] .settings-section-title,
+html[data-bg-tone="light"] .setting-item-title,
+html[data-bg-tone="dark"] .app-name,
+html[data-bg-tone="dark"] .settings-section-title,
+html[data-bg-tone="dark"] .setting-item-title {
+  text-shadow: var(--fs-adaptive-shadow, none);
+}
+
+/* ===== 设置页卡片行风格重构 ===== */
+.settings-container {
+  padding: 0;
+  border-radius: 14px;
+}
+
+.settings-header {
+  min-height: 48px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settings-body {
+  gap: 18px;
+  padding: 10px 12px 12px;
+}
+
+.settings-nav {
+  width: 236px;
+  border-right: none;
+  border-radius: 12px;
+  background: rgba(17, 18, 23, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 10px;
+}
+
+.settings-nav-item,
+.settings-nav-account-card {
+  min-height: 44px;
+  border-radius: 10px;
+}
+
+.settings-main-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 2px 6px 8px;
+  gap: 12px;
+}
+
+.settings-main-inner > * {
+  max-width: 100%;
+  padding: 0;
+}
+
+.settings-section-header {
+  height: auto;
+  padding: 8px 6px 2px;
+}
+
+.settings-group {
+  background: rgba(18, 19, 24, 0.68);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  gap: 10px;
+}
+
+.settings-group-title {
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--fs-adaptive-text, var(--fs-text));
+}
+
+.settings-group-title::after {
+  opacity: 0.2;
+}
+
+.setting-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.setting-item-card-stack {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.setting-item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.setting-item-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--fs-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.setting-item-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-item-title {
+  font-size: 15px;
+  font-weight: 680;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.setting-item-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 550;
+}
+
+.setting-item-control {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.setting-item-control input[type="checkbox"] {
+  width: 40px;
+  height: 22px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.setting-item-control input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 1.5px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.18s ease;
+}
+
+.setting-item-control input[type="checkbox"]:checked {
+  background: color-mix(in srgb, var(--fs-accent) 65%, #ffffff 35%);
+  border-color: color-mix(in srgb, var(--fs-accent) 70%, #ffffff 30%);
+}
+
+.setting-item-control input[type="checkbox"]:checked::before {
+  transform: translateX(17px);
+}
+
+.setting-item-extra {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-item-extra .form-row,
+.settings-group .form-row,
+.settings-group .shortcut-row,
+.settings-group .setting-row {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  margin: 0;
+}
+
+.settings-group .setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-group .setting-row > span {
+  color: var(--fs-adaptive-text, var(--fs-text));
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.settings-group .shortcut-grid {
+  gap: 8px;
+}
+
+.settings-group .shortcut-input {
+  min-width: 180px;
+  max-width: 280px;
+}
+
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-nav,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-group,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .setting-item-card,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-group
+  .form-row,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-group
+  .shortcut-row,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-group
+  .setting-row {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(15, 23, 42, 0.12);
 }

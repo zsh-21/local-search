@@ -150,10 +150,18 @@ export function registerIpcHandlers() {
     return getDeviceId();
   });
 
-  ipcMain.handle('search-view-ready', () => {
-    setSearchAllowBlurHide(true);
+  ipcMain.handle('search-view-ready', (_event, payload?: { allowBlurHide?: boolean }) => {
+    // 搜索页握手时同步当前置顶策略：置顶时关闭失焦自动隐藏，取消置顶后恢复。
+    setSearchAllowBlurHide(payload?.allowBlurHide !== false);
     // 渲染就绪握手：主进程收到后才允许显示搜索窗，避免首屏白屏。
     setSearchViewReady(true);
+    return { ok: true };
+  });
+
+  ipcMain.handle('set-search-blur-hide-enabled', (_event, allow: boolean) => {
+    // 渲染层动态切换失焦隐藏能力：固定面板期间关闭，解除固定后恢复。
+    setSearchAllowBlurHide(Boolean(allow));
+    return { ok: true };
   });
 
   ipcMain.handle('settings-view-ready', (event) => {

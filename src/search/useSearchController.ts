@@ -276,6 +276,8 @@ export function useSearchController() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [hoveredKey, setHoveredKey] = useState("");
   const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
+  // 搜索面板固定状态：仅保存在当前会话内，不落盘。
+  const [isPanelPinned, setIsPanelPinned] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
 
   const showToast = (message: string, kind: "success" | "error" | "info" = "info") => {
@@ -303,6 +305,7 @@ export function useSearchController() {
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
+  const isPanelPinnedRef = useRef(isPanelPinned);
   const searchRequestIdRef = useRef(0);
   // 鎼滅储浼氳瘽 ID锛氱敤浜庡叧鑱斾富杩涚▼鍒嗘壒鎺ㄩ€佺殑 more-results锛岄伩鍏嶅垏鎹㈢被鍨?閲嶅鎼滅储瀵艰嚧閲嶅椤逛笌鏁伴噺涓嶄竴鑷?
   const searchSessionIdRef = useRef("");
@@ -359,6 +362,18 @@ export function useSearchController() {
 
   const clearGhostInputValue = useCallback(() => {
     setGhostInputValue("");
+  }, []);
+
+  const syncBlurHideByPinnedState = useCallback((pinned: boolean) => {
+    // 固定开启时禁用“失焦自动隐藏”，取消固定后恢复旧逻辑。
+    void window.ipcRenderer?.invoke("set-search-blur-hide-enabled", !pinned);
+  }, []);
+
+  const notifySearchViewReady = useCallback(() => {
+    // 渲染层每次握手都带上当前固定状态，确保主进程 blur 策略与 UI 一致。
+    void window.ipcRenderer?.invoke("search-view-ready", {
+      allowBlurHide: !isPanelPinnedRef.current,
+    });
   }, []);
 
   // 鎼滅储鍒楄〃鐨勫崟椤归珮搴﹀凡鎶界锛氫究浜庝綘缁熶竴璋冩暣绱у噾/鏅€氭ā寮忕殑甯冨眬瀵嗗害
@@ -467,6 +482,12 @@ export function useSearchController() {
   }, [searchTypeId]);
 
   useEffect(() => {
+    // 固定状态变化时同步到 ref，供跨回调读取最新值。
+    isPanelPinnedRef.current = isPanelPinned;
+    syncBlurHideByPinnedState(isPanelPinned);
+  }, [isPanelPinned, syncBlurHideByPinnedState]);
+
+  useEffect(() => {
     selectedPathRef.current = results[selectedIndex]?.path || "";
   }, [results, selectedIndex]);
 
@@ -479,6 +500,28 @@ export function useSearchController() {
     if (results.length > 0) return;
     setGhostInputValue("");
   }, [results.length]);
+
+  useEffect(() => {
+    // 输入联想优先展示“当前首条结果”的后缀，保持输入时有稳定的幽灵提示。
+    if (!inputValue || results.length === 0) {
+      setGhostInputValue("");
+      return;
+    }
+    // 用户键盘下移选择其它项时，保留现有键盘导航幽灵提示，不被首条结果覆盖。
+    if (lastSelectedBy === "keyboard" && selectedIndex > 0) return;
+    const firstName = typeof results[0]?.name === "string" ? results[0].name.trim() : "";
+    if (!firstName) {
+      setGhostInputValue("");
+      return;
+    }
+    const inputLower = inputValue.toLocaleLowerCase();
+    const firstLower = firstName.toLocaleLowerCase();
+    if (!firstLower.startsWith(inputLower) || firstName.length <= inputValue.length) {
+      setGhostInputValue("");
+      return;
+    }
+    setGhostInputValue(firstName);
+  }, [inputValue, results, lastSelectedBy, selectedIndex]);
 
   useEffect(() => {
     // 缁撴灉闆嗗彉鍖栨椂淇濇姢 selectedIndex锛氶伩鍏嶆寚鍚戣秺鐣屽鑷村垪琛ㄦ粴鍔?娓叉煋寮傚父
@@ -670,7 +713,7 @@ export function useSearchController() {
       if (settings.keepStateOnClose) {
         setTimeout(() => {
           inputRef.current?.focus();
-          window.ipcRenderer?.invoke("search-view-ready");
+          notifySearchViewReady();
         }, 50);
         return;
       }
@@ -681,14 +724,14 @@ export function useSearchController() {
       syncWindowHeight({ includeTypeMenu: false });
       setTimeout(() => {
         inputRef.current?.focus();
-        window.ipcRenderer?.invoke("search-view-ready");
+        notifySearchViewReady();
       }, 50);
     };
     window.ipcRenderer?.on("reset-search", handleReset);
     return () => {
       window.ipcRenderer?.off("reset-search", handleReset as any);
     };
-  }, [settings, syncWindowHeight]);
+  }, [settings, syncWindowHeight, notifySearchViewReady]);
 
   useEffect(() => {
     const handler = () => {
@@ -705,7 +748,7 @@ export function useSearchController() {
     const handler = () => {
       void refreshUserStatusSilently();
       inputRef.current?.focus();
-      window.ipcRenderer?.invoke("search-view-ready");
+      notifySearchViewReady();
       lastResizeHeightRef.current = 0;
       const queryMode = parseCalcMode(queryRef.current);
       const p = queryMode.isCalcMode
@@ -724,7 +767,7 @@ export function useSearchController() {
     return () => {
       window.ipcRenderer?.off("search-window-opened", handler as any);
     };
-  }, [syncWindowHeight, applyCalcResults]);
+  }, [syncWindowHeight, applyCalcResults, notifySearchViewReady]);
 
   useEffect(() => {
     // more-results 浜嬩欢鐢ㄤ簬涓昏繘绋嬧€滃閲忓洖濉浘鏍?鏇村缁撴灉鈥?
@@ -990,6 +1033,16 @@ export function useSearchController() {
     setTypeMenuOpen(false);
     window.ipcRenderer?.invoke("hide-window");
   };
+
+  const togglePanelPinned = useCallback(() => {
+    setIsPanelPinned((prev) => {
+      const next = !prev;
+      // 固定按钮点击后立即同步主进程，避免等待下一轮事件导致短暂行为不一致。
+      syncBlurHideByPinnedState(next);
+      isPanelPinnedRef.current = next;
+      return next;
+    });
+  }, [syncBlurHideByPinnedState]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -1292,6 +1345,14 @@ export function useSearchController() {
       return;
     }
 
+    // Alt+T: 固定/取消固定搜索面板
+    if (e.altKey && (e.key === "t" || e.key === "T")) {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePanelPinned();
+      return;
+    }
+
     if (e.key === "Tab") {
       e.preventDefault();
       const idx = Math.max(
@@ -1466,6 +1527,7 @@ export function useSearchController() {
     hasMore,
     totalCount,
     isCalcMode,
+    isPanelPinned,
     placeholder,
     searchTypeOptions: enabledSearchTypeOptions,
     currentTypeLabel: currentTypeLabelSafe,
@@ -1491,6 +1553,7 @@ export function useSearchController() {
     runAsAdmin,
     copyPath,
     hideWindow,
+    togglePanelPinned,
     refreshHistory,
     deleteHistoryItem,
     deleteResultItem,
