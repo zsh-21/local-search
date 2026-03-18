@@ -114,6 +114,8 @@ html[data-theme="dark"] {
   --fs-search-text: #f4f9ff;
   --fs-muted: #8ea5c6;
   --fs-accent: #57b7ff;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #57b7ff;
   --fs-accent-soft: rgba(87, 183, 255, 0.18);
   --fs-shadow: 0 26px 58px -26px rgba(0, 0, 0, 0.86);
   --fs-dots: rgba(87, 183, 255, 0.52);
@@ -159,6 +161,8 @@ html[data-theme="light"] {
   --fs-search-text: #0f1d32;
   --fs-muted: #6a7c97;
   --fs-accent: #3a8df7;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #3a8df7;
   --fs-accent-soft: rgba(58, 141, 247, 0.14);
   --fs-shadow: 0 16px 32px -22px rgba(21, 44, 77, 0.32);
   --fs-dots: rgba(26, 115, 232, 0.14);
@@ -205,6 +209,8 @@ html[data-theme="steam"] {
   --fs-search-text: #f2f8ff;
   --fs-muted: #8ea6c5;
   --fs-accent: #66c0f4;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #66c0f4;
   --fs-accent-soft: rgba(102, 192, 244, 0.2);
   --fs-shadow: 0 30px 62px -26px rgba(3, 8, 15, 0.9);
   --fs-dots: rgba(102, 192, 244, 0.4);
@@ -251,6 +257,8 @@ html[data-theme="trae"] {
   --fs-search-text: #f4f8ff;
   --fs-muted: #8fa2c2;
   --fs-accent: #4fd0ff;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #4fd0ff;
   --fs-accent-soft: rgba(79, 208, 255, 0.2);
   --fs-shadow: 0 28px 58px -24px rgba(4, 8, 14, 0.9);
   --fs-dots: rgba(145, 164, 255, 0.35);
@@ -293,6 +301,8 @@ html[data-theme="chrome"] {
   --fs-search-text: #0f172a;
   --fs-muted: #5f6368;
   --fs-accent: #1a73e8;
+  /* Chrome 风格使用品牌蓝作为菜单选中强调色。 */
+  --fs-nav-active-accent: #1a73e8;
   --fs-accent-soft: rgba(26, 115, 232, 0.14);
   --fs-shadow: 0 12px 28px -20px rgba(60, 64, 67, 0.42);
   --fs-dots: rgba(26, 115, 232, 0.12);
@@ -339,6 +349,8 @@ html[data-theme="window11"] {
   --fs-search-text: #f8fbff;
   --fs-muted: #9fb0c8;
   --fs-accent: #4cc2ff;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #4cc2ff;
   --fs-accent-soft: rgba(76, 194, 255, 0.2);
   --fs-shadow: 0 30px 60px -26px rgba(0, 0, 0, 0.88);
   --fs-dots: rgba(115, 177, 255, 0.24);
@@ -381,6 +393,8 @@ html[data-theme="linux"] {
   --fs-search-text: #1f334a;
   --fs-muted: #7086a0;
   --fs-accent: #3daee9;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #3daee9;
   --fs-accent-soft: rgba(61, 174, 233, 0.16);
   --fs-shadow: 0 12px 24px -18px rgba(31, 55, 84, 0.36);
   --fs-dots: rgba(61, 174, 233, 0.16);
@@ -423,6 +437,8 @@ html[data-theme="mac"] {
   --fs-search-text: #233248;
   --fs-muted: #72849d;
   --fs-accent: #0a84ff;
+  /* 设置菜单选中左条默认跟随主题强调色。 */
+  --fs-nav-active-accent: #0a84ff;
   --fs-accent-soft: rgba(10, 132, 255, 0.16);
   --fs-shadow: 0 16px 36px -24px rgba(30, 44, 67, 0.48);
   --fs-dots: rgba(10, 132, 255, 0.14);
@@ -729,7 +745,11 @@ html:is(
   /* 减小圆角 */
   margin-top: 2px;
   -webkit-app-region: no-drag;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 搜索过程中只过渡必要属性，避免输入时“整块抖动”的观感。 */
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   border: 1px solid var(--fs-border);
   position: relative;
@@ -1375,7 +1395,12 @@ input::placeholder {
   gap: 12px;
   font-size: 16px;
   box-sizing: border-box;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 列表项只保留颜色/阴影过渡，避免结果更新时触发位移类动画导致闪动。 */
+  transition:
+    background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid transparent;
 }
 
@@ -1421,7 +1446,6 @@ input::placeholder {
   color: var(--fs-accent);
   border: 1px solid var(--fs-accent);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: scale(1.002);
 }
 
 html:is(
@@ -2236,15 +2260,17 @@ html:is(
 }
 
 .settings-nav-account-card:hover {
-  transform: translateY(-1px);
-  border-color: rgba(56, 189, 248, 0.22);
-  box-shadow: 0 10px 22px -18px rgba(0, 0, 0, 0.55);
+  /* 侧栏悬停仅做轻微背景反馈，避免比选中态更抢眼。 */
+  background: rgba(255, 255, 255, 0.05);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .settings-nav-account-card.active {
-  background: var(--fs-accent-soft);
-  border-color: rgba(56, 189, 248, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
+  /* 账户卡选中态改为“微背景 + 左侧细条”，和菜单项保持一致。 */
+  background: color-mix(in srgb, var(--fs-nav-active-accent, var(--fs-accent)) 11%, transparent);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .settings-account-avatar-box {
@@ -2345,6 +2371,9 @@ html:is(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* 为选中左侧细条预留定位上下文。 */
+  position: relative;
+  overflow: hidden;
 }
 
 .settings-nav-icon {
@@ -2373,8 +2402,8 @@ html:is(
 }
 
 .settings-nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: transparent;
 }
 
 html:is(
@@ -2384,19 +2413,68 @@ html:is(
     [data-theme="mac"]
   )
   .settings-nav-item:hover {
-  background: rgba(15, 23, 42, 0.04);
-  border-color: rgba(15, 23, 42, 0.04);
+  background: rgba(15, 23, 42, 0.045);
+  border-color: transparent;
 }
 
 .settings-nav-item.active {
-  background: var(--fs-accent-soft);
-  color: var(--fs-accent);
-  border-color: rgba(56, 189, 248, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.22);
+  /* 菜单选中态采用低强度底色，避免整块高亮。 */
+  background: color-mix(in srgb, var(--fs-nav-active-accent, var(--fs-accent)) 11%, transparent);
+  color: var(--fs-text);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .settings-nav-item.active .settings-nav-icon {
-  color: var(--fs-accent);
+  /* 选中图标轻提亮，强调色来自当前主题。 */
+  color: color-mix(in srgb, var(--fs-nav-active-accent, var(--fs-accent)) 84%, #ffffff 16%);
+}
+
+.settings-nav-account-card,
+.settings-nav-item {
+  position: relative;
+}
+
+/* 选中左条：颜色跟随主题强调色，不再固定蓝色。 */
+.settings-nav-account-card.active::before,
+.settings-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--fs-nav-active-accent, var(--fs-accent));
+  transform: translateY(-50%);
+}
+
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-nav-account-card:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-nav-account-card.active,
+html:is(
+    [data-theme="light"],
+    [data-theme="chrome"],
+    [data-theme="linux"],
+    [data-theme="mac"]
+  )
+  .settings-nav-item.active {
+  /* 浅色主题下选中背景更克制，保证“微微背景”的观感。 */
+  background: color-mix(in srgb, var(--fs-nav-active-accent, var(--fs-accent)) 9%, transparent);
 }
 
 .settings-main {
@@ -3804,8 +3882,11 @@ html[data-bg-tone="dark"] .setting-item-title {
 }
 
 .settings-main-inner > * {
-  max-width: 100%;
-  padding: 0;
+  /* 恢复内容区宽度限制：居中 + 最大宽度，避免横向铺满。 */
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 10px;
 }
 
 .settings-section-header {

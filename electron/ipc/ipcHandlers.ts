@@ -238,15 +238,16 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('get-window-bounds', (event) => {
     const w = BrowserWindow.fromWebContents(event.sender);
-    return w?.getBounds();
+    // 宽度拖拽统一使用“内容区坐标系”，避免 window/content 两套坐标混用导致瞬时错位。
+    return w?.getContentBounds();
   });
 
   ipcMain.handle('set-window-bounds', (event, bounds: Partial<Electron.Rectangle>) => {
     const w = BrowserWindow.fromWebContents(event.sender);
     if (!w) return;
-    const current = w.getBounds();
+    const current = w.getContentBounds();
     const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-    w.setBounds({
+    const next = {
       x: bounds.x ?? current.x,
       y: bounds.y ?? current.y,
       width:
@@ -254,7 +255,17 @@ export function registerIpcHandlers() {
           ? clamp(Math.round(bounds.width), 450, 1000)
           : current.width,
       height: bounds.height ?? current.height,
-    });
+    };
+    // 与当前 bounds 完全一致时跳过，避免拖拽高频阶段产生无效窗口更新。
+    if (
+      next.x === current.x &&
+      next.y === current.y &&
+      next.width === current.width &&
+      next.height === current.height
+    ) {
+      return;
+    }
+    w.setContentBounds(next);
   });
 
   ipcMain.handle('open-settings-window', () => {
@@ -605,12 +616,42 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('get-result-icon', async (_event, item: { type: string; path: string; name?: string }) => {
+  ipcMain.handle('get-result-icon', async (_event, item: { type: string; path?: string; name?: string }) => {
     try {
       const t = typeof item?.type === 'string' ? item.type : '';
       const p = typeof item?.path === 'string' ? item.path : '';
       const n = typeof item?.name === 'string' ? item.name : '';
-      if (!t || !p) return '';
+      if (!t) return '';
+
+      // 计算项图标与应用搜索走同一链路：优先命中已安装应用里的“计算器”候选。
+      if (t === 'calc') {
+        const apps = getInstalledAppsCache();
+        const calcKeywords = ['计算器', 'calculator', 'windowscalculator'];
+        const candidate = apps.find((app) => {
+          const appName = String(app?.Name || '').toLowerCase();
+          const appId = String(app?.AppID || '').toLowerCase();
+          return calcKeywords.some((k) => appName.includes(k.toLowerCase()) || appId.includes(k.toLowerCase()));
+        });
+        if (candidate?.AppID) {
+          const icon = await getAppIconDataStable(candidate.Name || '计算器', candidate.AppID, 3);
+          if (icon) return icon;
+        }
+
+        // 未命中缓存候选时回退到固定 AUMID。
+        const calcAumid = 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App';
+        const aumidIcon = await getAppIconDataStable('计算器', calcAumid, 3);
+        if (aumidIcon) return aumidIcon;
+
+        // 再回退到 calc.exe 文件图标，确保系统缺少 AUMID 时也可展示。
+        const calcExePath = resolveAppId('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\calc.exe');
+        if (calcExePath && existsSync(calcExePath)) {
+          const fileIcon = await getFileIconData(calcExePath);
+          if (fileIcon) return fileIcon;
+        }
+        return '';
+      }
+
+      if (!p) return '';
       if (t === 'app') {
         await ensureStartMenuShortcutIndex();
         return await getAppIconDataStable(n, p, 3);

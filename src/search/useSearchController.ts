@@ -276,6 +276,10 @@ export function useSearchController() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [hoveredKey, setHoveredKey] = useState("");
   const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
+  // 拖拽宽度预览值：用于“内部先变宽，外窗后跟随”的渲染策略。
+  const [resizePreviewWidth, setResizePreviewWidth] = useState<number | null>(null);
+  // 计算器图标缓存：只在会话内保存一次 dataUrl，供“= 当前项/历史项”统一复用。
+  const [calculatorIconDataUrl, setCalculatorIconDataUrl] = useState("");
   // 搜索面板固定状态：仅保存在当前会话内，不落盘。
   const [isPanelPinned, setIsPanelPinned] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
@@ -301,6 +305,8 @@ export function useSearchController() {
   const lastResizeHeightRef = useRef(0);
   const resizeRafRef = useRef<number | null>(null);
   const searchingIndicatorTimerRef = useRef<number | null>(null);
+  // 手动左右拖拽宽度时临时冻结自动高度同步，避免 resize-window 与 set-window-bounds 抢写导致抖动。
+  const isManualWidthResizeRef = useRef(false);
   // 绔炴€佷繚鎶わ細寮傛鎼滅储杩斿洖鏃跺榻愨€滃綋鍓?query/type鈥濓紝閬垮厤鏃ц姹傝鐩栨柊缁撴灉
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
@@ -320,6 +326,7 @@ export function useSearchController() {
 
   const resizeWindowToContent = useCallback(
     (opts?: { includeTypeMenu?: boolean }) => {
+      if (isManualWidthResizeRef.current) return;
       const c = containerRef.current;
       if (!c) return;
 
@@ -622,7 +629,38 @@ export function useSearchController() {
     };
   }, [typeMenuOpen]);
 
-  const { startResizing } = useWindowResizeHandles();
+  const handleResizeStateChange = useCallback((isResizing: boolean) => {
+    // 拖拽期间仅冻结自动高度同步；结束时清空预览宽度，恢复默认布局。
+    isManualWidthResizeRef.current = isResizing;
+    if (!isResizing) setResizePreviewWidth(null);
+  }, []);
+
+  const handleResizePreviewWidthChange = useCallback((width: number | null) => {
+    setResizePreviewWidth((prev) => (prev === width ? prev : width));
+  }, []);
+
+  const { startResizing } = useWindowResizeHandles({
+    onResizeStateChange: handleResizeStateChange,
+    onPreviewWidthChange: handleResizePreviewWidthChange,
+  });
+
+  useEffect(() => {
+    // 会话内只拉取一次系统计算器图标：与应用搜索走同一主进程取图能力。
+    let cancelled = false;
+    void window.ipcRenderer
+      ?.invoke("get-result-icon", { type: "calc", name: "计算器", path: "" })
+      .then((icon: unknown) => {
+        if (cancelled) return;
+        if (typeof icon !== "string") return;
+        const normalized = icon.trim();
+        if (!normalized) return;
+        setCalculatorIconDataUrl(normalized);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const searchTypeOptions = useMemo(
     () =>
@@ -1250,8 +1288,20 @@ export function useSearchController() {
       preventDefault: () => void;
       stopPropagation: () => void;
       isComposing?: boolean;
+      code?: string;
     }) => {
       if ((e as any).isComposing) return;
+
+      // Alt+T 固定切换统一放在核心入口：保证窗口级和 React 级监听行为一致。
+      const keyLower = String(e.key || "").toLowerCase();
+      const isTogglePinShortcut =
+        e.altKey && (keyLower === "t" || String(e.code || "") === "KeyT");
+      if (isTogglePinShortcut) {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePanelPinned();
+        return;
+      }
 
       // 浠绘剰闈炲乏鍙抽敭鎿嶄綔閮戒細璁┾€滃乏鍙抽敭閫変腑鍙充晶鎸夐挳鈥濈殑鏁堟灉澶辨晥锛岄伩鍏嶇姸鎬佹畫鐣欓€犳垚璇Е
       if (selectedActionIndex >= 0 && e.key !== "ArrowLeft" && e.key !== "ArrowRight") {
@@ -1314,6 +1364,7 @@ export function useSearchController() {
       getVisibleActionIdsForItem,
       openFolder,
       runAsAdmin,
+      togglePanelPinned,
       deleteResultItem,
     ],
   );
@@ -1565,9 +1616,11 @@ export function useSearchController() {
     setHoveredKey,
     toast,
     showToast,
+    calculatorIconDataUrl,
     selectedActionId,
     clearActionSelection,
     clearGhostInputValue,
+    resizePreviewWidth,
   };
 }
 

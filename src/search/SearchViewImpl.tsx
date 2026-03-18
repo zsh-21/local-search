@@ -220,9 +220,29 @@ export function SearchViewImpl() {
     );
   };
 
+  // “=历史/计算项”统一识别：兼容 type=calc 与“=开头”的历史文案，保证图标一致。
+  const isCalcLikeItem = (item: AppItem) => {
+    if (item.type === "calc") return true;
+    if (!isCalcMode) return false;
+    const candidates = [item.description, item.path, item.name];
+    return candidates.some(
+      (text) => typeof text === "string" && text.trim().startsWith("="),
+    );
+  };
+
   // 根据结果类型渲染不同图标：文件夹/应用/设置/文件
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
-    if (item.type === "calc") {
+    if (isCalcLikeItem(item)) {
+      // “= 当前项 + 计算历史”优先复用系统计算器图标；仅在取图失败时回退 SVG。
+      if (c.calculatorIconDataUrl) {
+        return (
+          <img
+            className={buildIconClassName(c.calculatorIconDataUrl)}
+            src={c.calculatorIconDataUrl}
+            alt=""
+          />
+        );
+      }
       return (
         <svg
           className="result-icon"
@@ -330,11 +350,12 @@ export function SearchViewImpl() {
     const isImg = item.type === "file" && isImageFile(item.path);
     const lowerPath = (item.path || "").toLowerCase();
     const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
-    const isCalcItem = item.type === "calc";
-    const calcExpression = isCalcItem ? String(item.path || "").trim() : "";
-    const calcResult = isCalcItem ? String(item.name || "").trim() : "";
+    // 仅对真正的 calc 类型做“表达式=结果”拼接，避免误改普通历史项文案。
+    const isNativeCalcItem = item.type === "calc";
+    const calcExpression = isNativeCalcItem ? String(item.path || "").trim() : "";
+    const calcResult = isNativeCalcItem ? String(item.name || "").trim() : "";
     const displayName =
-      isCalcItem && calcExpression && calcResult
+      isNativeCalcItem && calcExpression && calcResult
         ? `${calcExpression}=${calcResult}`
         : item.name;
     const hasPath =
@@ -342,7 +363,7 @@ export function SearchViewImpl() {
     // 仅展示盘符开头的完整路径，避免显示非路径字符串（如 ms-settings:）。
     const isDrivePath = /^[a-zA-Z]:\\/.test(item.path || "");
     const showPathLine =
-      !isCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
+      !isNativeCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
     const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
@@ -582,13 +603,32 @@ export function SearchViewImpl() {
     );
   };
 
+  // 固定按钮文案集中计算：确保点击与 Alt+T 切换后，title 与 aria-label 同步更新。
+  const pinButtonTitle = c.isPanelPinned ? "取消固定（Alt+T）" : "固定（Alt+T）";
+  const pinButtonAriaLabel = c.isPanelPinned
+    ? "取消固定搜索面板"
+    : "固定搜索面板";
+  const previewStyle =
+    typeof c.resizePreviewWidth === "number" && c.resizePreviewWidth > 0
+      ? { width: `${c.resizePreviewWidth}px` }
+      : undefined;
+
   return (
     <div
       className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""} ${c.settings.compactMode ? "compact" : ""}`}
       ref={c.containerRef}
+      style={previewStyle}
       onMouseDownCapture={(e) => {
         c.clearActionSelection();
-        if (e.target !== e.currentTarget) return;
+        const target = e.target as HTMLElement | null;
+        if (!target) return;
+        // 空白点击隐藏兜底：仅当未点到可交互元素时才隐藏，避免“取消固定后点击空白无效”。
+        const hitInteractive = Boolean(
+          target.closest(
+            ".search-box, .results li, .type-select-menu, .action-btn, .back-to-top-btn, .settings-toast, .fs-tooltip-pop",
+          ),
+        );
+        if (hitInteractive) return;
         // 固定状态下点击面板空白不自动隐藏，保持面板常驻。
         if (c.isPanelPinned) return;
         c.hideWindow();
@@ -721,13 +761,6 @@ export function SearchViewImpl() {
             </button>
           ) : null}
 
-          <div className="result-count">
-            {/* 计数展示使用“去掉盘符前缀后的真实搜索词”，避免输入 `C:` 这类前缀影响 UI 文案逻辑 */}
-            {c.trimmedQuery.length >= 1 && c.totalCount > 0
-              ? `${c.totalCount} 条结果`
-              : ""}
-          </div>
-
           <div className="type-select" ref={c.typeSelectRef}>
             <button
               className="type-select-btn"
@@ -817,12 +850,8 @@ export function SearchViewImpl() {
             e.stopPropagation();
             c.togglePanelPinned();
           }}
-          aria-label={c.isPanelPinned ? "取消固定搜索面板" : "固定搜索面板"}
-          title={
-            c.isPanelPinned
-              ? "取消固定（恢复失焦自动隐藏）"
-              : "固定（Alt+T）"
-          }
+          aria-label={pinButtonAriaLabel}
+          title={pinButtonTitle}
         >
           {c.isPanelPinned ? <IconPin size={18} /> : <IconPinOff size={18} />}
         </button>
