@@ -118,21 +118,7 @@ export async function searchApps(input: {
 	if (searchTypeId !== 'app') return results;
 
 	const sorted = results.sort((a, b) => (b.score || 0) - (a.score || 0));
-	const head = sorted.slice(0, 60);
-	if (head.length > 0) {
-		const deadline = Date.now() + 1800;
-		const queue = head.slice();
-		const worker = async () => {
-			while (queue.length > 0) {
-				if (Date.now() >= deadline) return;
-				const it = queue.shift();
-				if (!it || it.icon) continue;
-				const icon = await getAppIconDataStable(it.name, it.path, 3);
-				if (icon) it.icon = icon;
-			}
-		};
-		await Promise.all([worker(), worker(), worker(), worker()]);
-	}
+	// 应用分类首屏优先“立即返回结果”，缺失图标交给后续异步回填
 	const merged = sorted.slice(0, 100).map(({ score, ...rest }) => rest);
 	(async () => {
 		const batchSize = 20;

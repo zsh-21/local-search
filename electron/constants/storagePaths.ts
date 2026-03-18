@@ -26,6 +26,7 @@ export const USER_DATA_FILENAMES = {
 
   // 已安装应用缓存：启动时先读缓存提升速度，随后后台刷新并覆盖落盘
   installedApps: "installed-apps.json",
+  appIconCache: "app-icon-cache.json",
 
   // 文件索引：主进程 Worker 落盘的“全局索引”，用于本地快速搜索
   fileIndex: "file-index.txt",
@@ -88,6 +89,11 @@ export function getHistoryStatsPath(): string {
 export function getInstalledAppsCachePath(): string {
   // 已安装应用缓存文件路径（installed-apps.json）
   return getUserDataPath(USER_DATA_FILENAMES.installedApps);
+}
+
+export function getAppIconCachePath(): string {
+  // 应用图标持久化缓存文件路径（app-icon-cache.json）
+  return getUserDataPath(USER_DATA_FILENAMES.appIconCache);
 }
 
 // =========================

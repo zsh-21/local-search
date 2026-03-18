@@ -6,6 +6,7 @@ import { clearIconCaches } from '../icon/iconService';
 import { getSearchWindow, getSettingsWindow } from '../window/windowManager';
 import { FILE_INDEX_WORKER_MAX } from '../constants/initialValues';
 import {
+  getAppIconCachePath,
   getDeviceIdPath,
   getFileIndexShardPath,
   getFileIndexShardTmpPath,
@@ -23,6 +24,7 @@ import {
 const HISTORY_PATH = getHistoryPath();
 const HISTORY_STATS_PATH = getHistoryStatsPath();
 const INSTALLED_APPS_CACHE_PATH = getInstalledAppsCachePath();
+const APP_ICON_CACHE_PATH = getAppIconCachePath();
 
 export async function clearLocalCacheAll() {
   // 清理“所有配置 + 所有索引 + 所有缓存”：用于一键恢复到“全新安装”的状态
@@ -50,6 +52,7 @@ export async function clearLocalCacheAll() {
     await fs.rm(HISTORY_PATH, { force: true }).catch(() => {});
     await fs.rm(HISTORY_STATS_PATH, { force: true }).catch(() => {});
     await fs.rm(INSTALLED_APPS_CACHE_PATH, { force: true }).catch(() => {});
+    await fs.rm(APP_ICON_CACHE_PATH, { force: true }).catch(() => {});
 
     // 2) Chromium 存储（同样位于 userData 下）：用于彻底清空登录态/localStorage/缓存等
     // 说明：这些目录/文件可能被当前进程占用，删除失败时忽略，下一次退出后再执行即可清干净

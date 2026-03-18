@@ -1091,18 +1091,22 @@ html:is(
   left: 10px;
   right: 10px;
   pointer-events: none;
-  color: var(--fs-muted);
-  font-size: 13px;
-  font-weight: 500;
-  opacity: 0.78;
+  /* 幽灵提示与真实输入保持同一排版参数，避免切换时出现样式跳变 */
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.search-box input.search-input-ghost-mode {
-  color: transparent;
-  caret-color: var(--fs-search-text);
+.search-input-wrap .search-ghost-prefix {
+  visibility: hidden;
+}
+
+.search-input-wrap .search-ghost-suffix {
+  color: var(--fs-muted);
+  opacity: 0.78;
 }
 
 input::placeholder {

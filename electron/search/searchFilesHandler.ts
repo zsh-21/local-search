@@ -14,6 +14,21 @@ type SearchFilesOptions = { searchTypeId?: string; searchSessionId?: string; dri
 export type SearchFilesDeps = Omit<SearchStrategyDeps, 'getCurrentIconPrefetchToken' | 'currentIconPrefetchToken'>;
 
 let iconPrefetchToken = 0;
+let lastReconcileRecentAt = 0;
+let reconcileRecentInFlight: Promise<void> | null = null;
+const RECONCILE_RECENT_MIN_INTERVAL_MS = 1200;
+
+function scheduleReconcileRecentIndex(run: () => void | Promise<void>) {
+	const now = Date.now();
+	if (reconcileRecentInFlight) return;
+	if (now - lastReconcileRecentAt < RECONCILE_RECENT_MIN_INTERVAL_MS) return;
+	lastReconcileRecentAt = now;
+	reconcileRecentInFlight = Promise.resolve(run())
+		.catch(() => {})
+		.finally(() => {
+			reconcileRecentInFlight = null;
+		});
+}
 
 function stripInvisibleChars(input: string) {
 	return String(input || '')
@@ -73,7 +88,7 @@ export async function handleSearchFiles(
 	// 索引未完成时加大暂停时长，把主线程响应优先级放到搜索输入上。
 	fileIndex.pauseIndexingFor(status.isIndexing ? 2000 : 900);
 	// 搜索时顺带触发一次轻量兜底扫描：提高新建/改动文件被检索到的概率（不阻塞当前请求）
-	void Promise.resolve(reconcileRecentIndex()).catch(() => {});
+	scheduleReconcileRecentIndex(() => reconcileRecentIndex());
 
 	const nameScorer = createNameScorer(queryForSearch);
 	const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;

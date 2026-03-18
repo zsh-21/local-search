@@ -661,7 +661,6 @@ export function SearchViewImpl() {
           <input
             ref={c.inputRef}
             type="text"
-            className={c.ghostInputValue ? "search-input-ghost-mode" : ""}
             value={c.inputValue}
             onChange={(e) => {
               c.clearActionSelection();
@@ -670,9 +669,11 @@ export function SearchViewImpl() {
             placeholder={c.placeholder}
             autoFocus
           />
-          {c.ghostInputValue ? (
+          {c.ghostSuffixValue ? (
             <span className="search-ghost-value" aria-hidden="true">
-              {c.ghostInputValue}
+              {/* 前缀使用隐藏占位保证后缀起始位置与真实输入严格对齐 */}
+              <span className="search-ghost-prefix">{c.inputValue}</span>
+              <span className="search-ghost-suffix">{c.ghostSuffixValue}</span>
             </span>
           ) : null}
         </div>

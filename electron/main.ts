@@ -16,12 +16,13 @@ import {
   closeAllWindows,
 } from './window/windowManager';
 import { ensureTray, getDefaultTrayIconPath } from './app/tray';
-import { loadInstalledApps } from './apps/installedApps';
+import { getInstalledAppsCache, loadInstalledApps } from './apps/installedApps';
 import { ensureStartMenuShortcutIndex } from './win/startMenuShortcutIndex';
 import { registerIpcHandlers } from './ipc/ipcHandlers';
 import { ensureWindowsAppContextMenu } from './win/contextMenu';
 import { handleAddToQuickListArgv } from './app/quickList';
-import { clearIconCaches } from './icon/iconService';
+import { clearIconCaches, prewarmInstalledAppIcons } from './icon/iconService';
+import { loadPersistedAppIconCache } from './icon/iconCache';
 import { primeBootstrapState, setBootstrapIndexStatus } from './app/bootstrapState';
 
 process.env.DIST = path.join(__dirname, '../dist');
@@ -156,6 +157,8 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    // 启动即回填持久化的 app 图标缓存，保证搜索链路优先走缓存命中
+    loadPersistedAppIconCache();
     const initialSettings = loadSettings();
     // 启动预热：在窗口真正可见前先把设置与历史快照准备好，面板打开直接使用。
     await primeBootstrapState(initialSettings);
@@ -173,6 +176,16 @@ if (!gotTheLock) {
       settingsShortcut: initialSettings.settingsShortcut,
     });
     loadInstalledApps();
+    // 应用列表加载后异步预热图标缓存，减少“首次搜索才抓图标”的冷启动成本
+    setTimeout(() => {
+      const apps = getInstalledAppsCache();
+      void prewarmInstalledAppIcons(apps, { maxCount: 320, concurrency: 3 });
+    }, 2000);
+    // 延后再做一次补充预热，覆盖启动后动态刷新到的新应用列表
+    setTimeout(() => {
+      const apps = getInstalledAppsCache();
+      void prewarmInstalledAppIcons(apps, { maxCount: 480, concurrency: 2 });
+    }, 12000);
     void ensureWindowsAppContextMenu();
     try {
       handleAddToQuickListArgv(process.argv);

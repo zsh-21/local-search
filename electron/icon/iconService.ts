@@ -33,6 +33,9 @@ const BUNDLED_ICON_DIR = (() => {
 })();
 
 const bundledIconDataCache = new Map<string, string>();
+// 单飞队列：相同 key 的并发图标请求只执行一次，其他请求复用结果
+const fileIconInFlight = new Map<string, Promise<string>>();
+const appIconInFlight = new Map<string, Promise<string>>();
 
 const EXT_ICON_MAP: Record<string, string> = {
 	'.doc': 'file-text.svg',
@@ -181,7 +184,7 @@ function normalizeIconFileSpec(spec: string) {
 	return out;
 }
 
-export async function getFileIconData(filePath: string) {
+async function getFileIconDataInternal(filePath: string) {
 	const key = `file:${filePath}`;
 	const cached = iconDataCache.get(key);
 	if (typeof cached === 'string') return cached;
@@ -249,6 +252,19 @@ export async function getFileIconData(filePath: string) {
 	if (!iconData) iconData = FALLBACK_SVG_DATA_URL;
 	if (iconData) setIconCache(key, iconData);
 	return iconData;
+}
+
+export async function getFileIconData(filePath: string) {
+	const key = `file:${filePath}`;
+	const cached = iconDataCache.get(key);
+	if (typeof cached === 'string') return cached;
+	const inFlight = fileIconInFlight.get(key);
+	if (inFlight) return inFlight;
+	const task = getFileIconDataInternal(filePath).finally(() => {
+		fileIconInFlight.delete(key);
+	});
+	fileIconInFlight.set(key, task);
+	return task;
 }
 
 const uwpIconPathCache = new Map<string, string>();
@@ -358,7 +374,7 @@ function resolveUwpIconPathByAumid(aumid: string): Promise<string> {
 	return task;
 }
 
-async function getAppIconData(appName: string, appId: string) {
+async function getAppIconDataInternal(appName: string, appId: string) {
 	const key = `app:${appId}`;
 	const cached = iconDataCache.get(key);
 	if (typeof cached === 'string' && cached) {
@@ -419,6 +435,19 @@ async function getAppIconData(appName: string, appId: string) {
 	return iconData;
 }
 
+async function getAppIconData(appName: string, appId: string) {
+	const key = `app:${appId}`;
+	const cached = iconDataCache.get(key);
+	if (typeof cached === 'string' && cached && !isTooSmallAppIconDataUrl(cached)) return cached;
+	const inFlight = appIconInFlight.get(key);
+	if (inFlight) return inFlight;
+	const task = getAppIconDataInternal(appName, appId).finally(() => {
+		appIconInFlight.delete(key);
+	});
+	appIconInFlight.set(key, task);
+	return task;
+}
+
 export async function getAppIconDataStable(appName: string, appId: string, maxAttempts = 3) {
 	const attempts = Math.max(1, Math.min(4, Number(maxAttempts) || 1));
 	const waits = [0, 140, 320, 560];
@@ -431,8 +460,39 @@ export async function getAppIconDataStable(appName: string, appId: string, maxAt
 	return '';
 }
 
+export async function prewarmInstalledAppIcons(
+	items: Array<{ Name: string; AppID: string }>,
+	options?: { maxCount?: number; concurrency?: number }
+) {
+	const maxCount = Math.max(0, Math.min(1200, Number(options?.maxCount) || 360));
+	const concurrency = Math.max(1, Math.min(6, Number(options?.concurrency) || 3));
+	if (!Array.isArray(items) || items.length === 0 || maxCount <= 0) return;
+	const queue = items
+		.filter((it) => typeof it?.Name === 'string' && typeof it?.AppID === 'string')
+		.slice(0, maxCount);
+	if (queue.length === 0) return;
+
+	// 启动后异步预热应用图标缓存：把“首次搜索时再抓图标”的成本前移
+	const worker = async () => {
+		while (queue.length > 0) {
+			const it = queue.shift();
+			if (!it) return;
+			const key = `app:${it.AppID}`;
+			const cached = iconDataCache.get(key) || '';
+			if (cached && !isTooSmallAppIconDataUrl(cached)) continue;
+			try {
+				await getAppIconDataStable(it.Name, it.AppID, 2);
+			} catch {}
+		}
+	};
+
+	await Promise.all(Array.from({ length: concurrency }, () => worker()));
+}
+
 export async function clearIconCaches() {
 	iconDataCache.clear();
+	fileIconInFlight.clear();
+	appIconInFlight.clear();
 	uwpIconPathCache.clear();
 	uwpIconPathInFlight.clear();
 }

@@ -18,7 +18,6 @@ import {
   filterItemsBySearchType as filterItemsBySearchTypeUtil,
   limitResults as limitResultsUtil,
   mergeResultsStable,
-  normalizeResultKey,
 } from "./searchResultUtils";
 
 type RefreshHistoryOpts = { typeId?: string; preserveSelectedPath?: string };
@@ -27,6 +26,9 @@ const CALC_CONSTANTS: Record<string, number> = {
   pi: Math.PI,
   e: Math.E,
 };
+const SEARCH_STATUS_DELAY_MS = 120;
+const SEARCH_DEBOUNCE_READY_MS = 0;
+const SEARCH_DEBOUNCE_INDEXING_MS = 120;
 
 function ensureArity(name: string, args: number[], min: number, max = min) {
   if (args.length < min || args.length > max) {
@@ -238,6 +240,7 @@ export function useSearchController() {
   const [lastSelectedBy, setLastSelectedBy] = useState<"keyboard" | "mouse">("keyboard");
   const [results, setResults] = useState<AppItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showSearchingIndicator, setShowSearchingIndicator] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -266,6 +269,7 @@ export function useSearchController() {
   // 窗口高度自适应：减少频繁 resize 的抖动与重复调用
   const lastResizeHeightRef = useRef(0);
   const resizeRafRef = useRef<number | null>(null);
+  const searchingIndicatorTimerRef = useRef<number | null>(null);
   // 竞态保护：异步搜索返回时对齐“当前 query/type”，避免旧请求覆盖新结果
   const queryRef = useRef("");
   const searchTypeIdRef = useRef(searchTypeId);
@@ -275,14 +279,48 @@ export function useSearchController() {
   const searchSessionIdRef = useRef("");
   const pendingAppendRef = useRef<AppItem[]>([]);
   const flushAppendTimerRef = useRef<number | null>(null);
-  const iconFetchTokenRef = useRef(0);
-  const iconFetchStartedTokenRef = useRef(0);
-  const requestedIconKeysRef = useRef<Set<string>>(new Set());
   const calcItemRef = useRef<AppItem | null>(null);
   // Tab/Shift+Tab 切换类型时不走 120ms 防抖，保证切换后立即看到新类型结果
   const typeSwitchRequestedRef = useRef(false);
   const historyItemsRef = useRef<AppItem[]>(getBootstrapHistoryCache());
   const bootstrapTypeSyncedRef = useRef(false);
+
+  const resizeWindowToContent = useCallback(
+    (opts?: { includeTypeMenu?: boolean }) => {
+      const c = containerRef.current;
+      if (!c) return;
+
+      const containerRect = c.getBoundingClientRect();
+      let nextHeight = Math.ceil(Math.max(containerRect.height, c.scrollHeight));
+      const shouldIncludeMenu = opts?.includeTypeMenu ?? typeMenuOpen;
+      const menuEl = shouldIncludeMenu ? typeMenuRef.current : null;
+      if (menuEl) {
+        const menuRect = menuEl.getBoundingClientRect();
+        const needed = Math.ceil(menuRect.bottom - containerRect.top + 10);
+        nextHeight = Math.max(nextHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
+      }
+
+      nextHeight = Math.max(nextHeight, SEARCH_WINDOW_MIN_HEIGHT);
+      if (nextHeight !== lastResizeHeightRef.current) {
+        lastResizeHeightRef.current = nextHeight;
+        window.ipcRenderer?.invoke("resize-window", nextHeight);
+      }
+    },
+    [typeMenuOpen],
+  );
+
+  const syncWindowHeight = useCallback(
+    (opts?: { includeTypeMenu?: boolean }) => {
+      // 先同步当前帧，避免窗口层和内容层出现短暂高度错位。
+      resizeWindowToContent(opts);
+      // 下一帧复核一次，覆盖虚拟列表与异步渲染带来的延迟高度变化。
+      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeWindowToContent(opts);
+      });
+    },
+    [resizeWindowToContent],
+  );
 
   const setQueryAndInputValue = (next: string) => {
     setQuery(next);
@@ -359,8 +397,39 @@ export function useSearchController() {
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      if (searchingIndicatorTimerRef.current != null) {
+        window.clearTimeout(searchingIndicatorTimerRef.current);
+        searchingIndicatorTimerRef.current = null;
+      }
+      if (resizeRafRef.current != null) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (searchingIndicatorTimerRef.current != null) {
+      window.clearTimeout(searchingIndicatorTimerRef.current);
+      searchingIndicatorTimerRef.current = null;
+    }
+    if (!isSearching) {
+      setShowSearchingIndicator(false);
+      return;
+    }
+    // 仅在慢查询时显示“正在搜索”，避免索引完成后的伪加载感。
+    setShowSearchingIndicator(false);
+    searchingIndicatorTimerRef.current = window.setTimeout(() => {
+      setShowSearchingIndicator(true);
+      searchingIndicatorTimerRef.current = null;
+    }, SEARCH_STATUS_DELAY_MS);
+    return () => {
+      if (searchingIndicatorTimerRef.current != null) {
+        window.clearTimeout(searchingIndicatorTimerRef.current);
+        searchingIndicatorTimerRef.current = null;
+      }
+    };
+  }, [isSearching]);
 
   useEffect(() => {
     queryRef.current = query;
@@ -522,19 +591,7 @@ export function useSearchController() {
       setSearchTypeId(nextTypeId);
       setQueryAndInputValue("");
       applyHistoryResults(historyItemsRef.current, { typeId: nextTypeId });
-
-      requestAnimationFrame(() => {
-        const c = containerRef.current;
-        if (!c) return;
-        const nextHeight = Math.max(
-          SEARCH_WINDOW_MIN_HEIGHT,
-          Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
-        );
-        if (nextHeight !== lastResizeHeightRef.current) {
-          lastResizeHeightRef.current = nextHeight;
-          window.ipcRenderer?.invoke("resize-window", nextHeight);
-        }
-      });
+      syncWindowHeight({ includeTypeMenu: false });
       setTimeout(() => {
         inputRef.current?.focus();
         window.ipcRenderer?.invoke("search-view-ready");
@@ -544,7 +601,7 @@ export function useSearchController() {
     return () => {
       window.ipcRenderer?.off("reset-search", handleReset as any);
     };
-  }, [settings]);
+  }, [settings, syncWindowHeight]);
 
   useEffect(() => {
     const handler = () => {
@@ -571,25 +628,14 @@ export function useSearchController() {
             })
           : Promise.resolve();
       void p.finally(() => {
-        requestAnimationFrame(() => {
-          const c = containerRef.current;
-          if (!c) return;
-          const nextHeight = Math.max(
-            SEARCH_WINDOW_MIN_HEIGHT,
-            Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
-          );
-          if (nextHeight !== lastResizeHeightRef.current) {
-            lastResizeHeightRef.current = nextHeight;
-            window.ipcRenderer?.invoke("resize-window", nextHeight);
-          }
-        });
+        syncWindowHeight({ includeTypeMenu: true });
       });
     };
     window.ipcRenderer?.on("search-window-opened", handler as any);
     return () => {
       window.ipcRenderer?.off("search-window-opened", handler as any);
     };
-  }, []);
+  }, [syncWindowHeight]);
 
   useEffect(() => {
     // more-results 事件用于主进程“增量回填图标/更多结果”
@@ -648,10 +694,6 @@ export function useSearchController() {
     const requestId = searchRequestIdRef.current;
     const searchSessionId = `${Date.now()}-${requestId}`;
     searchSessionIdRef.current = searchSessionId;
-    iconFetchTokenRef.current += 1;
-    iconFetchStartedTokenRef.current = 0;
-    requestedIconKeysRef.current.clear();
-    setIsSearching(true);
     setHasMore(false);
     setTotalCount(0);
     setHoveredKey("");
@@ -662,9 +704,15 @@ export function useSearchController() {
     }
     // 防抖：避免连续输入触发过多 IPC 搜索请求
     // 索引期加大防抖，优先保证输入流畅。
-    const delay = typeSwitchRequestedRef.current ? 0 : isIndexing ? 160 : 80;
+    const delay = typeSwitchRequestedRef.current
+      ? 0
+      : isIndexing
+        ? SEARCH_DEBOUNCE_INDEXING_MS
+        : SEARCH_DEBOUNCE_READY_MS;
     typeSwitchRequestedRef.current = false;
     const timer = setTimeout(async () => {
+      if (searchRequestIdRef.current !== requestId) return;
+      setIsSearching(true);
       try {
         const resp = (await window.ipcRenderer?.invoke(
           "search-files",
@@ -696,6 +744,9 @@ export function useSearchController() {
   }, [query, searchTypeId]);
 
   useEffect(() => {
+    // 渲染层图标补抓已下沉到主进程缓存链路，这里直接禁用，避免前后端重复抓取。
+    return;
+    /*
     if (searchTypeId !== "app") return;
     // 搜索进行中时结果会频繁变化：此时抢占式补齐图标会导致频繁 setState，引发列表短暂卡顿/闪动
     // 这里等本轮搜索结束后再拉取首屏缺失图标，并批量合并到 results，减少渲染压力
@@ -755,6 +806,7 @@ export function useSearchController() {
     return () => {
       cancelled = true;
     };
+    */
   }, [results, searchTypeId, isSearching]);
 
   useEffect(() => {
@@ -1218,6 +1270,8 @@ export function useSearchController() {
     return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
   }, [searchTypeId, enabledSearchTypeOptions]);
 
+  const currentTypeLabelSafe =
+    enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
   const listHeight = Math.min(visibleResults.length * ITEM_HEIGHT, MAX_LIST_HEIGHT);
   const parsedQuery = useMemo(() => parseDrivePrefix(query), [query]);
   const trimmedQuery = parsedQuery.term;
@@ -1232,60 +1286,30 @@ export function useSearchController() {
     !isSearching &&
     !isIndexing &&
     results.length === 0;
+  // 幽灵提示仅显示后缀补全：候选不以前缀匹配时不显示。
+  const ghostSuffixValue = useMemo(() => {
+    if (!inputValue || !ghostInputValue) return "";
+    if (ghostInputValue.length <= inputValue.length) return "";
+    const inputLower = inputValue.toLocaleLowerCase();
+    const ghostLower = ghostInputValue.toLocaleLowerCase();
+    if (!ghostLower.startsWith(inputLower)) return "";
+    return ghostInputValue.slice(inputValue.length);
+  }, [ghostInputValue, inputValue]);
 
   useLayoutEffect(() => {
-    const containerEl = containerRef.current;
-    if (!containerEl) return;
-
-    const run = () => {
-      const c = containerRef.current;
-      if (!c) return;
-
-      const containerRect = c.getBoundingClientRect();
-      const baseHeight = Math.ceil(Math.max(containerRect.height, c.scrollHeight));
-      let nextHeight = baseHeight;
-
-      const menuEl = typeMenuOpen ? typeMenuRef.current : null;
-      if (menuEl) {
-        const menuRect = menuEl.getBoundingClientRect();
-        const needed = Math.ceil(menuRect.bottom - containerRect.top + 10);
-        nextHeight = Math.max(nextHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
-      }
-
-      nextHeight = Math.max(nextHeight, SEARCH_WINDOW_MIN_HEIGHT);
-      if (nextHeight !== lastResizeHeightRef.current) {
-        lastResizeHeightRef.current = nextHeight;
-        window.ipcRenderer?.invoke("resize-window", nextHeight);
-      }
-    };
-
-    if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
-    resizeRafRef.current = requestAnimationFrame(run);
-    return () => {
-      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
-      resizeRafRef.current = null;
-    };
-  }, [isSearching, isIndexing, results.length, visibleResults.length, query, typeMenuOpen, showEmptyState]);
+    syncWindowHeight({ includeTypeMenu: true });
+  }, [syncWindowHeight, isIndexing, showEmptyState, showInputHint, showSearchingIndicator, typeMenuOpen, visibleResults.length]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
 
     const ro = new ResizeObserver(() => {
-      const c = containerRef.current;
-      if (!c) return;
-      const nextHeight = Math.max(
-        SEARCH_WINDOW_MIN_HEIGHT,
-        Math.ceil(Math.max(c.getBoundingClientRect().height, c.scrollHeight)),
-      );
-      if (nextHeight !== lastResizeHeightRef.current) {
-        lastResizeHeightRef.current = nextHeight;
-        window.ipcRenderer?.invoke("resize-window", nextHeight);
-      }
+      resizeWindowToContent({ includeTypeMenu: true });
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [resizeWindowToContent]);
 
   const scrollToTop = () => {
     if (scrollContainerRef.current && listRef.current) {
@@ -1302,7 +1326,7 @@ export function useSearchController() {
     setShowBackToTop((prev) => (prev === shouldShow ? prev : shouldShow));
   };
 
-  const statusText = isSearching
+  const statusText = showSearchingIndicator
     ? "正在搜索…"
     : isIndexing
       ? "正在建立本地文件索引…"
@@ -1314,6 +1338,7 @@ export function useSearchController() {
     setQuery: setQueryAndInputValue,
     inputValue,
     ghostInputValue,
+    ghostSuffixValue,
     searchTypeId,
     setSearchTypeId,
     typeMenuOpen,
@@ -1329,12 +1354,12 @@ export function useSearchController() {
     totalCount,
     placeholder,
     searchTypeOptions: enabledSearchTypeOptions,
-    currentTypeLabel,
+    currentTypeLabel: currentTypeLabelSafe,
     visibleResults,
     listHeight,
     showEmptyState,
     showInputHint,
-    statusText,
+    statusText: showSearchingIndicator ? "正在搜索..." : isIndexing ? "正在建立本地文件索引..." : "",
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
     inputRef,
