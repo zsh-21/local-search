@@ -34,6 +34,14 @@ let indexStatsTimer: ReturnType<typeof setInterval> | null = null;
 let indexStatsInFlight = false;
 let lastIndexStatsSignature = '';
 let lastIndexingState = false;
+const TRAY_WARMUP_TIMEOUT_MS = 3000;
+const ICON_FIRST_ROUND_TIMEOUT_MS = 1200;
+const ICON_FIRST_ROUND_MAX_COUNT = 180;
+const ICON_FIRST_ROUND_CONCURRENCY = 2;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function buildDriveSignature(drives: Array<{ mountPoint?: string }>) {
   const list = drives
@@ -133,7 +141,7 @@ function stopResourceGuard() {
   resourceGuardTimer = null;
 }
 
-// 注册 IPC 处理函数
+// 注册 IPC 处理函数。
 registerIpcHandlers();
 
 app.on('window-all-closed', () => {
@@ -157,14 +165,37 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    // 启动即回填持久化的 app 图标缓存，保证搜索链路优先走缓存命中
+    // 启动即恢复持久化图标缓存，优先提升首轮搜索命中速度。
     loadPersistedAppIconCache();
     const initialSettings = loadSettings();
-    // 启动预热：在窗口真正可见前先把设置与历史快照准备好，面板打开直接使用。
-    await primeBootstrapState(initialSettings);
-    // 初始化时同步设置忽略规则（主进程缓存 + Worker 内索引规则）
-    await fileIndex.setIgnoredPaths(initialSettings.ignoredPaths, initialSettings.preferredFileExtensions);
+
+    // 隐藏创建搜索窗口，提前完成渲染资源预热，避免托盘出现后首次呼出卡顿。
     createWindow();
+    // 先读取应用缓存并异步刷新系统应用列表，为图标预热准备候选数据。
+    loadInstalledApps();
+    // 尽早建立开始菜单快捷方式索引，提升应用图标解析命中率。
+    setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
+
+    // 核心预热任务：设置/历史快照、索引缓存、首轮图标补热（图标补热仅预算内阻塞托盘）。
+    const bootstrapWarmupPromise = primeBootstrapState(initialSettings).catch(() => undefined);
+    // 索引忽略规则与缓存加载串联执行，既保证顺序正确，也能纳入 3 秒托盘兜底预算。
+    const indexCacheLoadPromise = fileIndex
+      .setIgnoredPaths(initialSettings.ignoredPaths, initialSettings.preferredFileExtensions)
+      .then(() => fileIndex.loadCache())
+      .catch(() => false);
+    const firstRoundIconPrewarmPromise = prewarmInstalledAppIcons(getInstalledAppsCache(), {
+      maxCount: ICON_FIRST_ROUND_MAX_COUNT,
+      concurrency: ICON_FIRST_ROUND_CONCURRENCY,
+    }).catch(() => undefined);
+
+    const coreWarmupPromise = Promise.all([
+      bootstrapWarmupPromise,
+      indexCacheLoadPromise.then(() => undefined),
+      Promise.race([firstRoundIconPrewarmPromise, sleep(ICON_FIRST_ROUND_TIMEOUT_MS)]),
+    ]);
+
+    // 托盘/快捷键在核心预热完成后注册；若预热过慢，3 秒后兜底放行。
+    await Promise.race([coreWarmupPromise, sleep(TRAY_WARMUP_TIMEOUT_MS)]);
     ensureTray({
       getIconPath: getDefaultTrayIconPath,
       toggleSearchWindow,
@@ -175,17 +206,17 @@ if (!gotTheLock) {
       searchShortcut: initialSettings.searchShortcut,
       settingsShortcut: initialSettings.settingsShortcut,
     });
-    loadInstalledApps();
-    // 应用列表加载后异步预热图标缓存，减少“首次搜索才抓图标”的冷启动成本
+
+    // 保留后续两轮补热，覆盖启动后动态刷新到的新应用列表。
     setTimeout(() => {
       const apps = getInstalledAppsCache();
       void prewarmInstalledAppIcons(apps, { maxCount: 320, concurrency: 3 });
     }, 2000);
-    // 延后再做一次补充预热，覆盖启动后动态刷新到的新应用列表
     setTimeout(() => {
       const apps = getInstalledAppsCache();
       void prewarmInstalledAppIcons(apps, { maxCount: 480, concurrency: 2 });
     }, 12000);
+
     void ensureWindowsAppContextMenu();
     try {
       handleAddToQuickListArgv(process.argv);
@@ -195,14 +226,11 @@ if (!gotTheLock) {
     startIndexStatsWriter();
     app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 
-    setTimeout(() => void ensureStartMenuShortcutIndex(), 0);
     void (async () => {
       try {
         const currentAppVersion = app.getVersion();
-        // 索引持久化策略：
-        // - 只加载本地缓存（可秒级可用），不再触发“全盘重建/扫描”
-        // - 运行期的新增/删除/改动由 watcher 增量更新并落盘
-        const cacheLoaded = await fileIndex.loadCache();
+        // 复用启动阶段的缓存加载任务，避免重复 loadCache 造成额外阻塞。
+        const cacheLoaded = await indexCacheLoadPromise;
         const meta = loadFileIndexMeta();
         const systemInfo = await SystemDetector.getInstance().detect();
         const driveSignature = buildDriveSignature(systemInfo?.drives || []);

@@ -493,7 +493,12 @@ export function useSearchController() {
     });
   }, []);
 
-  // 鎼滅储鍒楄〃鐨勫崟椤归珮搴﹀凡鎶界锛氫究浜庝綘缁熶竴璋冩暣绱у噾/鏅€氭ā寮忕殑甯冨眬瀵嗗害
+  useEffect(() => {
+    // 组件挂载后立即上报一次“渲染就绪”，让主进程可直接走热路径秒开。
+    notifySearchViewReady();
+  }, [notifySearchViewReady]);
+
+  // 搜索列表单项高度已抽离：便于统一调整紧凑/普通模式的布局密度。
   const ITEM_HEIGHT = settings.compactMode ? SEARCH_ITEM_HEIGHT_COMPACT : SEARCH_ITEM_HEIGHT_NORMAL;
   const deviceMaxHeight = Math.floor((window.screen as any)?.availHeight || 0);
   const maxWindowHeight = Math.min(
@@ -514,7 +519,7 @@ export function useSearchController() {
   useEffect(() => {
     let mounted = true;
 
-    // 鍚姩闃舵鍏堟嬁涓昏繘绋嬮鐑ソ鐨勫揩鐓э細棣栧紑鎼滅储闈㈡澘鏃剁洿鎺ュ鐢ㄨ繖浠藉巻鍙蹭笌榛樿绫诲瀷銆?
+    // 启动阶段优先复用主进程预热快照，首开面板直接拿到历史与默认搜索类型。
     void loadBootstrapState().then((snapshot) => {
       if (!mounted) return;
       historyItemsRef.current = Array.isArray(snapshot.history) ? snapshot.history : [];

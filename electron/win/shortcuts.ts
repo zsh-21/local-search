@@ -2,6 +2,28 @@ import { existsSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { resolveAppId } from './resolveAppId';
 
+// 统一清洗快捷方式里的路径规格：兼容引号、环境变量、IconLocation 的逗号索引与 .msc/.exe/.dll 等扩展
+export function normalizeShortcutFileSpec(spec: string) {
+	const raw = String(spec || '').trim();
+	if (!raw) return '';
+	const expandEnvVars = (s: string) => s.replace(/%([^%]+)%/g, (_m, k) => process.env[String(k)] || `%${k}%`);
+
+	let s = raw;
+	if (s.startsWith('@')) s = s.slice(1).trim();
+	let picked = '';
+	if (s.startsWith('"')) {
+		const end = s.indexOf('"', 1);
+		picked = end > 1 ? s.slice(1, end).trim() : s.replace(/^"+|"+$/g, '').trim();
+	} else {
+		picked = s.split(',')[0]?.trim() || '';
+	}
+
+	let out = picked || s;
+	const m = out.match(/^(.*?\.(?:exe|dll|ico|cpl|msc))/i);
+	if (m?.[1]) out = m[1].trim();
+	return expandEnvVars(out.trim());
+}
+
 export function readUrlShortcut(filePath: string) {
 	try {
 		const raw = readFileSync(filePath, 'utf-8');
@@ -62,12 +84,13 @@ export async function openLnkShortcut(lnkPath: string) {
 	if (!info?.targetPath) return false;
 	return await new Promise<boolean>((resolve) => {
 		try {
-			const resolvedTarget = resolveAppId(info.targetPath);
+			// 启动时复用统一清洗规则，减少快捷方式目标路径异常格式导致的误启动
+			const resolvedTarget = resolveAppId(normalizeShortcutFileSpec(info.targetPath));
 			if (!resolvedTarget) return resolve(false);
 			if ((resolvedTarget.includes('\\') || resolvedTarget.includes('/')) && !existsSync(resolvedTarget)) return resolve(false);
 			const fp = resolvedTarget.replace(/'/g, "''");
 			const al = (info.arguments || '').replace(/'/g, "''");
-			const wdResolved = resolveAppId(info.workingDirectory || '');
+			const wdResolved = resolveAppId(normalizeShortcutFileSpec(info.workingDirectory || ''));
 			const wd = (wdResolved || '').replace(/'/g, "''");
 			const cmd =
 				`$fp='${fp}';` +
@@ -85,4 +108,3 @@ export async function openLnkShortcut(lnkPath: string) {
 		}
 	});
 }
-

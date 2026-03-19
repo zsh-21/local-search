@@ -68,6 +68,34 @@ html[data-theme="dark"] {
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.12);
+  /* 主题质感 token：统一驱动结果选中、类型控件、类型菜单激活与设置导航激活。 */
+  --fs-control-accent-gradient: linear-gradient(
+    102deg,
+    rgba(87, 183, 255, 0.16) 0%,
+    rgba(113, 150, 255, 0.1) 56%,
+    rgba(87, 183, 255, 0.14) 100%
+  );
+  --fs-control-accent-border: rgba(119, 201, 255, 0.36);
+  --fs-type-active-gradient: linear-gradient(
+    104deg,
+    rgba(87, 183, 255, 0.24) 0%,
+    rgba(121, 158, 255, 0.15) 52%,
+    rgba(87, 183, 255, 0.2) 100%
+  );
+  --fs-type-active-border: rgba(119, 201, 255, 0.56);
+  --fs-result-selected-gradient: linear-gradient(
+    98deg,
+    rgba(87, 183, 255, 0.24) 0%,
+    rgba(121, 158, 255, 0.15) 45%,
+    rgba(87, 183, 255, 0.22) 100%
+  );
+  --fs-result-selected-border: rgba(119, 201, 255, 0.62);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    106deg,
+    rgba(87, 183, 255, 0.18) 0%,
+    rgba(121, 158, 255, 0.12) 100%
+  );
+  --fs-settings-nav-active-border: rgba(119, 201, 255, 0.28);
 }
 
 html[data-theme="light"] {
@@ -115,6 +143,34 @@ html[data-theme="light"] {
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.9);
+  /* 主题质感 token：浅色保持清爽，同时补足与 Chrome 同级的层次感。 */
+  --fs-control-accent-gradient: linear-gradient(
+    96deg,
+    rgba(58, 141, 247, 0.1) 0%,
+    rgba(66, 133, 244, 0.08) 58%,
+    rgba(106, 176, 255, 0.1) 100%
+  );
+  --fs-control-accent-border: rgba(58, 141, 247, 0.26);
+  --fs-type-active-gradient: linear-gradient(
+    98deg,
+    rgba(58, 141, 247, 0.18) 0%,
+    rgba(66, 133, 244, 0.13) 55%,
+    rgba(120, 194, 255, 0.15) 100%
+  );
+  --fs-type-active-border: rgba(58, 141, 247, 0.34);
+  --fs-result-selected-gradient: linear-gradient(
+    96deg,
+    rgba(58, 141, 247, 0.18) 0%,
+    rgba(66, 133, 244, 0.12) 44%,
+    rgba(120, 194, 255, 0.16) 100%
+  );
+  --fs-result-selected-border: rgba(58, 141, 247, 0.42);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    102deg,
+    rgba(58, 141, 247, 0.13) 0%,
+    rgba(98, 170, 255, 0.1) 100%
+  );
+  --fs-settings-nav-active-border: rgba(58, 141, 247, 0.24);
 }
 
 /* Steam???? + ???? */
@@ -163,6 +219,34 @@ html[data-theme="steam"] {
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
+  /* 主题质感 token：Steam 风格保持冷蓝金属感。 */
+  --fs-control-accent-gradient: linear-gradient(
+    102deg,
+    rgba(102, 192, 244, 0.14) 0%,
+    rgba(58, 125, 176, 0.12) 54%,
+    rgba(102, 192, 244, 0.16) 100%
+  );
+  --fs-control-accent-border: rgba(137, 216, 255, 0.36);
+  --fs-type-active-gradient: linear-gradient(
+    104deg,
+    rgba(102, 192, 244, 0.22) 0%,
+    rgba(72, 151, 214, 0.16) 50%,
+    rgba(102, 192, 244, 0.2) 100%
+  );
+  --fs-type-active-border: rgba(137, 216, 255, 0.54);
+  --fs-result-selected-gradient: linear-gradient(
+    98deg,
+    rgba(102, 192, 244, 0.24) 0%,
+    rgba(72, 151, 214, 0.16) 45%,
+    rgba(102, 192, 244, 0.22) 100%
+  );
+  --fs-result-selected-border: rgba(137, 216, 255, 0.6);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    106deg,
+    rgba(102, 192, 244, 0.18) 0%,
+    rgba(72, 151, 214, 0.14) 100%
+  );
+  --fs-settings-nav-active-border: rgba(137, 216, 255, 0.3);
 }
 
 /* Trae??? IDE + ????? */
@@ -207,6 +291,34 @@ html[data-theme="trae"] {
   --fs-radius-item: 9px;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.1);
+  /* 主题质感 token：Trae 风格保持冷青 + 靛蓝的科技感。 */
+  --fs-control-accent-gradient: linear-gradient(
+    104deg,
+    rgba(79, 208, 255, 0.15) 0%,
+    rgba(128, 150, 255, 0.11) 54%,
+    rgba(79, 208, 255, 0.15) 100%
+  );
+  --fs-control-accent-border: rgba(121, 220, 255, 0.34);
+  --fs-type-active-gradient: linear-gradient(
+    105deg,
+    rgba(79, 208, 255, 0.23) 0%,
+    rgba(128, 150, 255, 0.15) 48%,
+    rgba(79, 208, 255, 0.2) 100%
+  );
+  --fs-type-active-border: rgba(121, 220, 255, 0.54);
+  --fs-result-selected-gradient: linear-gradient(
+    100deg,
+    rgba(79, 208, 255, 0.25) 0%,
+    rgba(128, 150, 255, 0.16) 46%,
+    rgba(79, 208, 255, 0.22) 100%
+  );
+  --fs-result-selected-border: rgba(121, 220, 255, 0.6);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    106deg,
+    rgba(79, 208, 255, 0.17) 0%,
+    rgba(128, 150, 255, 0.13) 100%
+  );
+  --fs-settings-nav-active-border: rgba(121, 220, 255, 0.3);
 }
 
 /* Chrome?Material ??????? + ????? */
@@ -255,6 +367,39 @@ html[data-theme="chrome"] {
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.9);
+  /* 主题质感 token：延续 Chrome 品牌四色渐变语义。 */
+  --fs-control-accent-gradient: linear-gradient(
+    95deg,
+    rgba(26, 115, 232, 0.08) 0%,
+    rgba(234, 67, 53, 0.06) 36%,
+    rgba(251, 188, 5, 0.06) 68%,
+    rgba(52, 168, 83, 0.08) 100%
+  );
+  --fs-control-accent-border: rgba(26, 115, 232, 0.26);
+  --fs-type-active-gradient: linear-gradient(
+    92deg,
+    rgba(26, 115, 232, 0.16) 0%,
+    rgba(234, 67, 53, 0.1) 35%,
+    rgba(251, 188, 5, 0.1) 67%,
+    rgba(52, 168, 83, 0.14) 100%
+  );
+  --fs-type-active-border: rgba(26, 115, 232, 0.34);
+  --fs-result-selected-gradient: linear-gradient(
+    96deg,
+    rgba(26, 115, 232, 0.16) 0%,
+    rgba(234, 67, 53, 0.1) 34%,
+    rgba(251, 188, 5, 0.1) 67%,
+    rgba(52, 168, 83, 0.14) 100%
+  );
+  --fs-result-selected-border: rgba(26, 115, 232, 0.42);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    94deg,
+    rgba(26, 115, 232, 0.14) 0%,
+    rgba(234, 67, 53, 0.08) 36%,
+    rgba(251, 188, 5, 0.08) 66%,
+    rgba(52, 168, 83, 0.12) 100%
+  );
+  --fs-settings-nav-active-border: rgba(26, 115, 232, 0.24);
 }
 
 /* Windows 11?Dark??Fluent + Mica ????? */
@@ -299,6 +444,34 @@ html[data-theme="window11"] {
   --fs-radius-item: 9px;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
+  /* 主题质感 token：Windows 11 风格强调亚克力冷光层次。 */
+  --fs-control-accent-gradient: linear-gradient(
+    104deg,
+    rgba(76, 194, 255, 0.14) 0%,
+    rgba(122, 168, 255, 0.11) 56%,
+    rgba(76, 194, 255, 0.14) 100%
+  );
+  --fs-control-accent-border: rgba(118, 212, 255, 0.34);
+  --fs-type-active-gradient: linear-gradient(
+    106deg,
+    rgba(76, 194, 255, 0.23) 0%,
+    rgba(122, 168, 255, 0.15) 50%,
+    rgba(76, 194, 255, 0.2) 100%
+  );
+  --fs-type-active-border: rgba(118, 212, 255, 0.55);
+  --fs-result-selected-gradient: linear-gradient(
+    100deg,
+    rgba(76, 194, 255, 0.24) 0%,
+    rgba(122, 168, 255, 0.16) 45%,
+    rgba(76, 194, 255, 0.21) 100%
+  );
+  --fs-result-selected-border: rgba(118, 212, 255, 0.6);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    106deg,
+    rgba(76, 194, 255, 0.17) 0%,
+    rgba(122, 168, 255, 0.13) 100%
+  );
+  --fs-settings-nav-active-border: rgba(118, 212, 255, 0.28);
 }
 
 /* Linux?KDE Breeze?????? + KDE ??? */
@@ -343,6 +516,34 @@ html[data-theme="linux"] {
   --fs-radius-item: 8px;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.92);
+  /* 主题质感 token：Linux KDE 风格保持清透蓝灰层次。 */
+  --fs-control-accent-gradient: linear-gradient(
+    96deg,
+    rgba(61, 174, 233, 0.1) 0%,
+    rgba(90, 167, 228, 0.08) 56%,
+    rgba(61, 174, 233, 0.1) 100%
+  );
+  --fs-control-accent-border: rgba(61, 174, 233, 0.28);
+  --fs-type-active-gradient: linear-gradient(
+    98deg,
+    rgba(61, 174, 233, 0.18) 0%,
+    rgba(90, 167, 228, 0.12) 50%,
+    rgba(61, 174, 233, 0.16) 100%
+  );
+  --fs-type-active-border: rgba(61, 174, 233, 0.38);
+  --fs-result-selected-gradient: linear-gradient(
+    96deg,
+    rgba(61, 174, 233, 0.2) 0%,
+    rgba(90, 167, 228, 0.12) 44%,
+    rgba(61, 174, 233, 0.18) 100%
+  );
+  --fs-result-selected-border: rgba(61, 174, 233, 0.46);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    100deg,
+    rgba(61, 174, 233, 0.14) 0%,
+    rgba(90, 167, 228, 0.1) 100%
+  );
+  --fs-settings-nav-active-border: rgba(61, 174, 233, 0.24);
 }
 
 /* macOS?????? + ???? + ???? */
@@ -391,6 +592,34 @@ html[data-theme="mac"] {
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(0) brightness(0.92);
+  /* 主题质感 token：mac 风格使用柔和蓝玻璃渐变。 */
+  --fs-control-accent-gradient: linear-gradient(
+    96deg,
+    rgba(10, 132, 255, 0.12) 0%,
+    rgba(108, 170, 255, 0.08) 56%,
+    rgba(10, 132, 255, 0.11) 100%
+  );
+  --fs-control-accent-border: rgba(10, 132, 255, 0.28);
+  --fs-type-active-gradient: linear-gradient(
+    98deg,
+    rgba(10, 132, 255, 0.19) 0%,
+    rgba(108, 170, 255, 0.12) 50%,
+    rgba(10, 132, 255, 0.17) 100%
+  );
+  --fs-type-active-border: rgba(10, 132, 255, 0.38);
+  --fs-result-selected-gradient: linear-gradient(
+    96deg,
+    rgba(10, 132, 255, 0.2) 0%,
+    rgba(108, 170, 255, 0.12) 44%,
+    rgba(10, 132, 255, 0.18) 100%
+  );
+  --fs-result-selected-border: rgba(10, 132, 255, 0.44);
+  --fs-settings-nav-active-gradient: linear-gradient(
+    100deg,
+    rgba(10, 132, 255, 0.15) 0%,
+    rgba(108, 170, 255, 0.1) 100%
+  );
+  --fs-settings-nav-active-border: rgba(10, 132, 255, 0.24);
 }
 
 html:is(
@@ -3596,9 +3825,14 @@ html:is(
   /* box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft)); */
 }
 
-.type-select-btn {
+/* 类型筛选按钮/下拉输入统一使用主题渐变 token，确保各主题都有可识别的特色层次。 */
+.type-select-btn,
+.settings-type-select .type-select-btn,
+.select-input {
   border-radius: var(--fs-radius-control, 10px);
-  background: var(--fs-control-bg, var(--fs-surface-2));
+  background-color: var(--fs-control-bg, var(--fs-surface-2));
+  background-image: var(--fs-control-accent-gradient, none);
+  border-color: var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border)));
 }
 
 .type-select-menu {
@@ -3611,6 +3845,12 @@ html:is(
   background: var(--fs-item-hover, var(--fs-surface-2));
 }
 
+/* 类型菜单激活项使用主题 token，避免仅 Chrome 有“高亮渐变卡片感”。 */
+.type-select-item.active {
+  background: var(--fs-type-active-gradient, var(--fs-accent-soft));
+  border-color: var(--fs-type-active-border, var(--fs-selected-border, var(--fs-accent)));
+}
+
 .results li {
   border-radius: var(--fs-radius-item, 10px);
 }
@@ -3620,8 +3860,9 @@ html:is(
 }
 
 .results li.selected {
-  background: var(--fs-selected-bg, var(--fs-accent-soft));
-  border-color: var(--fs-selected-border, var(--fs-accent));
+  /* 结果选中项统一使用主题渐变 token，保证每个主题都有类似 Chrome 的层次背景。 */
+  background: var(--fs-result-selected-gradient, var(--fs-selected-bg, var(--fs-accent-soft)));
+  border-color: var(--fs-result-selected-border, var(--fs-selected-border, var(--fs-accent)));
   box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
 }
 
@@ -3643,10 +3884,27 @@ html:is(
   background: var(--fs-control-hover, var(--fs-surface));
 }
 
+/* select 输入在通用 hover 规则后恢复主题渐变，避免 background 简写把渐变层清空。 */
+.select-input,
+.select-input:hover {
+  background-image: var(--fs-control-accent-gradient, none);
+  border-color: var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border)));
+}
+
 .settings-group {
   border-radius: var(--fs-radius-panel, 12px);
   background: var(--fs-panel-bg, rgba(11, 20, 36, 0.62));
   border-color: var(--fs-border);
+}
+
+/* 设置左侧导航激活态同步走主题 token，形成与结果项一致的“选中质感”。 */
+.settings-nav-item.active,
+.settings-nav-account-card.active {
+  background: var(
+    --fs-settings-nav-active-gradient,
+    color-mix(in srgb, var(--fs-nav-active-accent, var(--fs-accent)) 11%, transparent)
+  );
+  border-color: var(--fs-settings-nav-active-border, transparent);
 }
 
 html[data-theme="steam"] .container,
@@ -3685,42 +3943,6 @@ html[data-theme="mac"] .container,
 html[data-theme="mac"] .settings-container {
   backdrop-filter: blur(22px) saturate(138%);
   -webkit-backdrop-filter: blur(22px) saturate(138%);
-}
-
-/* Chrome �����ɫ������������������������Ӧ��Ʒ�Ʒ�� */
-html[data-theme="chrome"] .type-select-btn,
-html[data-theme="chrome"] .settings-type-select .type-select-btn,
-html[data-theme="chrome"] .select-input {
-  background-image: linear-gradient(
-    95deg,
-    rgba(26, 115, 232, 0.08) 0%,
-    rgba(234, 67, 53, 0.06) 36%,
-    rgba(251, 188, 5, 0.06) 68%,
-    rgba(52, 168, 83, 0.08) 100%
-  );
-  border-color: rgba(26, 115, 232, 0.26);
-}
-
-html[data-theme="chrome"] .type-select-item.active {
-  background: linear-gradient(
-    92deg,
-    rgba(26, 115, 232, 0.16) 0%,
-    rgba(234, 67, 53, 0.1) 35%,
-    rgba(251, 188, 5, 0.1) 67%,
-    rgba(52, 168, 83, 0.14) 100%
-  );
-  border-color: rgba(26, 115, 232, 0.34);
-}
-
-html[data-theme="chrome"] .results li.selected {
-  background: linear-gradient(
-    96deg,
-    rgba(26, 115, 232, 0.16) 0%,
-    rgba(234, 67, 53, 0.1) 34%,
-    rgba(251, 188, 5, 0.1) 67%,
-    rgba(52, 168, 83, 0.14) 100%
-  );
-  border-color: rgba(26, 115, 232, 0.42);
 }
 
 /* ===== 搜索置顶 + 背景图可读性增强 ===== */

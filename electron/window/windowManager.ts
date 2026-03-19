@@ -25,6 +25,7 @@ import { refreshBootstrapHistory } from '../app/bootstrapState';
 let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let searchReadyToShow = false;
+let searchViewWarmedUp = false;
 let pendingSearchShow = false;
 let searchShowFallbackTimer: NodeJS.Timeout | null = null;
 
@@ -37,6 +38,10 @@ let searchAllowBlurHide = false;
 let searchVisibleAt = 0;
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
+const SEARCH_SHOW_FALLBACK_TIMEOUT_MS = 1200;
+const SEARCH_BLUR_IGNORE_AFTER_SHOW_MS = 350;
+const SEARCH_MIN_VISIBLE_BEFORE_BLUR_HIDE_MS = 220;
+const SEARCH_BLUR_HIDE_DELAY_MS = 80;
 
 function isRectVisibleOnAnyDisplay(rect: Electron.Rectangle) {
   const displays = screen.getAllDisplays();
@@ -66,6 +71,10 @@ function clearSearchShowFallbackTimer() {
 function showSearchWindowIfReady() {
   if (!pendingSearchShow) return;
   if (!searchReadyToShow) return;
+  showSearchWindowImmediately();
+}
+
+function showSearchWindowImmediately() {
   if (!win || win.isDestroyed()) return;
   pendingSearchShow = false;
   clearSearchShowFallbackTimer();
@@ -78,20 +87,20 @@ function showSearchWindowIfReady() {
 }
 
 function prepareSearchShowFallback() {
-  // 首次呼出或重置时等待渲染就绪，避免白屏；兜底超时保证可见性。
+  // 冷路径兜底：首次加载或页面重载时，避免握手异常导致窗口一直不可见。
   clearSearchShowFallbackTimer();
   searchShowFallbackTimer = setTimeout(() => {
     if (!pendingSearchShow) return;
     searchReadyToShow = true;
     showSearchWindowIfReady();
-  }, 1200);
+  }, SEARCH_SHOW_FALLBACK_TIMEOUT_MS);
 }
 
 export function createWindow() {
   const config = loadConfig();
   const bounds = config?.bounds;
   const settings = loadSettings();
-  // 窗口初始尺寸已抽离：便于你统一调整首次展示的高度与默认宽度
+  // 窗口初始尺寸已抽离：便于统一调整首次展示高度与默认宽度。
   const width =
     typeof settings?.searchWindowInitialWidth === 'number'
       ? settings.searchWindowInitialWidth
@@ -116,16 +125,18 @@ export function createWindow() {
     roundedCorners: true,
     hasShadow: true,
     skipTaskbar: true,
-    // 搜索窗口改为系统原生缩放：移除渲染层手动宽度拖拽后，由 Electron 边框接管。
+    // 搜索窗口保留系统原生缩放能力，兼顾性能与交互一致性。
     resizable: true,
     minWidth: 450,
     maxWidth: 1000,
-    // 无边框模式下启用厚边框命中区域，保留原生拖拽和缩放手感。
+    // 无边框模式下启用原生边框命中区域，保留系统级拖拽与缩放手感。
     thickFrame: true,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
+    // 搜索面板保持置顶，避免被其它窗口遮挡导致“已呼出但不可见”的错觉。
     alwaysOnTop: true,
+    // 允许首次点击直接聚焦窗口，减少首次交互额外点击。
     acceptFirstMouse: true,
     icon: path.join(process.env.VITE_PUBLIC || '', 'tray.png'),
     webPreferences: {
@@ -134,7 +145,7 @@ export function createWindow() {
   });
 
   if (!app.isPackaged) {
-    // 开发环境快捷键：F12 打开/关闭 DevTools，避免影响生产环境
+    // 开发环境快捷键：F12 打开或关闭 DevTools，生产环境不生效。
     win.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       if (input.key !== 'F12') return;
@@ -151,12 +162,15 @@ export function createWindow() {
   });
   win.on('closed', () => {
     clearSearchShowFallbackTimer();
+    searchReadyToShow = false;
+    searchViewWarmedUp = false;
     win = null;
   });
 
   win.webContents.on('did-start-loading', () => {
-    // 页面重新加载时重置渲染就绪标记，避免提前显示导致白屏闪现。
+    // 仅在页面真实重载时重置握手状态，避免后续正常呼出重复走冷路径。
     searchReadyToShow = false;
+    searchViewWarmedUp = false;
   });
 
   win.on('focus', () => {
@@ -167,11 +181,11 @@ export function createWindow() {
     }
   });
 
-  // FLAG 点击空白处（窗口失去焦点）时隐藏
+  // 面板失焦时延迟隐藏：保留防误关保护，同时缩短关闭体感延迟。
   win.on('blur', () => {
     if (!searchAllowBlurHide) return;
     if (Date.now() < ignoreSearchBlurUntil) return;
-    if (Date.now() - searchVisibleAt < 500) return;
+    if (Date.now() - searchVisibleAt < SEARCH_MIN_VISIBLE_BEFORE_BLUR_HIDE_MS) return;
     if (!searchWasFocusedSinceShow) return;
     if (searchHideTimer) clearTimeout(searchHideTimer);
     searchHideTimer = setTimeout(() => {
@@ -185,7 +199,7 @@ export function createWindow() {
         } catch {}
         win.hide();
       }
-    }, 140);
+    }, SEARCH_BLUR_HIDE_DELAY_MS);
   });
 
   win.removeMenu();
@@ -198,7 +212,7 @@ export function createWindow() {
 export function createSettingsWindow() {
   const config = loadSettingsWindowConfig();
   const bounds = config?.bounds;
-  // 设置窗口初始尺寸已抽离：便于你统一调整设置面板的默认大小与最小限制
+  // 设置窗口初始尺寸已抽离：便于统一调整默认大小与最小限制。
   const width = SETTINGS_WINDOW_INITIAL_WIDTH;
   const height = SETTINGS_WINDOW_INITIAL_HEIGHT;
 
@@ -215,6 +229,7 @@ export function createSettingsWindow() {
     roundedCorners: true,
     hasShadow: true,
     skipTaskbar: false,
+    // 设置窗口允许调整大小，并通过最小宽高避免布局错乱。
     resizable: true,
     minWidth: SETTINGS_WINDOW_MIN_WIDTH,
     minHeight: SETTINGS_WINDOW_MIN_HEIGHT,
@@ -227,7 +242,7 @@ export function createSettingsWindow() {
   });
 
   if (!app.isPackaged) {
-    // 开发环境快捷键：F12 打开/关闭 DevTools，避免影响生产环境
+    // 开发环境快捷键：F12 打开或关闭 DevTools，生产环境不生效。
     settingsWin.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       if (input.key !== 'F12') return;
@@ -286,7 +301,7 @@ export function openSearchWindow() {
   );
   const initH = 76;
   const sendOpenEvent = () => {
-    // 首次呼出时渲染进程可能还在加载：这里统一在“实际 show 的时刻”发送事件，避免丢事件导致空白/状态不一致
+    // 打开事件统一由主进程发出，保证渲染状态与窗口生命周期一致。
     if (!win || win.isDestroyed()) return;
     try {
       if (settings.keepStateOnClose) win.webContents.send('search-window-opened');
@@ -294,8 +309,8 @@ export function openSearchWindow() {
     } catch {}
   };
   const showWhenReady = () => {
-    // dev 首次冷启动时 Vite 页面可能未完成首帧：如果此时 show，会只看到 backgroundColor 纯色底
-    // 这里等待 did-finish-load 后再 show，避免短时间“空白面板”体验；如果已加载则立即显示
+    // 冷路径下等待页面首帧完成后再显示，避免首次渲染白屏。
+    // 若页面已完成加载则立即进入显示流程。
     if (!win || win.isDestroyed()) return;
     const wc = win.webContents;
     const doOpen = () => {
@@ -315,7 +330,7 @@ export function openSearchWindow() {
       return;
     }
 
-    // 未开启“保留运行状态”时，每次呼出面板都应用“初始宽高”配置（保留状态则尊重用户上次调整）
+    // 非“保留状态”模式下，每次呼出恢复初始宽高，避免遗留上次窗口尺寸。
     if (!settings.keepStateOnClose) {
       try {
         win.setContentSize(Math.round(initW), Math.round(initH));
@@ -324,27 +339,39 @@ export function openSearchWindow() {
     fileIndex.setSearchWindowVisible(true);
     searchWasFocusedSinceShow = false;
     searchAllowBlurHide = false;
-    // 先等待渲染就绪再显示，避免首屏白屏闪现。
-    pendingSearchShow = true;
-    searchReadyToShow = false;
-    prepareSearchShowFallback();
+    const wc = win.webContents;
+    const isRendererLoading = typeof wc?.isLoading === 'function' && wc.isLoading();
+    const canUseHotPath = searchViewWarmedUp && !isRendererLoading;
+    // 已预热窗口走热路径秒开；未预热或重载中则继续走冷路径。
+    if (canUseHotPath) {
+      pendingSearchShow = false;
+      clearSearchShowFallbackTimer();
+    } else {
+      pendingSearchShow = true;
+      if (!searchReadyToShow) prepareSearchShowFallback();
+    }
     if (searchHideTimer) {
       clearTimeout(searchHideTimer);
       searchHideTimer = null;
     }
-    ignoreSearchBlurUntil = Date.now() + 900;
-    showWhenReady();
+    ignoreSearchBlurUntil = Date.now() + SEARCH_BLUR_IGNORE_AFTER_SHOW_MS;
+    if (canUseHotPath) {
+      sendOpenEvent();
+      showSearchWindowImmediately();
+    } else {
+      showWhenReady();
+    }
     void reconcileRecentIndex().catch(() => {});
     return;
   }
   win = null;
   createWindow();
   fileIndex.setSearchWindowVisible(true);
-  // 新建窗口同样等待渲染就绪，兜底超时保证可见性。
+  // 新建窗口默认走冷路径，等待渲染握手并保留超时兜底。
   pendingSearchShow = true;
   searchReadyToShow = false;
   prepareSearchShowFallback();
-  // 新建窗口时同样等页面首帧准备好再 show 与发事件，避免首次呼出空白
+  // 首次冷启动等待首帧就绪后再显示，避免空白闪烁。
   showWhenReady();
 }
 
@@ -394,7 +421,7 @@ export async function handleQuickItemPicked(targetPath: string) {
     const ext = path.extname(targetPath).toLowerCase();
     const name = path.basename(targetPath, ext) || path.basename(targetPath) || '快捷项';
     recordHistoryItem({ name, path: targetPath, type: 'file' });
-    // 快捷项命中后同步刷新历史快照，避免下一次呼出面板时还看到旧历史。
+    // 快捷项命中后同步刷新历史快照，避免下次呼出仍看到旧历史。
     const results = await refreshBootstrapHistory();
     win?.webContents.send('history-updated', { results });
     settingsWin?.webContents.send('history-updated', { results });
@@ -422,9 +449,12 @@ export function setSearchAllowBlurHide(allow: boolean) {
 }
 
 export function setSearchViewReady(ready: boolean) {
-  // 渲染就绪后再显示窗口，避免首屏白屏闪现。
+  // 渲染层握手完成后标记为已预热，后续呼出可直接走热路径。
   searchReadyToShow = ready;
-  if (ready) showSearchWindowIfReady();
+  if (ready) {
+    searchViewWarmedUp = true;
+    showSearchWindowIfReady();
+  }
 }
 
 export function setSettingsReadyToShow(ready: boolean) {
@@ -440,6 +470,8 @@ export function clearSettingsShowFallbackTimer() {
 
 export function closeAllWindows() {
   win = null;
+  searchReadyToShow = false;
+  searchViewWarmedUp = false;
   pendingSearchShow = false;
   clearSearchShowFallbackTimer();
 }
