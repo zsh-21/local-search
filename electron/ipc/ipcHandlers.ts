@@ -215,26 +215,50 @@ export function registerIpcHandlers() {
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
-  ipcMain.handle('resize-window', (event, height: number, width?: number) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w) return;
-    const settings = loadSettings();
-    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-    const [currentWidth] = w.getContentSize();
-    const maxH = typeof settings?.searchWindowMaxHeight === 'number' ? settings.searchWindowMaxHeight : 760;
-    const nextWidth = clamp(Math.round(width ?? currentWidth), 450, 1000);
-    const displayMaxH = (() => {
-      try {
-        const d = screen.getDisplayMatching(w.getBounds());
-        return d?.workAreaSize?.height;
-      } catch {
-        return undefined;
-      }
-    })();
-    const upper = Math.max(200, Math.round(Math.min(Math.round(maxH), displayMaxH ?? Math.round(maxH))));
-    const nextHeight = clamp(Math.round(height), 76, upper);
-    w.setContentSize(nextWidth, nextHeight);
-  });
+  ipcMain.handle(
+    'resize-window',
+    (
+      event,
+      height: number,
+      width?: number,
+      limits?: { minHeight?: number; maxHeight?: number },
+    ) => {
+      const w = BrowserWindow.fromWebContents(event.sender);
+      if (!w) return;
+      const settings = loadSettings();
+      const clamp = (v: number, min: number, max: number) =>
+        Math.min(max, Math.max(min, v));
+      const [currentWidth] = w.getContentSize();
+      const maxH =
+        typeof settings?.searchWindowMaxHeight === 'number'
+          ? settings.searchWindowMaxHeight
+          : 760;
+      const nextWidth = clamp(Math.round(width ?? currentWidth), 450, 1000);
+      const displayMaxH = (() => {
+        try {
+          const d = screen.getDisplayMatching(w.getBounds());
+          return d?.workAreaSize?.height;
+        } catch {
+          return undefined;
+        }
+      })();
+      const upper = Math.max(
+        200,
+        Math.round(Math.min(Math.round(maxH), displayMaxH ?? Math.round(maxH))),
+      );
+      // 高度上下限由渲染层实时提供，主进程统一兜底 clamp，确保原生拖拽也受内容边界约束。
+      const requestedMaxHeight =
+        typeof limits?.maxHeight === 'number' ? Math.round(limits.maxHeight) : upper;
+      const boundedMaxHeight = clamp(requestedMaxHeight, 76, upper);
+      const requestedMinHeight =
+        typeof limits?.minHeight === 'number' ? Math.round(limits.minHeight) : 76;
+      const boundedMinHeight = clamp(requestedMinHeight, 76, boundedMaxHeight);
+      w.setMinimumSize(450, boundedMinHeight);
+      w.setMaximumSize(1000, boundedMaxHeight);
+      const nextHeight = clamp(Math.round(height), boundedMinHeight, boundedMaxHeight);
+      w.setContentSize(nextWidth, nextHeight);
+    },
+  );
 
   ipcMain.handle('open-settings-window', () => {
     showSettingsWindow();

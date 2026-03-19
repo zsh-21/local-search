@@ -841,7 +841,7 @@ export function SearchViewImpl() {
           aria-label={pinButtonAriaLabel}
           title={pinButtonTitle}
         >
-          {c.isPanelPinned ? <IconPin size={18} /> : <IconPinOff size={18} />}
+          {c.isPanelPinned ? <IconPin size={25} /> : <IconPinOff size={25} />}
         </button>
 
         {/* <div className="drag-icon" title="按住拖拽移动" /> */}

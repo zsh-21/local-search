@@ -21,5 +21,6 @@ body,
 	height: 100%;
 	margin: 0;
 	overflow: hidden;
-	background: var(--fs-bg, #0f172a);
+	/* 根节点背景优先跟随窗口背景变量，避免窗口高度快速变化时出现纯黑底闪烁。 */
+	background: var(--fs-window-bg, var(--fs-bg, #0f172a));
 }

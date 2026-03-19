@@ -299,7 +299,12 @@ export function useSearchController() {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 窗口高度自适应：减少高频 resize 带来的抖动与重复调用。
-  const lastResizeHeightRef = useRef(0);
+  // 记录上一次发送到主进程的高度与边界，避免高频重复 IPC 导致抖动。
+  const lastResizePayloadRef = useRef<null | {
+    height: number;
+    minHeight: number;
+    maxHeight: number;
+  }>(null);
   const resizeRafRef = useRef<number | null>(null);
   const searchingIndicatorTimerRef = useRef<number | null>(null);
   // 搜索请求防抖与竞态控制依赖的引用状态。
@@ -325,29 +330,139 @@ export function useSearchController() {
       const c = containerRef.current;
       if (!c) return;
 
+      // 高度计算统一使用真实文档内容高度，避免把当前窗口高度误判为内容高度。
+      const htmlEl = document.documentElement;
+      const bodyEl = document.body;
       const containerRect = c.getBoundingClientRect();
-      let nextHeight = Math.ceil(Math.max(containerRect.height, c.scrollHeight));
+      const docHeight = Math.max(htmlEl?.scrollHeight ?? 0, bodyEl?.scrollHeight ?? 0);
+      // 以容器滚动高度为主，文档高度仅作为兜底，避免窗口被手动拉大时反向污染内容高度判断。
+      let contentHeight = Math.ceil(c.scrollHeight > 0 ? c.scrollHeight : docHeight);
       const shouldIncludeMenu = opts?.includeTypeMenu ?? typeMenuOpen;
       const menuEl = shouldIncludeMenu ? typeMenuRef.current : null;
       if (menuEl) {
         const menuRect = menuEl.getBoundingClientRect();
         const needed = Math.ceil(menuRect.bottom - containerRect.top + 10);
-        nextHeight = Math.max(nextHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
+        contentHeight = Math.max(contentHeight, needed, TYPE_MENU_MIN_LIST_SPACE);
       }
 
-      nextHeight = Math.max(nextHeight, SEARCH_WINDOW_MIN_HEIGHT);
-      if (nextHeight !== lastResizeHeightRef.current) {
-        lastResizeHeightRef.current = nextHeight;
-        window.ipcRenderer?.invoke("resize-window", nextHeight);
+      const clamp = (v: number, min: number, max: number) =>
+        Math.min(max, Math.max(min, v));
+      const itemHeight = settings.compactMode
+        ? SEARCH_ITEM_HEIGHT_COMPACT
+        : SEARCH_ITEM_HEIGHT_NORMAL;
+      const deviceMaxHeight = Math.floor((window.screen as any)?.availHeight || 0);
+      const settingMaxHeight =
+        typeof settings.searchWindowMaxHeight === "number"
+          ? settings.searchWindowMaxHeight
+          : DEFAULT_SETTINGS.searchWindowMaxHeight;
+      const hardUpper = Math.max(
+        SEARCH_WINDOW_MIN_HEIGHT,
+        Math.round(
+          Math.min(
+            settingMaxHeight,
+            deviceMaxHeight > 0 ? deviceMaxHeight : settingMaxHeight,
+          ),
+        ),
+      );
+      const maxListHeight = Math.max(
+        SEARCH_LIST_MIN_HEIGHT,
+        Math.round(hardUpper) -
+          SEARCH_WINDOW_TOP_BAR_HEIGHT -
+          SEARCH_WINDOW_BOTTOM_BAR_HEIGHT,
+      );
+      const hasResults = results.length > 0;
+      const renderedListHeight = hasResults
+        ? Math.max(itemHeight, Math.min(results.length * itemHeight, maxListHeight))
+        : 0;
+
+      const resultsEl = c.querySelector(".results") as HTMLElement | null;
+      const searchBoxEl = c.querySelector(".search-box") as HTMLElement | null;
+      const statusEl = c.querySelector(".status") as HTMLElement | null;
+      const anchorEl = statusEl ?? searchBoxEl;
+
+      // 无结果时最小高度只保留搜索区域；若存在空态区，需要从总高度中扣除结果容器高度。
+      let minHeightBySearchArea = SEARCH_WINDOW_MIN_HEIGHT;
+      if (resultsEl) {
+        const resultsRect = resultsEl.getBoundingClientRect();
+        minHeightBySearchArea = Math.max(
+          SEARCH_WINDOW_MIN_HEIGHT,
+          Math.ceil(contentHeight - Math.max(0, resultsRect.height)),
+        );
+      } else if (anchorEl) {
+        const anchorRect = anchorEl.getBoundingClientRect();
+        minHeightBySearchArea = Math.max(
+          SEARCH_WINDOW_MIN_HEIGHT,
+          Math.ceil(anchorRect.bottom - containerRect.top),
+        );
       }
+
+      // 有结果时最小高度至少展示 1 条结果 + 底部信息；无结果时退化为搜索区域高度。
+      const minHeightByOneResult = hasResults
+        ? Math.max(
+            SEARCH_WINDOW_MIN_HEIGHT,
+            Math.ceil(contentHeight - renderedListHeight + itemHeight),
+          )
+        : minHeightBySearchArea;
+
+      let boundedMaxHeight = clamp(
+        Math.ceil(contentHeight),
+        SEARCH_WINDOW_MIN_HEIGHT,
+        hardUpper,
+      );
+      let boundedMinHeight = clamp(
+        Math.ceil(minHeightByOneResult),
+        SEARCH_WINDOW_MIN_HEIGHT,
+        boundedMaxHeight,
+      );
+
+      if (menuEl) {
+        const menuRect = menuEl.getBoundingClientRect();
+        const menuNeeded = clamp(
+          Math.ceil(menuRect.bottom - containerRect.top + 10),
+          SEARCH_WINDOW_MIN_HEIGHT,
+          hardUpper,
+        );
+        boundedMaxHeight = Math.max(boundedMaxHeight, menuNeeded);
+        boundedMinHeight = Math.min(
+          boundedMaxHeight,
+          Math.max(boundedMinHeight, menuNeeded),
+        );
+      }
+
+      const nextHeight = clamp(
+        Math.ceil(contentHeight),
+        boundedMinHeight,
+        boundedMaxHeight,
+      );
+      const nextPayload = {
+        height: nextHeight,
+        minHeight: boundedMinHeight,
+        maxHeight: boundedMaxHeight,
+      };
+      const prevPayload = lastResizePayloadRef.current;
+      if (
+        prevPayload &&
+        prevPayload.height === nextPayload.height &&
+        prevPayload.minHeight === nextPayload.minHeight &&
+        prevPayload.maxHeight === nextPayload.maxHeight
+      ) {
+        return;
+      }
+      lastResizePayloadRef.current = nextPayload;
+      window.ipcRenderer?.invoke("resize-window", nextHeight, undefined, {
+        minHeight: boundedMinHeight,
+        maxHeight: boundedMaxHeight,
+      });
     },
-    [typeMenuOpen],
+    [results.length, settings.compactMode, settings.searchWindowMaxHeight, typeMenuOpen],
   );
 
   const syncWindowHeight = useCallback(
     (opts?: { includeTypeMenu?: boolean }) => {
-      // 鍏堝悓姝ュ綋鍓嶅抚锛岄伩鍏嶇獥鍙ｅ眰鍜屽唴瀹瑰眰鍑虹幇鐭殏楂樺害閿欎綅銆?      resizeWindowToContent(opts);
-      // 涓嬩竴甯у鏍镐竴娆★紝瑕嗙洊铏氭嫙鍒楄〃涓庡紓姝ユ覆鏌撳甫鏉ョ殑寤惰繜楂樺害鍙樺寲銆?      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
+      // 先在当前帧同步一次，避免窗口层与 HTML 内容层出现短暂高度错位。
+      resizeWindowToContent(opts);
+      // 下一帧再复核一次，覆盖虚拟列表与异步渲染带来的延迟高度变化。
+      if (resizeRafRef.current != null) cancelAnimationFrame(resizeRafRef.current);
       resizeRafRef.current = requestAnimationFrame(() => {
         resizeWindowToContent(opts);
       });
@@ -727,7 +842,8 @@ export function useSearchController() {
     // 涓昏繘绋嬮€氱煡鈥滈渶瑕侀噸缃悳绱㈤〉鈥濇椂瑙﹀彂锛氭寜鐢ㄦ埛璁剧疆鍐冲畾鏄惁淇濈暀涓婃鐘舵€?
     const handleReset = async () => {
       void refreshUserStatusSilently();
-      lastResizeHeightRef.current = 0;
+      // 面板生命周期切换后重置去重缓存，确保下次显示会强制同步真实高度与边界。
+      lastResizePayloadRef.current = null;
       if (settings.keepStateOnClose) {
         setTimeout(() => {
           inputRef.current?.focus();
@@ -754,7 +870,8 @@ export function useSearchController() {
   useEffect(() => {
     const handler = () => {
       setTypeMenuOpen(false);
-      lastResizeHeightRef.current = 0;
+      // 隐藏窗口时重置去重缓存，避免下次打开沿用旧的高度边界。
+      lastResizePayloadRef.current = null;
     };
     window.ipcRenderer?.on("search-window-hidden", handler as any);
     return () => {
@@ -767,7 +884,8 @@ export function useSearchController() {
       void refreshUserStatusSilently();
       inputRef.current?.focus();
       notifySearchViewReady();
-      lastResizeHeightRef.current = 0;
+      // 重新打开窗口前重置去重缓存，确保首帧高度按当前内容重新计算。
+      lastResizePayloadRef.current = null;
       const queryMode = parseCalcMode(queryRef.current);
       const p = queryMode.isCalcMode
         ? Promise.resolve(applyCalcResults(calcItemRef.current, selectedPathRef.current))
