@@ -1481,8 +1481,28 @@ export function useSearchController() {
     [handleKeyDownCore],
   );
 
+  // 统一搜索清空入口：复用给快捷键与清空按钮，保证行为一致且不改变当前搜索类型。
+  const clearSearchInput = useCallback(() => {
+    setQueryAndInputValue("");
+    setGhostInputValue("");
+    setSelectedIndex(0);
+    setSelectedActionIndex(-1);
+    setTypeMenuOpen(false);
+    inputRef.current?.focus();
+  }, [setQueryAndInputValue]);
+
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && (e.key === "l" || e.key === "k")) {
+    const lowerKey = e.key.toLowerCase();
+
+    // Ctrl+L：清空搜索内容并保留焦点；Ctrl+K：仅聚焦输入框，保持原语义不变。
+    if (e.ctrlKey && lowerKey === "l") {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSearchInput();
+      return;
+    }
+
+    if (e.ctrlKey && lowerKey === "k") {
       e.preventDefault();
       e.stopPropagation();
       inputRef.current?.focus();
@@ -1716,6 +1736,7 @@ export function useSearchController() {
     calculatorIconDataUrl,
     selectedActionId,
     clearActionSelection,
+    clearSearchInput,
     clearGhostInputValue,
   };
 }

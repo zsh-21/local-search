@@ -394,16 +394,18 @@ export function SearchViewImpl() {
       >
         <li
           className={`${isSelected ? "selected" : ""} ${c.hoveredKey === normalizeResultKey(item) ? "hovered" : ""}`}
-          title={displayName}
-          data-title-address={tooltipAddress}
-          data-title-delay="500"
-          data-title-no-scroll="true"
         >
           <span className="result-index">{index + 1}</span>
           {renderResultIcon(item, isImg)}
           <div className="result-meta">
             <div className="result-name-row">
-              <span className="app-name">
+              {/* 结果提示仅绑定在名称文本上，避免悬浮整项时触发提示。 */}
+              <span
+                className="app-name"
+                title={displayName}
+                data-title-delay="500"
+                data-title-no-scroll="true"
+              >
                 {renderHighlightedText(displayName)}
               </span>
               {badgeText ? (
@@ -412,7 +414,12 @@ export function SearchViewImpl() {
               {isSelected && <span className="shortcut-hint">ENTER</span>}
             </div>
             {showPathLine ? (
-              <span className="app-path">
+              <span
+                className="app-path"
+                title={tooltipAddress}
+                data-title-delay="500"
+                data-title-no-scroll="true"
+              >
                 {renderHighlightedText(item.path)}
               </span>
             ) : null}
@@ -724,10 +731,8 @@ export function SearchViewImpl() {
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
-                c.setQuery("");
-                c.setSelectedIndex(0);
-                c.setTypeMenuOpen(false);
-                c.inputRef.current?.focus();
+                // 清空按钮复用统一清空入口，确保与 Ctrl+L 行为完全一致。
+                c.clearSearchInput();
               }}
               aria-label="清空输入"
               title="清空 (Ctrl+L)"

@@ -5,6 +5,8 @@ type TooltipState = {
   address: string;
   left: number;
   top: number;
+  visible: boolean;
+  token: number;
 };
 
 const ORIGINAL_TITLE_ATTR = "data-fs-original-title";
@@ -26,6 +28,7 @@ export function GlobalTitleTooltip() {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const activeRef = useRef<HTMLElement | null>(null);
   const tooltipStateRef = useRef<TooltipState | null>(null);
+  const tokenRef = useRef(0);
   const showTimerRef = useRef<number | null>(null);
   const scrollSuppressUntilRef = useRef(0);
   const mouseRef = useRef({ x: 0, y: 0 });
@@ -77,12 +80,20 @@ export function GlobalTitleTooltip() {
   const updateTooltipPosition = () => {
     if (!tooltipStateRef.current) return;
     if (!activeRef.current) return;
+    const token = tooltipStateRef.current.token;
+
     clearRaf();
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
-      const { x, y } = mouseRef.current;
-      const next = calcPosition(x, y);
-      setTooltip((prev) => (prev ? { ...prev, ...next } : prev));
+      if (!activeRef.current) return;
+      setTooltip((prev) => {
+        // 仅更新当前激活目标对应的 tooltip，避免虚拟列表复用节点导致串位。
+        if (!prev || prev.token !== token) return prev;
+        const { x, y } = mouseRef.current;
+        const next = calcPosition(x, y);
+        if (prev.left === next.left && prev.top === next.top) return prev;
+        return { ...prev, ...next };
+      });
     });
   };
 
@@ -112,10 +123,13 @@ export function GlobalTitleTooltip() {
       el.removeAttribute("title");
     }
     activeRef.current = el;
+    // 目标切换时重置测量缓存，避免复用上一个 tooltip 尺寸导致首帧跳位。
+    tipSizeRef.current = { w: 0, h: 0 };
 
     const delayRaw = Number.parseInt(el.getAttribute(TITLE_DELAY_ATTR) || "500", 10);
     const delay = immediate ? 0 : Number.isFinite(delayRaw) && delayRaw > 0 ? delayRaw : 0;
     const hideWhileScroll = el.getAttribute(TITLE_NO_SCROLL_ATTR) === "true";
+    const token = ++tokenRef.current;
 
     const show = () => {
       if (activeRef.current !== el) return;
@@ -132,6 +146,9 @@ export function GlobalTitleTooltip() {
         address: rawAddress,
         left: pos.left,
         top: pos.top,
+        // 先定位后显示，消除“从其他位置闪动过来”的视觉过程。
+        visible: false,
+        token,
       });
     };
 
@@ -153,6 +170,7 @@ export function GlobalTitleTooltip() {
       mouseRef.current = { x: e.clientX, y: e.clientY };
       const target = pickTitleTarget(e.target);
       if (!target) return;
+      if (activeRef.current === target) return;
       scheduleTooltipFor(target);
     };
 
@@ -213,8 +231,16 @@ export function GlobalTitleTooltip() {
 
     const rect = el.getBoundingClientRect();
     tipSizeRef.current = { w: rect.width || 0, h: rect.height || 0 };
-    updateTooltipPosition();
-  }, [tooltip?.name, tooltip?.address]);
+    const { x, y } = mouseRef.current;
+    const nextPos = calcPosition(x, y);
+    setTooltip((prev) => {
+      if (!prev || prev.token !== tooltip.token) return prev;
+      if (prev.visible && prev.left === nextPos.left && prev.top === nextPos.top) {
+        return prev;
+      }
+      return { ...prev, left: nextPos.left, top: nextPos.top, visible: true };
+    });
+  }, [tooltip?.name, tooltip?.address, tooltip?.token]);
 
   if (!tooltip) return null;
 
@@ -223,7 +249,7 @@ export function GlobalTitleTooltip() {
       ref={tooltipRef}
       className="fs-title-tooltip"
       data-has-address={tooltip.address ? "true" : "false"}
-      style={{ left: tooltip.left, top: tooltip.top }}
+      style={{ left: tooltip.left, top: tooltip.top, opacity: tooltip.visible ? 1 : 0 }}
     >
       <div className="fs-title-tooltip-name">{tooltip.name}</div>
       {tooltip.address ? <div className="fs-title-tooltip-address">{tooltip.address}</div> : null}
