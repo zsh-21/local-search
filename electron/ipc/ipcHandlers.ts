@@ -236,38 +236,6 @@ export function registerIpcHandlers() {
     w.setContentSize(nextWidth, nextHeight);
   });
 
-  ipcMain.handle('get-window-bounds', (event) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    // 宽度拖拽统一使用“内容区坐标系”，避免 window/content 两套坐标混用导致瞬时错位。
-    return w?.getContentBounds();
-  });
-
-  ipcMain.handle('set-window-bounds', (event, bounds: Partial<Electron.Rectangle>) => {
-    const w = BrowserWindow.fromWebContents(event.sender);
-    if (!w) return;
-    const current = w.getContentBounds();
-    const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-    const next = {
-      x: bounds.x ?? current.x,
-      y: bounds.y ?? current.y,
-      width:
-        typeof bounds.width === 'number'
-          ? clamp(Math.round(bounds.width), 450, 1000)
-          : current.width,
-      height: bounds.height ?? current.height,
-    };
-    // 与当前 bounds 完全一致时跳过，避免拖拽高频阶段产生无效窗口更新。
-    if (
-      next.x === current.x &&
-      next.y === current.y &&
-      next.width === current.width &&
-      next.height === current.height
-    ) {
-      return;
-    }
-    w.setContentBounds(next);
-  });
-
   ipcMain.handle('open-settings-window', () => {
     showSettingsWindow();
   });

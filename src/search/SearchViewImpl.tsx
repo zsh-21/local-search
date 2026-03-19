@@ -608,17 +608,13 @@ export function SearchViewImpl() {
   const pinButtonAriaLabel = c.isPanelPinned
     ? "取消固定搜索面板"
     : "固定搜索面板";
-  const previewStyle =
-    typeof c.resizePreviewWidth === "number" && c.resizePreviewWidth > 0
-      ? { width: `${c.resizePreviewWidth}px` }
-      : undefined;
 
   return (
     <div
       className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""} ${c.settings.compactMode ? "compact" : ""}`}
       ref={c.containerRef}
-      style={previewStyle}
-      onMouseDownCapture={(e) => {
+      // 空白区改为 click 语义隐藏，避免 mousedown 抢占 Electron 原生拖拽起手。
+      onClickCapture={(e) => {
         c.clearActionSelection();
         const target = e.target as HTMLElement | null;
         if (!target) return;
@@ -680,14 +676,6 @@ export function SearchViewImpl() {
           <span className="settings-toast-text">{c.toast.message}</span>
         </div>
       ) : null}
-      <div
-        className="resize-handle left"
-        onMouseDown={(e) => c.startResizing(e, "left")}
-      />
-      <div
-        className="resize-handle right"
-        onMouseDown={(e) => c.startResizing(e, "right")}
-      />
 
       <div className="search-box">
         <div className="search-icon-wrapper">

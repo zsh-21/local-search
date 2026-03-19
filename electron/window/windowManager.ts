@@ -116,7 +116,12 @@ export function createWindow() {
     roundedCorners: true,
     hasShadow: true,
     skipTaskbar: true,
-    resizable: false,
+    // 搜索窗口改为系统原生缩放：移除渲染层手动宽度拖拽后，由 Electron 边框接管。
+    resizable: true,
+    minWidth: 450,
+    maxWidth: 1000,
+    // 无边框模式下启用厚边框命中区域，保留原生拖拽和缩放手感。
+    thickFrame: true,
     maximizable: false,
     minimizable: false,
     fullscreenable: false,

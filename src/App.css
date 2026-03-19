@@ -22,85 +22,6 @@ input {
   outline: none;
 }
 
-/* 搜索窗口拖拽缩放热区：仅用于命中鼠标手势，不展示视觉元素 */
-.resize-handle {
-  position: absolute;
-  background: transparent;
-  -webkit-app-region: no-drag;
-  z-index: 50;
-}
-
-/* 预留：边/角热区的语义类，方便后续扩展不同形态的缩放逻辑 */
-.resize-handle.edge {
-}
-
-.resize-handle.corner {
-}
-
-.resize-handle.top {
-  top: -6px;
-  left: 12px;
-  right: 12px;
-  height: 12px;
-  cursor: ns-resize;
-}
-
-.resize-handle.bottom {
-  bottom: -6px;
-  left: 12px;
-  right: 12px;
-  height: 12px;
-  cursor: ns-resize;
-}
-
-.resize-handle.left {
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 10px;
-  cursor: ew-resize;
-}
-
-.resize-handle.right {
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 10px;
-  cursor: ew-resize;
-}
-
-.resize-handle.tl {
-  left: -6px;
-  top: -6px;
-  width: 18px;
-  height: 18px;
-  cursor: nwse-resize;
-}
-
-.resize-handle.tr {
-  right: -6px;
-  top: -6px;
-  width: 18px;
-  height: 18px;
-  cursor: nesw-resize;
-}
-
-.resize-handle.bl {
-  left: -6px;
-  bottom: -6px;
-  width: 18px;
-  height: 18px;
-  cursor: nesw-resize;
-}
-
-.resize-handle.br {
-  right: -6px;
-  bottom: -6px;
-  width: 18px;
-  height: 18px;
-  cursor: nwse-resize;
-}
-
 /* 主题变量：深�?浅色模式统一从这里派生，组件尽量只使�?CSS 变量 */
 html[data-theme="dark"] {
   --fs-bg: #0b1018;
@@ -2209,7 +2130,7 @@ html:is(
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px;
+  padding: 10px 10px 10px 20px;
   border-radius: 12px;
   background: rgba(var(--fs-surface), 0.5);
   border: 1px solid var(--fs-border);
@@ -3213,7 +3134,7 @@ html:is(
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 12px 0 0 0;
+  padding: 12px;
   background: transparent;
   border-top: 1px solid var(--fs-border);
   -webkit-app-region: no-drag;
@@ -3653,7 +3574,7 @@ html:is(
 }
 
 .settings-container {
-  border-radius: var(--fs-radius-window, 16px);
+  /* border-radius: var(--fs-radius-window, 16px); */
   border-color: var(--fs-window-border, var(--fs-border));
   background: var(--fs-window-bg, var(--fs-bg));
 }
