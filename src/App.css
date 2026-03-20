@@ -2830,6 +2830,39 @@ html:is(
   min-width: 0;
 }
 
+/* 排序标签说明图标：统一 hover/focus 样式，保证可键盘访问 */
+.ranking-label-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ranking-info-btn {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--fs-border);
+  border-radius: 999px;
+  background: var(--fs-surface);
+  color: var(--fs-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.ranking-info-btn:hover,
+.ranking-info-btn:focus-visible {
+  color: var(--fs-accent);
+  border-color: var(--fs-accent-soft);
+  background: var(--fs-surface-2);
+  outline: none;
+}
+
 .fs-ellipsis {
   min-width: 0;
   overflow: hidden;
@@ -2858,6 +2891,28 @@ html:is(
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.1;
+}
+
+/* 说明类 tooltip 使用更宽布局与双行文案，突出“含义 + 例子” */
+.fs-tooltip-pop--info {
+  max-width: 420px;
+  padding: 10px 12px;
+}
+
+.fs-tooltip-pop--info .fs-tooltip-text {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.fs-tooltip-example {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--fs-muted);
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .fs-tooltip-arrow {
@@ -2928,6 +2983,81 @@ html:is(
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 模拟排序预览：展示当前参数下的即时排序结果，不影响真实配置 */
+.ranking-sim-card {
+  margin-top: 10px;
+  border: 1px solid var(--fs-border);
+  border-radius: 10px;
+  background: var(--fs-surface-2);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ranking-sim-title {
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--fs-text);
+}
+
+.ranking-sim-hint {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--fs-muted);
+  line-height: 1.35;
+}
+
+.ranking-sim-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ranking-sim-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto 80px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  background: var(--fs-surface);
+}
+
+.ranking-sim-rank {
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--fs-accent);
+}
+
+.ranking-sim-name {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fs-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-sim-type {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--fs-muted);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+}
+
+.ranking-sim-score {
+  font-family: "Fira Code", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fs-text);
+  text-align: right;
 }
 
 .action-config-order {

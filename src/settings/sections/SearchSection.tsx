@@ -1,9 +1,106 @@
-import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppSettings } from "../../appTypes";
+import { IconInfo } from "../../components/icons/SettingsIcons";
 import { RESULT_ACTION_OPTIONS } from "../../constants/initialValues";
 import { getSearchTypeOptions } from "../../settingsStore";
 import { TypeOrderItem } from "../../TypeOrderItem";
+import { handleNumericStepperKeyDown } from "../numericInputStepper";
+
+type TooltipPayload = {
+  kind: "plain" | "info";
+  text: string;
+  example?: string;
+  left: number;
+  top: number;
+  placement: "top" | "bottom";
+  anchor: { left: number; right: number; top: number; bottom: number };
+  arrowLeft: number;
+};
+
+type RankingSampleType = "app" | "command" | "settings" | "file" | "folder" | "image" | "video";
+
+type RankingPreviewSample = {
+  id: string;
+  name: string;
+  type: RankingSampleType;
+  staticScore: number;
+  count: number;
+  lastUsedHours: number;
+  fileMtimeHours?: number;
+};
+
+const PREVIEW_FREQUENCY_CAP = 80;
+const PREVIEW_SAMPLES: RankingPreviewSample[] = [
+  { id: "app-vscode", name: "Visual Studio Code", type: "app", staticScore: 0.92, count: 26, lastUsedHours: 3 },
+  { id: "app-terminal", name: "Windows Terminal", type: "command", staticScore: 0.73, count: 40, lastUsedHours: 2 },
+  { id: "settings-display", name: "显示设置", type: "settings", staticScore: 0.68, count: 9, lastUsedHours: 8 },
+  { id: "file-spec", name: "project-spec.docx", type: "file", staticScore: 0.87, count: 7, lastUsedHours: 30, fileMtimeHours: 5 },
+  { id: "folder-work", name: "Work Documents", type: "folder", staticScore: 0.62, count: 6, lastUsedHours: 18, fileMtimeHours: 12 },
+  { id: "image-banner", name: "banner-design.png", type: "image", staticScore: 0.56, count: 4, lastUsedHours: 45, fileMtimeHours: 2 },
+  { id: "video-demo", name: "product-demo.mp4", type: "video", staticScore: 0.58, count: 3, lastUsedHours: 60, fileMtimeHours: 1 },
+];
+
+const TYPE_LABEL_MAP: Record<RankingSampleType, string> = {
+  app: "应用",
+  command: "系统命令",
+  settings: "设置",
+  file: "文件",
+  folder: "文件夹",
+  image: "图片",
+  video: "视频",
+};
+
+type RankingSignalKey = keyof AppSettings["searchRanking"]["signalWeights"];
+type RankingFrecencyKey = keyof AppSettings["searchRanking"]["frecency"];
+
+type RankingFieldHelp = {
+  title: string;
+  text: string;
+  example: string;
+};
+
+const RANKING_SIGNAL_HELP: Record<RankingSignalKey, RankingFieldHelp> = {
+  match: {
+    title: "匹配度权重",
+    text: "决定名称匹配信号对总分的影响比例。",
+    example: "例：把匹配权重从 40 提到 60，关键词更精准的结果会更靠前。",
+  },
+  frequency: {
+    title: "频率权重",
+    text: "决定“常用次数”对排序的影响比例。",
+    example: "例：频率权重提高后，打开次数高的应用会排在前面。",
+  },
+  recency: {
+    title: "最近时间权重",
+    text: "决定“最近使用时间”对排序的影响比例。",
+    example: "例：最近权重更高时，刚打开过的文件会更容易顶部出现。",
+  },
+  fileMtime: {
+    title: "文件时间权重",
+    text: "决定文件类结果的“最近修改时间”影响比例。",
+    example: "例：调高后，新近修改的文档会比旧文档更靠前。",
+  },
+};
+
+const RANKING_FRECENCY_HELP: Record<RankingFrecencyKey, RankingFieldHelp> = {
+  decayFactor: {
+    title: "衰减因子",
+    text: "决定最近时间信号的衰减速度，值越大衰减越快。",
+    example: "例：从 0.01 调到 0.03 后，一周前的记录会更快后移。",
+  },
+  frequencyWeight: {
+    title: "频率放大",
+    text: "决定频率信号放大系数，影响高频结果的前移程度。",
+    example: "例：从 1.0 调到 1.8 后，多次点击的结果会更稳定地排在前列。",
+  },
+};
+
+const RANKING_TYPE_PRIORITY_HELP: RankingFieldHelp = {
+  title: "类型优先级",
+  text: "用于调制静态匹配分，值越大同等条件下越容易靠前。",
+  example: "例：把“应用”从 8 提到 10 后，应用结果会整体更靠前。",
+};
 
 // 搜索设置分区：默认类型、自定义类型、列表显示与类型顺序（含会员禁用逻辑）
 export function SearchSection({
@@ -51,14 +148,7 @@ export function SearchSection({
     String(draft.searchWindowMaxHeight),
   );
   const tooltipRef = useRef<HTMLDivElement | null>(null);
-  const [tooltip, setTooltip] = useState<null | {
-    text: string;
-    left: number;
-    top: number;
-    placement: "top" | "bottom";
-    anchor: { left: number; right: number; top: number; bottom: number };
-    arrowLeft: number;
-  }>(null);
+  const [tooltip, setTooltip] = useState<TooltipPayload | null>(null);
 
   useEffect(() => {
     setSearchWindowInitialWidthText(String(draft.searchWindowInitialWidth));
@@ -110,12 +200,27 @@ export function SearchSection({
       if (prev.left === left && prev.top === top && prev.placement === placement && prev.arrowLeft === arrowLeft) return prev;
       return { ...prev, left, top, placement, arrowLeft };
     });
-  }, [tooltip?.text, tooltip?.anchor.left, tooltip?.anchor.right, tooltip?.anchor.top, tooltip?.anchor.bottom, tooltip?.placement]);
+  }, [tooltip?.text, tooltip?.example, tooltip?.anchor.left, tooltip?.anchor.right, tooltip?.anchor.top, tooltip?.anchor.bottom, tooltip?.placement]);
 
   const showTooltipByRect = (text: string, rect: DOMRect) => {
     const placement: "top" | "bottom" = rect.top > (window.innerHeight || 0) * 0.55 ? "top" : "bottom";
     setTooltip({
+      kind: "plain",
       text,
+      left: 12,
+      top: 12,
+      placement,
+      anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+      arrowLeft: 14,
+    });
+  };
+
+  const showInfoTooltipByRect = (text: string, example: string, rect: DOMRect) => {
+    const placement: "top" | "bottom" = rect.top > (window.innerHeight || 0) * 0.55 ? "top" : "bottom";
+    setTooltip({
+      kind: "info",
+      text,
+      example,
       left: 12,
       top: 12,
       placement,
@@ -212,7 +317,8 @@ export function SearchSection({
   };
 
   const ranking = draft.searchRanking;
-  const rankingTypeRows: Array<{ key: keyof AppSettings["searchRanking"]["typePriority"]; label: string }> = [
+  // 仅在设置 UI 隐藏 web/plugin，底层字段与存储结构保持不变以确保兼容旧配置
+  const rankingTypeRows: Array<{ key: Exclude<keyof AppSettings["searchRanking"]["typePriority"], "web" | "plugin">; label: string }> = [
     { key: "app", label: "应用" },
     { key: "command", label: "系统命令" },
     { key: "settings", label: "设置" },
@@ -220,8 +326,6 @@ export function SearchSection({
     { key: "folder", label: "文件夹" },
     { key: "image", label: "图片" },
     { key: "video", label: "视频" },
-    { key: "web", label: "网页（预留）" },
-    { key: "plugin", label: "插件（预留）" },
   ];
 
   const normalizeSignalWeights = (weights: AppSettings["searchRanking"]["signalWeights"]) => {
@@ -297,6 +401,94 @@ export function SearchSection({
       },
     });
   };
+
+  // 统一处理数字输入框的方向键步进与 Enter 提交：保证手输与键盘步进都可用
+  const handleNumberInputKeyDown = (
+    e: Parameters<typeof handleNumericStepperKeyDown>[0],
+    options: Parameters<typeof handleNumericStepperKeyDown>[1],
+  ) => {
+    const handled = handleNumericStepperKeyDown(e, options);
+    if (handled) return;
+    if (e.key === "Enter") {
+      (e.currentTarget as HTMLInputElement).blur();
+    }
+  };
+
+  // 排序项标签统一复用说明图标：同时支持鼠标 hover 与键盘 focus 的提示触达
+  const renderLabelWithInfo = (label: string, help: RankingFieldHelp) => (
+    <span className="ranking-label-wrap">
+      <span>{label}</span>
+      <button
+        type="button"
+        className="ranking-info-btn"
+        aria-label={`${help.title}说明`}
+        onMouseEnter={(e) => showInfoTooltipByRect(help.text, help.example, e.currentTarget.getBoundingClientRect())}
+        onMouseLeave={() => setTooltip(null)}
+        onFocus={(e) => showInfoTooltipByRect(help.text, help.example, e.currentTarget.getBoundingClientRect())}
+        onBlur={() => setTooltip(null)}
+      >
+        <IconInfo size={14} />
+      </button>
+    </span>
+  );
+
+  const rankingPreviewRows = useMemo(() => {
+    // 预览面板使用与主排序一致的加权口径，确保“看见即所得”
+    const weightSum =
+      Math.max(0, Number(ranking.signalWeights.match) || 0) +
+      Math.max(0, Number(ranking.signalWeights.frequency) || 0) +
+      Math.max(0, Number(ranking.signalWeights.recency) || 0) +
+      Math.max(0, Number(ranking.signalWeights.fileMtime) || 0);
+    const normalizedWeights =
+      weightSum > 0
+        ? {
+            match: (Math.max(0, Number(ranking.signalWeights.match) || 0) / weightSum) * 100,
+            frequency: (Math.max(0, Number(ranking.signalWeights.frequency) || 0) / weightSum) * 100,
+            recency: (Math.max(0, Number(ranking.signalWeights.recency) || 0) / weightSum) * 100,
+            fileMtime: (Math.max(0, Number(ranking.signalWeights.fileMtime) || 0) / weightSum) * 100,
+          }
+        : { match: 40, frequency: 30, recency: 20, fileMtime: 10 };
+
+    const decayFactor = Math.min(1, Math.max(0.0001, Number(ranking.frecency.decayFactor) || 0.01));
+    const frequencyWeight = Math.min(10, Math.max(0, Number(ranking.frecency.frequencyWeight) || 0));
+
+    return PREVIEW_SAMPLES.map((item) => {
+      const typePriorityFactor = Math.min(1, Math.max(0.1, (Number(ranking.typePriority[item.type]) || 1) / 10));
+      const staticScore = Math.min(1, Math.max(0, item.staticScore * typePriorityFactor));
+      const frequencyRaw = Math.log(item.count + 1) / Math.log(PREVIEW_FREQUENCY_CAP + 1);
+      const frequencyScore = Math.min(1, Math.max(0, frequencyWeight * frequencyRaw));
+      const recencyScore = Math.exp(-decayFactor * Math.max(0, item.lastUsedHours));
+      const fileMtimeScore =
+        item.type === "file" || item.type === "folder" || item.type === "image" || item.type === "video"
+          ? Math.exp(-decayFactor * Math.max(0, item.fileMtimeHours ?? 0))
+          : 0;
+
+      const finalScore =
+        (normalizedWeights.match / 100) * staticScore +
+        (normalizedWeights.frequency / 100) * frequencyScore +
+        (normalizedWeights.recency / 100) * recencyScore +
+        (normalizedWeights.fileMtime / 100) * fileMtimeScore;
+
+      return {
+        ...item,
+        staticScore,
+        frequencyScore,
+        recencyScore,
+        fileMtimeScore,
+        finalScore,
+      };
+    })
+      .sort((a, b) => {
+        if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
+        if (b.staticScore !== a.staticScore) return b.staticScore - a.staticScore;
+        if (a.name.length !== b.name.length) return a.name.length - b.name.length;
+        return a.name.localeCompare(b.name);
+      })
+      .map((row, index) => ({
+        ...row,
+        rank: index + 1,
+      }));
+  }, [ranking]);
 
   return (
     <div className="settings-content">
@@ -411,9 +603,17 @@ export function SearchSection({
                 setError("");
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  (e.currentTarget as HTMLInputElement).blur();
-                }
+                handleNumberInputKeyDown(e, {
+                  min: 20,
+                  max: 100,
+                  integer: true,
+                  step: 1,
+                  fallbackValue: draft.searchDisplayLimit,
+                  onValueChange: (nextValue) => {
+                    setDraft({ ...draft, searchDisplayLimit: nextValue });
+                    setError("");
+                  },
+                });
               }}
             />
           </div>
@@ -466,9 +666,18 @@ export function SearchSection({
               setSearchWindowInitialWidthText(String(next));
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                (e.currentTarget as HTMLInputElement).blur();
-              }
+              handleNumberInputKeyDown(e, {
+                min: 450,
+                max: 1000,
+                integer: true,
+                step: 1,
+                fallbackValue: draft.searchWindowInitialWidth,
+                onValueChange: (nextValue) => {
+                  setDraft({ ...draft, searchWindowInitialWidth: nextValue });
+                  setSearchWindowInitialWidthText(String(nextValue));
+                  setError("");
+                },
+              });
             }}
           />
         </div>
@@ -489,9 +698,18 @@ export function SearchSection({
               setSearchWindowMaxHeightText(String(next));
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                (e.currentTarget as HTMLInputElement).blur();
-              }
+              handleNumberInputKeyDown(e, {
+                min: 200,
+                max: Math.max(200, Math.floor(window.screen?.availHeight || 0)),
+                integer: true,
+                step: 1,
+                fallbackValue: draft.searchWindowMaxHeight,
+                onValueChange: (nextValue) => {
+                  setDraft({ ...draft, searchWindowMaxHeight: nextValue });
+                  setSearchWindowMaxHeightText(String(nextValue));
+                  setError("");
+                },
+              });
             }}
           />
         </div>
@@ -505,7 +723,7 @@ export function SearchSection({
           调整静态匹配、Frecency 与类型优先级。信号权重保存时会自动归一化到总和 100。
         </div>
         <div className="form-row">
-          <div className="form-label">匹配度权重</div>
+          <div className="form-label">{renderLabelWithInfo("匹配度权重", RANKING_SIGNAL_HELP.match)}</div>
           <input
             type="text"
             className="text-input"
@@ -519,10 +737,24 @@ export function SearchSection({
                 signalWeights: { ...ranking.signalWeights, match: Math.max(0, n) },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.signalWeights.match,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    signalWeights: { ...ranking.signalWeights, match: Math.max(0, nextValue) },
+                  });
+                },
+              })
+            }
           />
         </div>
         <div className="form-row">
-          <div className="form-label">频率权重</div>
+          <div className="form-label">{renderLabelWithInfo("频率权重", RANKING_SIGNAL_HELP.frequency)}</div>
           <input
             type="text"
             className="text-input"
@@ -536,10 +768,24 @@ export function SearchSection({
                 signalWeights: { ...ranking.signalWeights, frequency: Math.max(0, n) },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.signalWeights.frequency,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    signalWeights: { ...ranking.signalWeights, frequency: Math.max(0, nextValue) },
+                  });
+                },
+              })
+            }
           />
         </div>
         <div className="form-row">
-          <div className="form-label">最近时间权重</div>
+          <div className="form-label">{renderLabelWithInfo("最近时间权重", RANKING_SIGNAL_HELP.recency)}</div>
           <input
             type="text"
             className="text-input"
@@ -553,10 +799,24 @@ export function SearchSection({
                 signalWeights: { ...ranking.signalWeights, recency: Math.max(0, n) },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.signalWeights.recency,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    signalWeights: { ...ranking.signalWeights, recency: Math.max(0, nextValue) },
+                  });
+                },
+              })
+            }
           />
         </div>
         <div className="form-row">
-          <div className="form-label">文件时间权重</div>
+          <div className="form-label">{renderLabelWithInfo("文件时间权重", RANKING_SIGNAL_HELP.fileMtime)}</div>
           <input
             type="text"
             className="text-input"
@@ -570,10 +830,24 @@ export function SearchSection({
                 signalWeights: { ...ranking.signalWeights, fileMtime: Math.max(0, n) },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.signalWeights.fileMtime,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    signalWeights: { ...ranking.signalWeights, fileMtime: Math.max(0, nextValue) },
+                  });
+                },
+              })
+            }
           />
         </div>
         <div className="form-row">
-          <div className="form-label">衰减因子</div>
+          <div className="form-label">{renderLabelWithInfo("衰减因子", RANKING_FRECENCY_HELP.decayFactor)}</div>
           <input
             type="text"
             className="text-input"
@@ -587,10 +861,25 @@ export function SearchSection({
                 frecency: { ...ranking.frecency, decayFactor: n },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0.0001,
+                max: 1,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.frecency.decayFactor,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    frecency: { ...ranking.frecency, decayFactor: nextValue },
+                  });
+                },
+              })
+            }
           />
         </div>
         <div className="form-row">
-          <div className="form-label">频率放大</div>
+          <div className="form-label">{renderLabelWithInfo("频率放大", RANKING_FRECENCY_HELP.frequencyWeight)}</div>
           <input
             type="text"
             className="text-input"
@@ -604,9 +893,26 @@ export function SearchSection({
                 frecency: { ...ranking.frecency, frequencyWeight: n },
               });
             }}
+            onKeyDown={(e) =>
+              handleNumberInputKeyDown(e, {
+                min: 0,
+                max: 10,
+                integer: false,
+                step: 0.1,
+                fallbackValue: ranking.frecency.frequencyWeight,
+                onValueChange: (nextValue) => {
+                  updateRanking({
+                    ...ranking,
+                    frecency: { ...ranking.frecency, frequencyWeight: nextValue },
+                  });
+                },
+              })
+            }
           />
         </div>
-        <div className="settings-hint">类型优先级（1-10，数值越大越优先）</div>
+        <div className="settings-hint ranking-type-hint">
+          {renderLabelWithInfo("类型优先级（1-10，数值越大越优先）", RANKING_TYPE_PRIORITY_HELP)}
+        </div>
         <div className="action-config-list">
           {rankingTypeRows.map((row) => (
             <div key={row.key} className="action-config-row checked">
@@ -630,10 +936,42 @@ export function SearchSection({
                       },
                     });
                   }}
+                  onKeyDown={(e) =>
+                    handleNumberInputKeyDown(e, {
+                      min: 1,
+                      max: 10,
+                      integer: true,
+                      step: 1,
+                      fallbackValue: ranking.typePriority[row.key],
+                      onValueChange: (nextValue) => {
+                        updateRanking({
+                          ...ranking,
+                          typePriority: {
+                            ...ranking.typePriority,
+                            [row.key]: nextValue,
+                          },
+                        });
+                      },
+                    })
+                  }
                 />
               </div>
             </div>
           ))}
+        </div>
+        <div className="ranking-sim-card">
+          <div className="ranking-sim-title">模拟列表</div>
+          <div className="ranking-sim-hint">根据当前编辑中的参数实时预览，点击设置底部“确认”后才会真正应用。</div>
+          <div className="ranking-sim-list">
+            {rankingPreviewRows.map((item) => (
+              <div key={item.id} className="ranking-sim-row">
+                <span className="ranking-sim-rank">#{item.rank}</span>
+                <span className="ranking-sim-name">{item.name}</span>
+                <span className="ranking-sim-type">{TYPE_LABEL_MAP[item.type]}</span>
+                <span className="ranking-sim-score">{item.finalScore.toFixed(4)}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="form-row">
           <div className="form-label">恢复默认</div>
@@ -710,7 +1048,7 @@ export function SearchSection({
         ? createPortal(
             <div
               ref={tooltipRef}
-              className="fs-tooltip-pop"
+              className={`fs-tooltip-pop ${tooltip.kind === "info" ? "fs-tooltip-pop--info" : ""}`}
               data-placement={tooltip.placement}
               style={
                 {
@@ -721,6 +1059,9 @@ export function SearchSection({
               }
             >
               <div className="fs-tooltip-text">{tooltip.text}</div>
+              {tooltip.kind === "info" && tooltip.example ? (
+                <div className="fs-tooltip-example">{tooltip.example}</div>
+              ) : null}
               <div className="fs-tooltip-arrow" />
             </div>,
             document.body,

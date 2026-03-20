@@ -91,6 +91,17 @@ export function IconHistory(props: IconProps) {
   );
 }
 
+// 说明提示图标：用于排序参数标签旁的 hover/focus 辅助说明
+export function IconInfo(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 10.2v6.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="7.2" r="1.1" fill="currentColor" />
+    </BaseIcon>
+  );
+}
+
 export function IconPin(props: IconProps) {
   return (
     <BaseIcon {...props} viewBox="0 0 1024 1024">
@@ -107,4 +118,3 @@ export function IconPinOff(props: IconProps) {
     </BaseIcon>
   );
 }
-

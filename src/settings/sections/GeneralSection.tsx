@@ -1,5 +1,6 @@
 import { AppSettings } from "../../appTypes";
 import { IconHistory, IconPower, IconState } from "../../components/icons/SettingsIcons";
+import { handleNumericStepperKeyDown } from "../numericInputStepper";
 
 // 通用分区：统一使用卡片行布局，右侧保持原有开关和输入逻辑。
 export function GeneralSection({
@@ -97,6 +98,20 @@ export function GeneralSection({
                     historyLimit: Number.isFinite(n) ? Math.min(50, Math.max(0, Math.floor(n))) : 5,
                   });
                   setError("");
+                }}
+                onKeyDown={(e) => {
+                  // 历史条数支持方向键步进，同时保留手动输入
+                  handleNumericStepperKeyDown(e, {
+                    min: 0,
+                    max: 50,
+                    integer: true,
+                    step: 1,
+                    fallbackValue: draft.historyLimit,
+                    onValueChange: (nextValue) => {
+                      setDraft({ ...draft, historyLimit: nextValue });
+                      setError("");
+                    },
+                  });
                 }}
               />
             </div>
