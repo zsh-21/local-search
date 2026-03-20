@@ -22,13 +22,62 @@ if (!app.isPackaged) {
   }
 }
 
-// 落盘文件路径已抽离：便于你统一维护“配置/缓存/索引/历史”等文件的落盘位置
+// 落盘文件路径已抽离：便于统一维护“配置/缓存/索引/历史”等文件落盘位置
 export const CONFIG_PATH = getWindowConfigPath();
 export const SETTINGS_PATH = getSettingsPath();
 export const SETTINGS_WINDOW_CONFIG_PATH = getSettingsWindowConfigPath();
 
-// 默认值已抽离到单独文件：便于你集中调整主进程侧默认行为
+// 默认值已抽离到单独文件：便于集中调整主进程侧默认行为
 export { DEFAULT_SEARCH_SHORTCUT, DEFAULT_SETTINGS_SHORTCUT, DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT, DEFAULT_RESULT_ACTION_BUTTONS };
+
+// 搜索排序配置归一化：保证权重/参数/类型优先级在安全范围内并兼容旧配置
+function normalizeSearchRanking(raw: any): AppSettings['searchRanking'] {
+  const clamp = (v: any, min: number, max: number, fallback: number) => {
+    const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  const normalizeWeights = (v: any) => {
+    const fallback = DEFAULT_SETTINGS.searchRanking.signalWeights;
+    const match = clamp(v?.match, 0, 1000, fallback.match);
+    const frequency = clamp(v?.frequency, 0, 1000, fallback.frequency);
+    const recency = clamp(v?.recency, 0, 1000, fallback.recency);
+    const fileMtime = clamp(v?.fileMtime, 0, 1000, fallback.fileMtime);
+    const sum = match + frequency + recency + fileMtime;
+    if (!Number.isFinite(sum) || sum <= 0) return { ...fallback };
+    return {
+      match: Number(((match / sum) * 100).toFixed(4)),
+      frequency: Number(((frequency / sum) * 100).toFixed(4)),
+      recency: Number(((recency / sum) * 100).toFixed(4)),
+      fileMtime: Number(((fileMtime / sum) * 100).toFixed(4)),
+    };
+  };
+  const normalizeTypePriority = (v: any) => {
+    const fallback = DEFAULT_SETTINGS.searchRanking.typePriority;
+    const one = (key: keyof typeof fallback) => Math.round(clamp(v?.[key], 1, 10, fallback[key]));
+    return {
+      app: one('app'),
+      command: one('command'),
+      settings: one('settings'),
+      file: one('file'),
+      folder: one('folder'),
+      image: one('image'),
+      video: one('video'),
+      web: one('web'),
+      plugin: one('plugin'),
+    };
+  };
+
+  const fallback = DEFAULT_SETTINGS.searchRanking;
+  return {
+    signalWeights: normalizeWeights(raw?.signalWeights),
+    frecency: {
+      decayFactor: clamp(raw?.frecency?.decayFactor, 0.0001, 1, fallback.frecency.decayFactor),
+      frequencyWeight: clamp(raw?.frecency?.frequencyWeight, 0, 10, fallback.frecency.frequencyWeight),
+    },
+    typePriority: normalizeTypePriority(raw?.typePriority),
+  };
+}
 
 export function loadConfig() {
   try {
@@ -195,6 +244,7 @@ export function loadSettings(): AppSettings {
         }
         return out.length > 0 ? out : DEFAULT_SETTINGS.preferredFileExtensions;
       })();
+      const searchRanking = normalizeSearchRanking(raw?.searchRanking);
 
       return {
         autoStart: Boolean(raw?.autoStart),
@@ -231,7 +281,7 @@ export function loadSettings(): AppSettings {
         disabledSearchTypeIds,
         ignoredPaths,
         keepStateOnClose: Boolean(raw?.keepStateOnClose),
-        // 结果路径默认显示：当用户未显式配置时，默认开启
+        // 结果路径默认显示：配置缺失时回落到默认值，避免 Boolean(undefined) 误判
         showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : DEFAULT_SETTINGS.showResultPath,
         enableHistory: raw?.enableHistory !== false,
         enableEffect: Boolean(raw?.enableEffect),
@@ -243,12 +293,13 @@ export function loadSettings(): AppSettings {
         searchWindowInitialWidth,
         searchWindowMaxHeight,
         searchDisplayLimit,
+        searchRanking,
         compactMode: raw?.compactMode === true,
         preferredFileExtensions,
       };
     }
   } catch {}
-  // 读盘失败/配置不存在时：回落到主进程侧默认设置（返回新对象避免被外部误改影响全局默认）
+  // 读盘失败/配置不存在时：回落到主进程侧默认设置（返回新对象避免污染全局默认）
   return {
     ...DEFAULT_SETTINGS,
     customSearchTypes: [],
@@ -256,12 +307,23 @@ export function loadSettings(): AppSettings {
     disabledSearchTypeIds: [],
     ignoredPaths: [],
     resultActionButtons: [...DEFAULT_SETTINGS.resultActionButtons],
+    searchRanking: {
+      signalWeights: { ...DEFAULT_SETTINGS.searchRanking.signalWeights },
+      frecency: { ...DEFAULT_SETTINGS.searchRanking.frecency },
+      typePriority: { ...DEFAULT_SETTINGS.searchRanking.typePriority },
+    },
     preferredFileExtensions: [...DEFAULT_SETTINGS.preferredFileExtensions],
   };
 }
 
 export function saveSettings(settings: AppSettings) {
   try {
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings));
+    // 保存时也做一次排序配置归一化，保证磁盘数据可直接用于评分计算
+    const normalized: AppSettings = {
+      ...settings,
+      searchRanking: normalizeSearchRanking((settings as any)?.searchRanking),
+    };
+    writeFileSync(SETTINGS_PATH, JSON.stringify(normalized));
   } catch {}
 }
+

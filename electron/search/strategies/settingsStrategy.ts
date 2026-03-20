@@ -10,7 +10,6 @@ export const settingsStrategy: SearchStrategy = {
       settingsItems,
       computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
       computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
-      getLastUsedMs: ctx.scoreComputer.getLastUsedMs,
     });
 
     if (settingsOnly) {
@@ -29,4 +28,3 @@ export const settingsStrategy: SearchStrategy = {
     return { kind: "continue", items: settingsResults };
   },
 };
-

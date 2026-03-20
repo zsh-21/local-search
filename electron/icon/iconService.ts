@@ -190,13 +190,13 @@ function logAppIconFallbackFailure(payload: {
 }) {
 	// 仅开发环境输出，避免生产环境高频检索造成日志噪音
 	if (!IS_DEV_ICON_LOG) return;
-	console.warn('[icon] app icon fallback used', {
-		name: anonymizeForIconLog(payload.appName),
-		appId: anonymizeForIconLog(payload.appId),
-		normalizedSpec: anonymizeForIconLog(payload.normalizedSpec),
-		fallbackStage: payload.fallbackStage,
-		ruleId: payload.ruleId || '',
-	});
+	// console.warn('[icon] app icon fallback used', {
+	// 	name: anonymizeForIconLog(payload.appName),
+	// 	appId: anonymizeForIconLog(payload.appId),
+	// 	normalizedSpec: anonymizeForIconLog(payload.normalizedSpec),
+	// 	fallbackStage: payload.fallbackStage,
+	// 	ruleId: payload.ruleId || '',
+	// });
 }
 
 async function tryResolveSystemToolMappedIcon(input: WinSystemToolMatchInput) {

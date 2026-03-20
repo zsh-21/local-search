@@ -24,13 +24,26 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
         if (process.platform === "win32" && !/^[a-zA-Z]:/.test(it.path) && !it.path.startsWith("\\\\")) continue;
 
         const weighted = ctx.nameScorer.computeWeightedNameMatch(it.name);
-        const legacy = ctx.nameScorer.scoreRecentName(it.name);
-        const baseWeighted = legacy > 0 ? legacy / 25 : weighted.weightedScore > 0 ? weighted.weightedScore : 0;
-        if (baseWeighted <= 0) continue;
+        if (weighted.staticScore <= 0) continue;
 
         const type = it.isDirectory ? "folder" : "file";
-        const score = ctx.scoreComputer.computeCombinedScore(baseWeighted * 100, type, it.path, it.timeMs || 0);
-        out.push({ name: it.name, path: it.path, type, score, timeMs: it.timeMs || 0 });
+        const score = ctx.scoreComputer.computeCombinedScore({
+          staticScore: weighted.staticScore,
+          type,
+          rawPath: it.path,
+          timeMs: it.timeMs || 0,
+        });
+        out.push({
+          name: it.name,
+          path: it.path,
+          type,
+          score,
+          staticScore: weighted.staticScore,
+          weightedScore: weighted.weightedScore,
+          matchIndex: weighted.matchIndex,
+          nameLen: weighted.nameLen,
+          timeMs: it.timeMs || 0,
+        });
 
         seenPathKeys.add(key);
         if (out.length >= 350) break;
@@ -40,4 +53,3 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
     },
   };
 }
-

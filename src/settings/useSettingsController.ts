@@ -65,11 +65,29 @@ export function useSettingsController() {
     settings.effectType,
     settings.backgroundImagePath,
     settings.backgroundImageOpacity,
+    settings.searchRanking,
   ]);
 
   const isDraftSynced = useMemo(() => {
     const arrEq = (a: string[], b: string[]) =>
       a.length === b.length && a.every((x, i) => x === b[i]);
+    // 排序参数是分层对象，这里逐字段比对保证保存状态判断准确
+    const rankingEq = (a: AppSettings["searchRanking"], b: AppSettings["searchRanking"]) =>
+      a.signalWeights.match === b.signalWeights.match &&
+      a.signalWeights.frequency === b.signalWeights.frequency &&
+      a.signalWeights.recency === b.signalWeights.recency &&
+      a.signalWeights.fileMtime === b.signalWeights.fileMtime &&
+      a.frecency.decayFactor === b.frecency.decayFactor &&
+      a.frecency.frequencyWeight === b.frecency.frequencyWeight &&
+      a.typePriority.app === b.typePriority.app &&
+      a.typePriority.command === b.typePriority.command &&
+      a.typePriority.settings === b.typePriority.settings &&
+      a.typePriority.file === b.typePriority.file &&
+      a.typePriority.folder === b.typePriority.folder &&
+      a.typePriority.image === b.typePriority.image &&
+      a.typePriority.video === b.typePriority.video &&
+      a.typePriority.web === b.typePriority.web &&
+      a.typePriority.plugin === b.typePriority.plugin;
     return (
       draft.autoStart === settings.autoStart &&
       draft.searchShortcut === settings.searchShortcut &&
@@ -89,7 +107,8 @@ export function useSettingsController() {
       draft.enableEffect === settings.enableEffect &&
       draft.effectType === settings.effectType &&
       draft.backgroundImagePath === settings.backgroundImagePath &&
-      draft.backgroundImageOpacity === settings.backgroundImageOpacity
+      draft.backgroundImageOpacity === settings.backgroundImageOpacity &&
+      rankingEq(draft.searchRanking, settings.searchRanking)
     );
   }, [draft, settings]);
 

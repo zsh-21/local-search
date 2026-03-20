@@ -10,6 +10,10 @@ export type SearchCandidate = {
   size?: number;
   isDirectory?: boolean;
   score?: number;
+  // 预留给插件/外部结果的原始分：后续可通过大分差固定插件内顺序
+  sourceScore?: number;
+  // 静态匹配归一分（0-1）：便于统一进入加权模型
+  staticScore?: number;
   weightedScore?: number;
   matchIndex?: number;
   nameLen?: number;
@@ -33,12 +37,18 @@ export type SearchContext = {
   extFilter: string;
   now: number;
   nameScorer: {
-    computeWeightedNameMatch: (name: string) => { weightedScore: number; matchIndex: number; nameLen: number };
+    computeWeightedNameMatch: (name: string) => { weightedScore: number; staticScore: number; matchIndex: number; nameLen: number };
     scoreRecentName: (name: string) => number;
   };
   scoreComputer: {
     getLastUsedMs: (rawPath: string) => number;
-    computeCombinedScore: (baseScore: number, type: string, rawPath: string, timeMs: number) => number;
+    computeCombinedScore: (input: {
+      staticScore: number;
+      type: string;
+      rawPath: string;
+      timeMs?: number;
+      sourceScore?: number;
+    }) => number;
   };
 };
 
@@ -50,7 +60,7 @@ export type SearchStrategyDeps = {
     buildIfEmpty: () => Promise<void>;
   };
   reconcileRecentIndex: () => void | Promise<void>;
-  loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[] };
+  loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[]; searchRanking?: any };
   loadHistoryStats: () => any;
   normalizeHistoryKey: (rawPath: string) => string;
   normalizeExtKey: (rawPath: string) => string;

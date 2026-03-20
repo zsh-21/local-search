@@ -12,7 +12,6 @@ export const appsStrategy: SearchStrategy = {
       iconDataCache: deps.iconDataCache,
       isTooSmallAppIconDataUrl: deps.isTooSmallAppIconDataUrl,
       getAppIconDataStable: deps.getAppIconDataStable,
-      scoreRecentName: ctx.nameScorer.scoreRecentName,
       computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
       computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
       getLastUsedMs: ctx.scoreComputer.getLastUsedMs,

@@ -22,6 +22,10 @@ input {
   outline: none;
 }
 
+html{
+  height: fit-content;
+}
+
 /* 主题变量：深�?浅色模式统一从这里派生，组件尽量只使�?CSS 变量 */
 html[data-theme="dark"] {
   --fs-bg: #0b1018;

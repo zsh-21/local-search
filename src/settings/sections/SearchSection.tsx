@@ -211,6 +211,93 @@ export function SearchSection({
     setError("");
   };
 
+  const ranking = draft.searchRanking;
+  const rankingTypeRows: Array<{ key: keyof AppSettings["searchRanking"]["typePriority"]; label: string }> = [
+    { key: "app", label: "应用" },
+    { key: "command", label: "系统命令" },
+    { key: "settings", label: "设置" },
+    { key: "file", label: "文件" },
+    { key: "folder", label: "文件夹" },
+    { key: "image", label: "图片" },
+    { key: "video", label: "视频" },
+    { key: "web", label: "网页（预留）" },
+    { key: "plugin", label: "插件（预留）" },
+  ];
+
+  const normalizeSignalWeights = (weights: AppSettings["searchRanking"]["signalWeights"]) => {
+    const match = Math.max(0, Number(weights.match) || 0);
+    const frequency = Math.max(0, Number(weights.frequency) || 0);
+    const recency = Math.max(0, Number(weights.recency) || 0);
+    const fileMtime = Math.max(0, Number(weights.fileMtime) || 0);
+    const sum = match + frequency + recency + fileMtime;
+    if (!Number.isFinite(sum) || sum <= 0) {
+      return {
+        match: 40,
+        frequency: 30,
+        recency: 20,
+        fileMtime: 10,
+      };
+    }
+    // 保存前先归一化，避免用户输入导致总和漂移
+    return {
+      match: Number(((match / sum) * 100).toFixed(4)),
+      frequency: Number(((frequency / sum) * 100).toFixed(4)),
+      recency: Number(((recency / sum) * 100).toFixed(4)),
+      fileMtime: Number(((fileMtime / sum) * 100).toFixed(4)),
+    };
+  };
+
+  const updateRanking = (next: AppSettings["searchRanking"]) => {
+    setDraft({
+      ...draft,
+      searchRanking: {
+        signalWeights: normalizeSignalWeights(next.signalWeights),
+        frecency: {
+          decayFactor: Math.min(1, Math.max(0.0001, Number(next.frecency.decayFactor) || 0.01)),
+          frequencyWeight: Math.min(10, Math.max(0, Number(next.frecency.frequencyWeight) || 0)),
+        },
+        typePriority: {
+          app: Math.min(10, Math.max(1, Math.round(next.typePriority.app))),
+          command: Math.min(10, Math.max(1, Math.round(next.typePriority.command))),
+          settings: Math.min(10, Math.max(1, Math.round(next.typePriority.settings))),
+          file: Math.min(10, Math.max(1, Math.round(next.typePriority.file))),
+          folder: Math.min(10, Math.max(1, Math.round(next.typePriority.folder))),
+          image: Math.min(10, Math.max(1, Math.round(next.typePriority.image))),
+          video: Math.min(10, Math.max(1, Math.round(next.typePriority.video))),
+          web: Math.min(10, Math.max(1, Math.round(next.typePriority.web))),
+          plugin: Math.min(10, Math.max(1, Math.round(next.typePriority.plugin))),
+        },
+      },
+    });
+    setError("");
+  };
+
+  const resetRankingToDefault = () => {
+    updateRanking({
+      signalWeights: {
+        match: 40,
+        frequency: 30,
+        recency: 20,
+        fileMtime: 10,
+      },
+      frecency: {
+        decayFactor: 0.01,
+        frequencyWeight: 1,
+      },
+      typePriority: {
+        app: 10,
+        command: 9,
+        settings: 9,
+        file: 8,
+        folder: 8,
+        image: 8,
+        video: 8,
+        web: 7,
+        plugin: 6,
+      },
+    });
+  };
+
   return (
     <div className="settings-content">
       <div className="settings-group" style={{ zIndex: defaultTypeMenuOpen ? 100 : undefined }}>
@@ -407,6 +494,152 @@ export function SearchSection({
               }
             }}
           />
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <div className="settings-group-title">
+          <span>结果排序</span>
+        </div>
+        <div className="settings-hint">
+          调整静态匹配、Frecency 与类型优先级。信号权重保存时会自动归一化到总和 100。
+        </div>
+        <div className="form-row">
+          <div className="form-label">匹配度权重</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.signalWeights.match)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                signalWeights: { ...ranking.signalWeights, match: Math.max(0, n) },
+              });
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">频率权重</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.signalWeights.frequency)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                signalWeights: { ...ranking.signalWeights, frequency: Math.max(0, n) },
+              });
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">最近时间权重</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.signalWeights.recency)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                signalWeights: { ...ranking.signalWeights, recency: Math.max(0, n) },
+              });
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">文件时间权重</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.signalWeights.fileMtime)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                signalWeights: { ...ranking.signalWeights, fileMtime: Math.max(0, n) },
+              });
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">衰减因子</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.frecency.decayFactor)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                frecency: { ...ranking.frecency, decayFactor: n },
+              });
+            }}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-label">频率放大</div>
+          <input
+            type="text"
+            className="text-input"
+            inputMode="decimal"
+            value={String(ranking.frecency.frequencyWeight)}
+            onChange={(e) => {
+              const n = Number(e.target.value.trim());
+              if (!Number.isFinite(n)) return;
+              updateRanking({
+                ...ranking,
+                frecency: { ...ranking.frecency, frequencyWeight: n },
+              });
+            }}
+          />
+        </div>
+        <div className="settings-hint">类型优先级（1-10，数值越大越优先）</div>
+        <div className="action-config-list">
+          {rankingTypeRows.map((row) => (
+            <div key={row.key} className="action-config-row checked">
+              <div className="action-config-left">
+                <span className="action-config-label">{row.label}</span>
+              </div>
+              <div className="action-config-right" style={{ minWidth: 140 }}>
+                <input
+                  type="text"
+                  className="text-input"
+                  inputMode="numeric"
+                  value={String(ranking.typePriority[row.key])}
+                  onChange={(e) => {
+                    const n = Number(e.target.value.trim());
+                    if (!Number.isFinite(n)) return;
+                    updateRanking({
+                      ...ranking,
+                      typePriority: {
+                        ...ranking.typePriority,
+                        [row.key]: n,
+                      },
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="form-row">
+          <div className="form-label">恢复默认</div>
+          <button type="button" className="small-btn ghost" onClick={resetRankingToDefault}>
+            重置排序参数
+          </button>
         </div>
       </div>
 

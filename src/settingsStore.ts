@@ -3,6 +3,54 @@ import { AppItem, AppSettings, DEFAULT_SETTINGS, ResultActionButtonId, SearchTyp
 import { BASE_SEARCH_TYPE_IDS, FS_BACKUP_SETTINGS_KEY } from "./constants/initialValues";
 import { useStoredMembership } from "./membership";
 
+// 搜索排序配置归一化：保证渲染侧草稿和主进程一致，避免权重失真
+function normalizeSearchRanking(raw: any): AppSettings["searchRanking"] {
+  const clamp = (v: any, min: number, max: number, fallback: number) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  const normalizeWeights = (v: any) => {
+    const fallback = DEFAULT_SETTINGS.searchRanking.signalWeights;
+    const match = clamp(v?.match, 0, 1000, fallback.match);
+    const frequency = clamp(v?.frequency, 0, 1000, fallback.frequency);
+    const recency = clamp(v?.recency, 0, 1000, fallback.recency);
+    const fileMtime = clamp(v?.fileMtime, 0, 1000, fallback.fileMtime);
+    const sum = match + frequency + recency + fileMtime;
+    if (!Number.isFinite(sum) || sum <= 0) return { ...fallback };
+    return {
+      match: Number(((match / sum) * 100).toFixed(4)),
+      frequency: Number(((frequency / sum) * 100).toFixed(4)),
+      recency: Number(((recency / sum) * 100).toFixed(4)),
+      fileMtime: Number(((fileMtime / sum) * 100).toFixed(4)),
+    };
+  };
+  const normalizeTypePriority = (v: any) => {
+    const fallback = DEFAULT_SETTINGS.searchRanking.typePriority;
+    const one = (key: keyof typeof fallback) => Math.round(clamp(v?.[key], 1, 10, fallback[key]));
+    return {
+      app: one("app"),
+      command: one("command"),
+      settings: one("settings"),
+      file: one("file"),
+      folder: one("folder"),
+      image: one("image"),
+      video: one("video"),
+      web: one("web"),
+      plugin: one("plugin"),
+    };
+  };
+  const fallback = DEFAULT_SETTINGS.searchRanking;
+  return {
+    signalWeights: normalizeWeights(raw?.signalWeights),
+    frecency: {
+      decayFactor: clamp(raw?.frecency?.decayFactor, 0.0001, 1, fallback.frecency.decayFactor),
+      frequencyWeight: clamp(raw?.frecency?.frequencyWeight, 0, 10, fallback.frecency.frequencyWeight),
+    },
+    typePriority: normalizeTypePriority(raw?.typePriority),
+  };
+}
+
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
   // 主题值归一化：旧主题值统一回退 dark，避免配置中出现已下线主题
@@ -180,6 +228,8 @@ export function normalizeSettings(s: any): AppSettings {
     }
     return out.length > 0 ? out : DEFAULT_SETTINGS.preferredFileExtensions;
   })();
+  // 排序参数统一归一化后进入全局设置，避免 UI 临时值直接污染评分
+  const searchRanking = normalizeSearchRanking((s as any)?.searchRanking);
 
   return {
     autoStart: Boolean(s?.autoStart),
@@ -210,6 +260,7 @@ export function normalizeSettings(s: any): AppSettings {
     searchWindowInitialWidth,
     searchWindowMaxHeight,
     searchDisplayLimit,
+    searchRanking,
     compactMode: typeof s?.compactMode === "boolean" ? s.compactMode : DEFAULT_SETTINGS.compactMode,
     preferredFileExtensions,
   };
