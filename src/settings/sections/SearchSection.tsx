@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppSettings } from "../../appTypes";
 import { IconInfo } from "../../components/icons/SettingsIcons";
@@ -16,39 +16,6 @@ type TooltipPayload = {
   placement: "top" | "bottom";
   anchor: { left: number; right: number; top: number; bottom: number };
   arrowLeft: number;
-};
-
-type RankingSampleType = "app" | "command" | "settings" | "file" | "folder" | "image" | "video";
-
-type RankingPreviewSample = {
-  id: string;
-  name: string;
-  type: RankingSampleType;
-  staticScore: number;
-  count: number;
-  lastUsedHours: number;
-  fileMtimeHours?: number;
-};
-
-const PREVIEW_FREQUENCY_CAP = 80;
-const PREVIEW_SAMPLES: RankingPreviewSample[] = [
-  { id: "app-vscode", name: "Visual Studio Code", type: "app", staticScore: 0.92, count: 26, lastUsedHours: 3 },
-  { id: "app-terminal", name: "Windows Terminal", type: "command", staticScore: 0.73, count: 40, lastUsedHours: 2 },
-  { id: "settings-display", name: "显示设置", type: "settings", staticScore: 0.68, count: 9, lastUsedHours: 8 },
-  { id: "file-spec", name: "project-spec.docx", type: "file", staticScore: 0.87, count: 7, lastUsedHours: 30, fileMtimeHours: 5 },
-  { id: "folder-work", name: "Work Documents", type: "folder", staticScore: 0.62, count: 6, lastUsedHours: 18, fileMtimeHours: 12 },
-  { id: "image-banner", name: "banner-design.png", type: "image", staticScore: 0.56, count: 4, lastUsedHours: 45, fileMtimeHours: 2 },
-  { id: "video-demo", name: "product-demo.mp4", type: "video", staticScore: 0.58, count: 3, lastUsedHours: 60, fileMtimeHours: 1 },
-];
-
-const TYPE_LABEL_MAP: Record<RankingSampleType, string> = {
-  app: "应用",
-  command: "系统命令",
-  settings: "设置",
-  file: "文件",
-  folder: "文件夹",
-  image: "图片",
-  video: "视频",
 };
 
 type RankingSignalKey = keyof AppSettings["searchRanking"]["signalWeights"];
@@ -431,64 +398,6 @@ export function SearchSection({
       </button>
     </span>
   );
-
-  const rankingPreviewRows = useMemo(() => {
-    // 预览面板使用与主排序一致的加权口径，确保“看见即所得”
-    const weightSum =
-      Math.max(0, Number(ranking.signalWeights.match) || 0) +
-      Math.max(0, Number(ranking.signalWeights.frequency) || 0) +
-      Math.max(0, Number(ranking.signalWeights.recency) || 0) +
-      Math.max(0, Number(ranking.signalWeights.fileMtime) || 0);
-    const normalizedWeights =
-      weightSum > 0
-        ? {
-            match: (Math.max(0, Number(ranking.signalWeights.match) || 0) / weightSum) * 100,
-            frequency: (Math.max(0, Number(ranking.signalWeights.frequency) || 0) / weightSum) * 100,
-            recency: (Math.max(0, Number(ranking.signalWeights.recency) || 0) / weightSum) * 100,
-            fileMtime: (Math.max(0, Number(ranking.signalWeights.fileMtime) || 0) / weightSum) * 100,
-          }
-        : { match: 40, frequency: 30, recency: 20, fileMtime: 10 };
-
-    const decayFactor = Math.min(1, Math.max(0.0001, Number(ranking.frecency.decayFactor) || 0.01));
-    const frequencyWeight = Math.min(10, Math.max(0, Number(ranking.frecency.frequencyWeight) || 0));
-
-    return PREVIEW_SAMPLES.map((item) => {
-      const typePriorityFactor = Math.min(1, Math.max(0.1, (Number(ranking.typePriority[item.type]) || 1) / 10));
-      const staticScore = Math.min(1, Math.max(0, item.staticScore * typePriorityFactor));
-      const frequencyRaw = Math.log(item.count + 1) / Math.log(PREVIEW_FREQUENCY_CAP + 1);
-      const frequencyScore = Math.min(1, Math.max(0, frequencyWeight * frequencyRaw));
-      const recencyScore = Math.exp(-decayFactor * Math.max(0, item.lastUsedHours));
-      const fileMtimeScore =
-        item.type === "file" || item.type === "folder" || item.type === "image" || item.type === "video"
-          ? Math.exp(-decayFactor * Math.max(0, item.fileMtimeHours ?? 0))
-          : 0;
-
-      const finalScore =
-        (normalizedWeights.match / 100) * staticScore +
-        (normalizedWeights.frequency / 100) * frequencyScore +
-        (normalizedWeights.recency / 100) * recencyScore +
-        (normalizedWeights.fileMtime / 100) * fileMtimeScore;
-
-      return {
-        ...item,
-        staticScore,
-        frequencyScore,
-        recencyScore,
-        fileMtimeScore,
-        finalScore,
-      };
-    })
-      .sort((a, b) => {
-        if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
-        if (b.staticScore !== a.staticScore) return b.staticScore - a.staticScore;
-        if (a.name.length !== b.name.length) return a.name.length - b.name.length;
-        return a.name.localeCompare(b.name);
-      })
-      .map((row, index) => ({
-        ...row,
-        rank: index + 1,
-      }));
-  }, [ranking]);
 
   return (
     <div className="settings-content">
@@ -958,20 +867,6 @@ export function SearchSection({
               </div>
             </div>
           ))}
-        </div>
-        <div className="ranking-sim-card">
-          <div className="ranking-sim-title">模拟列表</div>
-          <div className="ranking-sim-hint">根据当前编辑中的参数实时预览，点击设置底部“确认”后才会真正应用。</div>
-          <div className="ranking-sim-list">
-            {rankingPreviewRows.map((item) => (
-              <div key={item.id} className="ranking-sim-row">
-                <span className="ranking-sim-rank">#{item.rank}</span>
-                <span className="ranking-sim-name">{item.name}</span>
-                <span className="ranking-sim-type">{TYPE_LABEL_MAP[item.type]}</span>
-                <span className="ranking-sim-score">{item.finalScore.toFixed(4)}</span>
-              </div>
-            ))}
-          </div>
         </div>
         <div className="form-row">
           <div className="form-label">恢复默认</div>

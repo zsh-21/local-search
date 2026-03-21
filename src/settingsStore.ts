@@ -53,8 +53,21 @@ function normalizeSearchRanking(raw: any): AppSettings["searchRanking"] {
 
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
-  // 主题值归一化：旧主题值统一回退 dark，避免配置中出现已下线主题
-  const allowedThemes: AppSettings["theme"][] = ["dark", "light", "steam", "trae", "chrome", "window11", "linux", "mac"];
+  // 主题值归一化：仅接受新版 12 主题，历史已下线主题统一回退 dark，避免旧配置落到未知外观。
+  const allowedThemes: AppSettings["theme"][] = [
+    "dark",
+    "terminal",
+    "vector",
+    "alloy",
+    "noir",
+    "signal",
+    "oxide",
+    "voltage",
+    "chrome",
+    "mac",
+    "blueprint",
+    "paper",
+  ];
   const theme: AppSettings["theme"] = allowedThemes.includes(s?.theme) ? s.theme : DEFAULT_SETTINGS.theme;
   const uiFontFamily =
     typeof s?.uiFontFamily === "string" && s.uiFontFamily.trim()

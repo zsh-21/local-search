@@ -109,8 +109,21 @@ export function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
       const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
-      // 主题值归一化：旧主题值（dusk/forest/ocean/sunset）统一回退到 dark
-      const allowedThemes: AppSettings['theme'][] = ['dark', 'light', 'steam', 'trae', 'chrome', 'window11', 'linux', 'mac'];
+      // 主题值归一化：仅接受新版 12 主题，历史已下线主题统一回退到 dark，避免主进程持久化未知值。
+      const allowedThemes: AppSettings['theme'][] = [
+        'dark',
+        'terminal',
+        'vector',
+        'alloy',
+        'noir',
+        'signal',
+        'oxide',
+        'voltage',
+        'chrome',
+        'mac',
+        'blueprint',
+        'paper',
+      ];
       const theme: AppSettings['theme'] = allowedThemes.includes(raw?.theme) ? raw.theme : 'dark';
       const uiFontFamily =
         typeof raw?.uiFontFamily === 'string' && raw.uiFontFamily.trim()

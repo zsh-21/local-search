@@ -45,7 +45,20 @@ export interface AppSettings {
   settingsShortcut: string;
   // 面板内“写入选中项到输入框”的快捷键（默认 Alt+Enter）
   acceptSelectedResultShortcut: string;
-  theme: "dark" | "light" | "steam" | "trae" | "chrome" | "window11" | "linux" | "mac";
+  // 主题集合扩展为 12 款：4 个浅色（chrome/mac/blueprint/paper）+ 8 个深色（dark 与 7 个新增极客主题）
+  theme:
+    | "dark"
+    | "terminal"
+    | "vector"
+    | "alloy"
+    | "noir"
+    | "signal"
+    | "oxide"
+    | "voltage"
+    | "chrome"
+    | "mac"
+    | "blueprint"
+    | "paper";
   uiFontFamily: string;
   historyLimit: number;
   defaultSearchTypeId: string;
