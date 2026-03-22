@@ -78,10 +78,7 @@ export const DEFAULT_SETTINGS = {
   showResultPath: true,
   // 是否启用历史记录
   enableHistory: true,
-  // 是否启用背景特效
-  enableEffect: false,
-  // 背景特效类型
-  effectType: "particles",
+  // 背景特效功能已下线：不再保留特效开关与类型字段。
   // 背景图本地路径
   backgroundImagePath: "",
   // 背景图透明度：0~1

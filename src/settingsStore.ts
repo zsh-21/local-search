@@ -53,22 +53,29 @@ function normalizeSearchRanking(raw: any): AppSettings["searchRanking"] {
 
 // 设置存储与衍生：规范化、会员降级、类型列表生成、主题应用、与主进程同步
 export function normalizeSettings(s: any): AppSettings {
-  // 主题值归一化：仅接受新版 12 主题，历史已下线主题统一回退 dark，避免旧配置落到未知外观。
+  // 主题值归一化：仅接受当前保留的 7 套主题；已下线主题统一回落到 dark，避免出现无效值。
+  const legacyThemeMap: Record<string, AppSettings["theme"]> = {
+    voltage: "oxide",
+    chrome: "dark",
+    terminal: "dark",
+    alloy: "dark",
+    signal: "dark",
+  };
+  // 先做历史主题映射，再做白名单校验，保证旧配置能平滑升级。
+  const normalizedThemeCandidate =
+    typeof s?.theme === "string" ? (legacyThemeMap[s.theme] ?? s.theme) : DEFAULT_SETTINGS.theme;
   const allowedThemes: AppSettings["theme"][] = [
     "dark",
-    "terminal",
     "vector",
-    "alloy",
     "noir",
-    "signal",
     "oxide",
-    "voltage",
-    "chrome",
     "mac",
     "blueprint",
     "paper",
   ];
-  const theme: AppSettings["theme"] = allowedThemes.includes(s?.theme) ? s.theme : DEFAULT_SETTINGS.theme;
+  const theme: AppSettings["theme"] = allowedThemes.includes(normalizedThemeCandidate as AppSettings["theme"])
+    ? (normalizedThemeCandidate as AppSettings["theme"])
+    : DEFAULT_SETTINGS.theme;
   const uiFontFamily =
     typeof s?.uiFontFamily === "string" && s.uiFontFamily.trim()
       ? s.uiFontFamily.trim().slice(0, 300)
@@ -162,7 +169,6 @@ export function normalizeSettings(s: any): AppSettings {
     disabledSearchTypeIds.push(id);
   }
 
-  const effectType = s?.effectType === "warp" ? "warp" : s?.effectType === "waves" ? "waves" : "particles";
   const backgroundImagePath =
     typeof s?.backgroundImagePath === "string" ? s.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
   const customAvatarPath =
@@ -264,8 +270,6 @@ export function normalizeSettings(s: any): AppSettings {
     // 默认显示路径：当配置缺失时回落到默认值，避免 Boolean(undefined) 误判为 false
     showResultPath: typeof s?.showResultPath === "boolean" ? s.showResultPath : DEFAULT_SETTINGS.showResultPath,
     enableHistory: s?.enableHistory !== false,
-    enableEffect: Boolean(s?.enableEffect),
-    effectType,
     backgroundImagePath,
     backgroundImageOpacity,
     customAvatarPath,
@@ -355,10 +359,7 @@ export function applyMembershipRestrictionsToSettings(settings: AppSettings, isM
     defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
     customSearchTypes: [],
     searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
-    // 列表显示路径不再作为会员限制：非会员也允许使用，且默认开启
-    enableEffect: false,
-    effectType: "particles",
-    // 非会员不允许自定义背景图：统一回落到默认背景
+    // 非会员不允许自定义背景图：统一回落到默认背景。
     backgroundImagePath: DEFAULT_SETTINGS.backgroundImagePath,
     backgroundImageOpacity: DEFAULT_SETTINGS.backgroundImageOpacity,
     resultActionButtons: DEFAULT_SETTINGS.resultActionButtons,
@@ -443,8 +444,6 @@ export function useSettings() {
             defaultSearchTypeId: backup.defaultSearchTypeId ?? prev.defaultSearchTypeId,
             customSearchTypes: backup.customSearchTypes ?? prev.customSearchTypes,
             searchTypeOrder: backup.searchTypeOrder ?? prev.searchTypeOrder,
-            enableEffect: backup.enableEffect ?? prev.enableEffect,
-            effectType: backup.effectType ?? prev.effectType,
             backgroundImagePath: backup.backgroundImagePath ?? prev.backgroundImagePath,
             backgroundImageOpacity: backup.backgroundImageOpacity ?? prev.backgroundImageOpacity,
             resultActionButtons: backup.resultActionButtons ?? prev.resultActionButtons,
@@ -460,8 +459,6 @@ export function useSettings() {
         const hasCustomSettings =
           prev.defaultSearchTypeId !== DEFAULT_SETTINGS.defaultSearchTypeId ||
           (prev.customSearchTypes && prev.customSearchTypes.length > 0) ||
-          prev.enableEffect !== false ||
-          prev.effectType !== "particles" ||
           prev.backgroundImagePath !== DEFAULT_SETTINGS.backgroundImagePath ||
           prev.backgroundImageOpacity !== DEFAULT_SETTINGS.backgroundImageOpacity ||
           !arrEq(prev.resultActionButtons || [], DEFAULT_SETTINGS.resultActionButtons || []);
@@ -471,8 +468,6 @@ export function useSettings() {
             defaultSearchTypeId: prev.defaultSearchTypeId,
             customSearchTypes: prev.customSearchTypes,
             searchTypeOrder: prev.searchTypeOrder,
-            enableEffect: prev.enableEffect,
-            effectType: prev.effectType,
             backgroundImagePath: prev.backgroundImagePath,
             backgroundImageOpacity: prev.backgroundImageOpacity,
             resultActionButtons: prev.resultActionButtons,
@@ -483,8 +478,6 @@ export function useSettings() {
             defaultSearchTypeId: DEFAULT_SETTINGS.defaultSearchTypeId,
             customSearchTypes: [],
             searchTypeOrder: DEFAULT_SETTINGS.searchTypeOrder,
-            enableEffect: false,
-            effectType: "particles" as const,
             backgroundImagePath: DEFAULT_SETTINGS.backgroundImagePath,
             backgroundImageOpacity: DEFAULT_SETTINGS.backgroundImageOpacity,
             resultActionButtons: DEFAULT_SETTINGS.resultActionButtons,

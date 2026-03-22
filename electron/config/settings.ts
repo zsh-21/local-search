@@ -109,27 +109,33 @@ export function loadSettings(): AppSettings {
   try {
     if (existsSync(SETTINGS_PATH)) {
       const raw = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
-      // 主题值归一化：仅接受新版 12 主题，历史已下线主题统一回退到 dark，避免主进程持久化未知值。
+      // 主题值归一化：仅接受当前保留的 7 套主题；已下线主题统一回落到 dark。
+      const legacyThemeMap: Record<string, AppSettings['theme']> = {
+        voltage: 'oxide',
+        chrome: 'dark',
+        terminal: 'dark',
+        alloy: 'dark',
+        signal: 'dark',
+      };
+      // 主进程与渲染进程保持同一迁移策略，避免两端出现主题不一致。
+      const normalizedThemeCandidate =
+        typeof raw?.theme === 'string' ? (legacyThemeMap[raw.theme] ?? raw.theme) : DEFAULT_SETTINGS.theme;
       const allowedThemes: AppSettings['theme'][] = [
         'dark',
-        'terminal',
         'vector',
-        'alloy',
         'noir',
-        'signal',
         'oxide',
-        'voltage',
-        'chrome',
         'mac',
         'blueprint',
         'paper',
       ];
-      const theme: AppSettings['theme'] = allowedThemes.includes(raw?.theme) ? raw.theme : 'dark';
+      const theme: AppSettings['theme'] = allowedThemes.includes(normalizedThemeCandidate as AppSettings['theme'])
+        ? (normalizedThemeCandidate as AppSettings['theme'])
+        : 'dark';
       const uiFontFamily =
         typeof raw?.uiFontFamily === 'string' && raw.uiFontFamily.trim()
           ? raw.uiFontFamily.trim().slice(0, 300)
           : DEFAULT_SETTINGS.uiFontFamily;
-      const effectType = raw?.effectType === 'warp' ? 'warp' : raw?.effectType === 'waves' ? 'waves' : 'particles';
       const backgroundImagePath =
         typeof raw?.backgroundImagePath === 'string' ? raw.backgroundImagePath.trim() : DEFAULT_SETTINGS.backgroundImagePath;
       const customAvatarPath =
@@ -297,8 +303,6 @@ export function loadSettings(): AppSettings {
         // 结果路径默认显示：配置缺失时回落到默认值，避免 Boolean(undefined) 误判
         showResultPath: typeof raw?.showResultPath === 'boolean' ? raw.showResultPath : DEFAULT_SETTINGS.showResultPath,
         enableHistory: raw?.enableHistory !== false,
-        enableEffect: Boolean(raw?.enableEffect),
-        effectType,
         backgroundImagePath,
         backgroundImageOpacity,
         customAvatarPath,

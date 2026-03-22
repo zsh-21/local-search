@@ -1,0 +1,6 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 设置页左上角 Logo（黑色版）：用于亮色主题，避免白色描边在浅背景上丢失对比度。 -->
+  <circle cx="14" cy="14" r="9" stroke="#0f172a" stroke-width="3"/>
+  <path d="M21 21L28 28" stroke="#0f172a" stroke-width="3" stroke-linecap="round"/>
+</svg>
+

@@ -26,7 +26,7 @@ html{
   height: fit-content;
 }
 
-/* 主题变量：12 套主题按“材质优先”设计，避免仅靠同构渐变区分。 */
+/* 主题变量：11 套主题按“材质优先”设计，避免仅靠同构渐变区分。 */
 html[data-theme="dark"] {
   --fs-bg: #0f1318;
   --fs-surface: #181f27;
@@ -62,6 +62,10 @@ html[data-theme="dark"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 风格参数 token：用于统一控制主题在模糊、饱和度与对比度上的气质差异。 */
+  --fs-theme-blur: 18px;
+  --fs-theme-saturate: 132%;
+  --fs-theme-contrast: 104%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -115,6 +119,10 @@ html[data-theme="alloy"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 雾银未来：保持冷静工业观感，适度降低模糊并提升清晰度。 */
+  --fs-theme-blur: 14px;
+  --fs-theme-saturate: 118%;
+  --fs-theme-contrast: 103%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -134,56 +142,60 @@ html[data-theme="alloy"] {
 }
 
 html[data-theme="noir"] {
-  --fs-bg: #0b0a10;
-  --fs-surface: #15121c;
-  --fs-surface-2: rgba(248, 241, 255, 0.05);
-  --fs-surface-active: #1f1a2a;
-  --fs-border: rgba(187, 157, 255, 0.22);
-  --fs-border-soft: rgba(187, 157, 255, 0.12);
-  --fs-text: #f2eaff;
-  --fs-text-secondary: #dbcff4;
-  --fs-search-text: #fff9ff;
-  --fs-muted: #a799c4;
-  --fs-accent: #c19cff;
-  --fs-nav-active-accent: #c19cff;
-  --fs-accent-soft: rgba(193, 156, 255, 0.18);
+  --fs-bg: #0b0908;
+  --fs-surface: #171311;
+  --fs-surface-2: rgba(255, 244, 224, 0.05);
+  --fs-surface-active: #241d18;
+  --fs-border: rgba(216, 178, 106, 0.22);
+  --fs-border-soft: rgba(216, 178, 106, 0.12);
+  --fs-text: #f2e7d3;
+  --fs-text-secondary: #dcc8a6;
+  --fs-search-text: #fff7ea;
+  --fs-muted: #b29a79;
+  --fs-accent: #d8b26a;
+  --fs-nav-active-accent: #d8b26a;
+  --fs-accent-soft: rgba(216, 178, 106, 0.18);
   --fs-shadow: 0 34px 72px -32px rgba(0, 0, 0, 0.94);
-  --fs-dots: rgba(193, 156, 255, 0.28);
-  --fs-glow: 0 0 24px rgba(193, 156, 255, 0.18);
-  /* 黑曜剧场：追光紫晕压在黑曜幕布上，形成更强的聚焦感和高级感。 */
+  --fs-dots: rgba(216, 178, 106, 0.3);
+  --fs-glow: 0 0 22px rgba(216, 178, 106, 0.16);
+  /* 奢雅黑金：黑底 + 金色高光，避免大面积金色导致视觉噪声。 */
   --fs-window-bg:
-    radial-gradient(circle at 50% -10%, rgba(193, 156, 255, 0.16) 0%, transparent 42%),
-    radial-gradient(circle at 12% 120%, rgba(88, 58, 126, 0.18) 0%, transparent 46%),
-    #0b0a10;
-  --fs-window-border: rgba(191, 171, 226, 0.3);
-  --fs-panel-bg: rgba(19, 16, 25, 0.82);
-  --fs-control-bg: rgba(24, 20, 32, 0.9);
-  --fs-control-hover: rgba(31, 26, 42, 0.96);
-  --fs-menu-bg: rgba(20, 16, 27, 0.97);
-  --fs-item-hover: rgba(193, 156, 255, 0.14);
-  --fs-selected-bg: rgba(193, 156, 255, 0.2);
-  --fs-selected-border: rgba(214, 190, 255, 0.52);
-  --fs-focus-shadow: 0 0 0 3px rgba(193, 156, 255, 0.2), 0 18px 38px -18px rgba(0, 0, 0, 0.84);
+    radial-gradient(circle at 56% -16%, rgba(216, 178, 106, 0.2) 0%, transparent 44%),
+    radial-gradient(circle at 6% 120%, rgba(89, 62, 27, 0.18) 0%, transparent 52%),
+    #0b0908;
+  --fs-window-border: rgba(208, 170, 98, 0.3);
+  --fs-panel-bg: rgba(23, 19, 16, 0.84);
+  --fs-control-bg: rgba(30, 24, 20, 0.9);
+  --fs-control-hover: rgba(39, 31, 26, 0.96);
+  --fs-menu-bg: rgba(22, 18, 15, 0.97);
+  --fs-item-hover: rgba(216, 178, 106, 0.12);
+  --fs-selected-bg: rgba(216, 178, 106, 0.18);
+  --fs-selected-border: rgba(231, 199, 138, 0.5);
+  --fs-focus-shadow: 0 0 0 3px rgba(216, 178, 106, 0.2), 0 18px 38px -18px rgba(0, 0, 0, 0.84);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 奢雅黑金：降低背景模糊，靠对比与高光边缘强化高级感。 */
+  --fs-theme-blur: 10px;
+  --fs-theme-saturate: 106%;
+  --fs-theme-contrast: 111%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
-  /* 非渐变识别元素：黑曜主题用柔亮描边控制层次，避免纯黑糊成一片。 */
-  --fs-material-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(193, 156, 255, 0.12);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(193, 156, 255, 0.12);
+  /* 非渐变识别元素：金属描边只做点缀，避免破坏沉稳主调。 */
+  --fs-material-frame: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(216, 178, 106, 0.12);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(216, 178, 106, 0.12);
   --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --fs-control-accent-gradient: linear-gradient(102deg, rgba(193, 156, 255, 0.16) 0%, rgba(86, 57, 122, 0.18) 100%);
-  --fs-control-accent-border: rgba(214, 190, 255, 0.3);
-  --fs-type-active-gradient: linear-gradient(102deg, rgba(193, 156, 255, 0.24) 0%, rgba(86, 57, 122, 0.22) 100%);
-  --fs-type-active-border: rgba(214, 190, 255, 0.48);
-  --fs-result-selected-gradient: linear-gradient(98deg, rgba(193, 156, 255, 0.24) 0%, rgba(86, 57, 122, 0.22) 100%);
-  --fs-result-selected-border: rgba(214, 190, 255, 0.54);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(216, 178, 106, 0.16) 0%, rgba(108, 75, 33, 0.16) 100%);
+  --fs-control-accent-border: rgba(231, 199, 138, 0.28);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(216, 178, 106, 0.24) 0%, rgba(108, 75, 33, 0.2) 100%);
+  --fs-type-active-border: rgba(231, 199, 138, 0.46);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(216, 178, 106, 0.24) 0%, rgba(108, 75, 33, 0.2) 100%);
+  --fs-result-selected-border: rgba(231, 199, 138, 0.52);
 }
 
 html[data-theme="terminal"] {
@@ -221,6 +233,10 @@ html[data-theme="terminal"] {
   --fs-radius-panel: 11px;
   --fs-radius-control: 9px;
   --fs-radius-item: 9px;
+  /* 霓虹终端：压低模糊、提升对比，让荧光状态色更利落。 */
+  --fs-theme-blur: 8px;
+  --fs-theme-saturate: 122%;
+  --fs-theme-contrast: 116%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -274,6 +290,10 @@ html[data-theme="chrome"] {
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* Chrome 为主力浅色基线：关闭玻璃模糊，保持纸面观感。 */
+  --fs-theme-blur: 0px;
+  --fs-theme-saturate: 100%;
+  --fs-theme-contrast: 100%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -292,110 +312,61 @@ html[data-theme="chrome"] {
   --fs-result-selected-border: rgba(26, 115, 232, 0.4);
 }
 
-html[data-theme="voltage"] {
-  --fs-bg: #101621;
-  --fs-surface: #1b2635;
-  --fs-surface-2: rgba(241, 248, 255, 0.06);
-  --fs-surface-active: #253447;
-  --fs-border: rgba(170, 199, 236, 0.23);
-  --fs-border-soft: rgba(170, 199, 236, 0.13);
-  --fs-text: #e2ecfb;
-  --fs-text-secondary: #d0def2;
-  --fs-search-text: #f7fbff;
-  --fs-muted: #9fb4d3;
-  --fs-accent: #73ceff;
-  --fs-nav-active-accent: #73ceff;
-  --fs-accent-soft: rgba(115, 206, 255, 0.2);
-  --fs-shadow: 0 30px 64px -28px rgba(0, 0, 0, 0.9);
-  --fs-dots: rgba(115, 206, 255, 0.24);
-  --fs-glow: 0 0 24px rgba(115, 206, 255, 0.22);
-  /* 冷电高压：电蓝光晕叠加绝缘层材质，保持高对比科技感。 */
+html[data-theme="blueprint"] {
+  --fs-bg: #14122b;
+  --fs-surface: #221d44;
+  --fs-surface-2: rgba(246, 241, 255, 0.06);
+  --fs-surface-active: #2d2558;
+  --fs-border: rgba(255, 210, 86, 0.24);
+  --fs-border-soft: rgba(255, 210, 86, 0.14);
+  --fs-text: #f5f1ff;
+  --fs-text-secondary: #ddd3ff;
+  --fs-search-text: #fff9ff;
+  --fs-muted: #b8aadf;
+  --fs-accent: #ffd256;
+  --fs-nav-active-accent: #ffd256;
+  --fs-accent-soft: rgba(255, 210, 86, 0.22);
+  --fs-shadow: 0 22px 44px -24px rgba(0, 0, 0, 0.78);
+  --fs-dots: rgba(255, 210, 86, 0.32);
+  --fs-glow: 0 0 18px rgba(255, 210, 86, 0.18);
+  /* 像素电玩：深紫底 + 像素网格，强化复古街机辨识度。 */
   --fs-window-bg:
-    radial-gradient(circle at 6% -22%, rgba(143, 175, 255, 0.24), transparent 54%),
-    radial-gradient(circle at 88% -8%, rgba(115, 206, 255, 0.18), transparent 50%),
-    #101621;
-  --fs-window-border: rgba(177, 205, 240, 0.28);
-  --fs-panel-bg: rgba(24, 36, 52, 0.76);
-  --fs-control-bg: rgba(29, 43, 62, 0.88);
-  --fs-control-hover: rgba(38, 56, 80, 0.95);
-  --fs-menu-bg: rgba(23, 35, 51, 0.97);
-  --fs-item-hover: rgba(115, 206, 255, 0.14);
-  --fs-selected-bg: rgba(115, 206, 255, 0.2);
-  --fs-selected-border: rgba(146, 218, 255, 0.56);
-  --fs-focus-shadow: 0 0 0 3px rgba(115, 206, 255, 0.23), 0 16px 36px -18px rgba(0, 0, 0, 0.78);
+    repeating-linear-gradient(90deg, rgba(255, 210, 86, 0.06) 0 1px, transparent 1px 14px),
+    repeating-linear-gradient(0deg, rgba(122, 235, 212, 0.06) 0 1px, transparent 1px 14px),
+    #14122b;
+  --fs-window-border: rgba(255, 210, 86, 0.34);
+  --fs-panel-bg: rgba(34, 29, 68, 0.86);
+  --fs-control-bg: rgba(44, 36, 86, 0.92);
+  --fs-control-hover: rgba(53, 43, 102, 0.96);
+  --fs-menu-bg: rgba(33, 27, 64, 0.97);
+  --fs-item-hover: rgba(255, 210, 86, 0.14);
+  --fs-selected-bg: rgba(255, 210, 86, 0.2);
+  --fs-selected-border: rgba(255, 226, 144, 0.5);
+  --fs-focus-shadow: 0 0 0 3px rgba(255, 210, 86, 0.2), 0 14px 26px -18px rgba(0, 0, 0, 0.72);
   --fs-radius-window: 8px;
-  --fs-radius-panel: 12px;
-  --fs-radius-control: 9px;
-  --fs-radius-item: 9px;
+  --fs-radius-panel: 10px;
+  --fs-radius-control: 8px;
+  --fs-radius-item: 8px;
+  /* 像素电玩：让轮廓更硬，减少模糊以保留像素边缘。 */
+  --fs-theme-blur: 2px;
+  --fs-theme-saturate: 136%;
+  --fs-theme-contrast: 118%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
-  /* 非渐变识别元素：Mica 高光描边。 */
-  --fs-material-frame: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(177, 205, 240, 0.14);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(177, 205, 240, 0.16);
-  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  --fs-control-accent-gradient: linear-gradient(100deg, rgba(115, 206, 255, 0.16) 0%, rgba(143, 175, 255, 0.14) 100%);
-  --fs-control-accent-border: rgba(146, 218, 255, 0.34);
-  --fs-type-active-gradient: linear-gradient(100deg, rgba(115, 206, 255, 0.24) 0%, rgba(143, 175, 255, 0.18) 100%);
-  --fs-type-active-border: rgba(146, 218, 255, 0.52);
-  --fs-result-selected-gradient: linear-gradient(96deg, rgba(115, 206, 255, 0.24) 0%, rgba(143, 175, 255, 0.2) 100%);
-  --fs-result-selected-border: rgba(146, 218, 255, 0.58);
-}
-
-html[data-theme="blueprint"] {
-  --fs-bg: #eef5ff;
-  --fs-surface: #ffffff;
-  --fs-surface-2: #f4f8ff;
-  --fs-surface-active: #ffffff;
-  --fs-border: rgba(41, 95, 176, 0.18);
-  --fs-border-soft: rgba(41, 95, 176, 0.1);
-  --fs-text: #173a63;
-  --fs-text-secondary: #335783;
-  --fs-search-text: #0f2c4f;
-  --fs-muted: #6483ab;
-  --fs-accent: #2d74da;
-  --fs-nav-active-accent: #2d74da;
-  --fs-accent-soft: rgba(45, 116, 218, 0.14);
-  --fs-shadow: 0 14px 28px -20px rgba(27, 70, 134, 0.26);
-  --fs-dots: rgba(45, 116, 218, 0.12);
-  --fs-glow: 0 0 16px rgba(45, 116, 218, 0.12);
-  /* 企业蓝图：轻网格和工程蓝边线让浅色主题也保留专业仪表感。 */
-  --fs-window-bg:
-    repeating-linear-gradient(90deg, rgba(45, 116, 218, 0.05) 0 1px, transparent 1px 18px),
-    repeating-linear-gradient(0deg, rgba(45, 116, 218, 0.04) 0 1px, transparent 1px 18px),
-    #eef5ff;
-  --fs-window-border: rgba(58, 107, 185, 0.24);
-  --fs-panel-bg: rgba(255, 255, 255, 0.88);
-  --fs-control-bg: rgba(255, 255, 255, 0.96);
-  --fs-control-hover: rgba(248, 251, 255, 0.98);
-  --fs-menu-bg: rgba(255, 255, 255, 0.98);
-  --fs-item-hover: rgba(45, 116, 218, 0.09);
-  --fs-selected-bg: rgba(45, 116, 218, 0.14);
-  --fs-selected-border: rgba(45, 116, 218, 0.38);
-  --fs-focus-shadow: 0 0 0 3px rgba(45, 116, 218, 0.14), 0 10px 20px -16px rgba(27, 70, 134, 0.28);
-  --fs-radius-window: 8px;
-  --fs-radius-panel: 10px;
-  --fs-radius-control: 8px;
-  --fs-radius-item: 8px;
-  --fs-brand-blue: #1a73e8;
-  --fs-brand-red: #ea4335;
-  --fs-brand-yellow: #fbbc05;
-  --fs-brand-green: #34a853;
-  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
-  --fs-icon-filter: invert(0) brightness(0.9);
-  /* 非渐变识别元素：蓝图主题用细蓝边线维持工程感，不让浅色显得发飘。 */
-  --fs-material-frame: inset 0 0 0 1px rgba(255, 255, 255, 0.86), inset 0 0 0 2px rgba(41, 95, 176, 0.08);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(41, 95, 176, 0.08);
-  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.94);
-  --fs-control-accent-gradient: linear-gradient(100deg, rgba(45, 116, 218, 0.08) 0%, rgba(103, 173, 255, 0.08) 100%);
-  --fs-control-accent-border: rgba(45, 116, 218, 0.24);
-  --fs-type-active-gradient: linear-gradient(100deg, rgba(45, 116, 218, 0.18) 0%, rgba(103, 173, 255, 0.12) 100%);
-  --fs-type-active-border: rgba(45, 116, 218, 0.34);
-  --fs-result-selected-gradient: linear-gradient(96deg, rgba(45, 116, 218, 0.18) 0%, rgba(103, 173, 255, 0.12) 100%);
-  --fs-result-selected-border: rgba(45, 116, 218, 0.4);
+  /* 非渐变识别元素：边框更硬朗，保留 8-bit 风格的块状反馈。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(255, 226, 144, 0.2), inset 0 0 0 2px rgba(95, 82, 153, 0.24);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(255, 226, 144, 0.14);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --fs-control-accent-gradient: linear-gradient(100deg, rgba(255, 210, 86, 0.16) 0%, rgba(122, 235, 212, 0.12) 100%);
+  --fs-control-accent-border: rgba(255, 226, 144, 0.34);
+  --fs-type-active-gradient: linear-gradient(100deg, rgba(255, 210, 86, 0.24) 0%, rgba(122, 235, 212, 0.18) 100%);
+  --fs-type-active-border: rgba(255, 226, 144, 0.5);
+  --fs-result-selected-gradient: linear-gradient(96deg, rgba(255, 210, 86, 0.24) 0%, rgba(122, 235, 212, 0.16) 100%);
+  --fs-result-selected-border: rgba(255, 226, 144, 0.56);
 }
 
 html[data-theme="paper"] {
@@ -433,6 +404,10 @@ html[data-theme="paper"] {
   --fs-radius-panel: 10px;
   --fs-radius-control: 8px;
   --fs-radius-item: 8px;
+  /* 奶油纸张：保持通透与阅读舒适，禁用模糊避免字体发虚。 */
+  --fs-theme-blur: 0px;
+  --fs-theme-saturate: 96%;
+  --fs-theme-contrast: 98%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -486,6 +461,10 @@ html[data-theme="mac"] {
   --fs-radius-panel: 14px;
   --fs-radius-control: 11px;
   --fs-radius-item: 10px;
+  /* 糖霜未来：圆润+较高模糊，突出轻盈柔和的玻璃感。 */
+  --fs-theme-blur: 22px;
+  --fs-theme-saturate: 142%;
+  --fs-theme-contrast: 101%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
@@ -505,168 +484,189 @@ html[data-theme="mac"] {
 }
 
 html[data-theme="signal"] {
-  --fs-bg: #1a120d;
-  --fs-surface: #271a14;
-  --fs-surface-2: rgba(255, 245, 236, 0.06);
-  --fs-surface-active: #35231a;
-  --fs-border: rgba(230, 145, 98, 0.24);
-  --fs-border-soft: rgba(230, 145, 98, 0.14);
-  --fs-text: #f3e2d6;
-  --fs-text-secondary: #e8cdbd;
-  --fs-search-text: #fff4eb;
-  --fs-muted: #c59f8b;
-  --fs-accent: #ff8e46;
-  --fs-nav-active-accent: #ff8e46;
-  --fs-accent-soft: rgba(255, 142, 70, 0.22);
-  --fs-shadow: 0 30px 64px -28px rgba(9, 4, 1, 0.92);
-  --fs-dots: rgba(255, 142, 70, 0.4);
-  --fs-glow: 0 0 24px rgba(255, 142, 70, 0.24);
-  /* 琥珀控制台：暖琥珀光区与深棕设备底板形成经典控制台语气。 */
+  --fs-bg: #101611;
+  --fs-surface: #182119;
+  --fs-surface-2: rgba(235, 247, 232, 0.05);
+  --fs-surface-active: #243025;
+  --fs-border: rgba(132, 166, 124, 0.24);
+  --fs-border-soft: rgba(132, 166, 124, 0.14);
+  --fs-text: #e1ead9;
+  --fs-text-secondary: #cad8c0;
+  --fs-search-text: #f2f9ec;
+  --fs-muted: #95ab8f;
+  --fs-accent: #8dad86;
+  --fs-nav-active-accent: #8dad86;
+  --fs-accent-soft: rgba(141, 173, 134, 0.22);
+  --fs-shadow: 0 30px 64px -28px rgba(5, 10, 6, 0.92);
+  --fs-dots: rgba(141, 173, 134, 0.34);
+  --fs-glow: 0 0 20px rgba(141, 173, 134, 0.16);
+  /* 森林低饱和：用苔藓绿与雾化层次营造安静、耐看的自然感。 */
   --fs-window-bg:
-    radial-gradient(circle at 86% -18%, rgba(255, 142, 70, 0.24) 0%, transparent 54%),
-    linear-gradient(0deg, rgba(97, 45, 26, 0.3) 0%, rgba(97, 45, 26, 0) 52%),
-    #1a120d;
-  --fs-window-border: rgba(230, 145, 98, 0.34);
-  --fs-panel-bg: rgba(34, 23, 17, 0.82);
-  --fs-control-bg: rgba(43, 29, 21, 0.9);
-  --fs-control-hover: rgba(56, 38, 27, 0.95);
-  --fs-menu-bg: rgba(36, 24, 18, 0.97);
-  --fs-item-hover: rgba(255, 142, 70, 0.17);
-  --fs-selected-bg: rgba(255, 142, 70, 0.22);
-  --fs-selected-border: rgba(255, 174, 121, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(255, 142, 70, 0.23), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+    radial-gradient(circle at 84% -16%, rgba(141, 173, 134, 0.2) 0%, transparent 54%),
+    linear-gradient(0deg, rgba(44, 62, 38, 0.28) 0%, rgba(44, 62, 38, 0) 56%),
+    #101611;
+  --fs-window-border: rgba(132, 166, 124, 0.32);
+  --fs-panel-bg: rgba(24, 34, 25, 0.82);
+  --fs-control-bg: rgba(31, 45, 33, 0.9);
+  --fs-control-hover: rgba(39, 55, 40, 0.95);
+  --fs-menu-bg: rgba(27, 38, 28, 0.97);
+  --fs-item-hover: rgba(141, 173, 134, 0.15);
+  --fs-selected-bg: rgba(141, 173, 134, 0.22);
+  --fs-selected-border: rgba(176, 205, 170, 0.52);
+  --fs-focus-shadow: 0 0 0 3px rgba(141, 173, 134, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 森林低饱和：降低饱和度并略提对比，形成安静、克制的层次。 */
+  --fs-theme-blur: 13px;
+  --fs-theme-saturate: 90%;
+  --fs-theme-contrast: 104%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
-  /* 非渐变识别元素：陶釉边缘暖色描边。 */
-  --fs-material-frame: inset 0 0 0 1px rgba(255, 188, 143, 0.14), inset 0 -1px 0 rgba(56, 30, 21, 0.52);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(255, 188, 143, 0.14);
+  /* 非渐变识别元素：采用植物纤维般的柔边描线，避免科技感过强。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(176, 205, 170, 0.14), inset 0 -1px 0 rgba(32, 45, 30, 0.52);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(176, 205, 170, 0.12);
   --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --fs-control-accent-gradient: linear-gradient(102deg, rgba(255, 142, 70, 0.18) 0%, rgba(201, 96, 51, 0.14) 100%);
-  --fs-control-accent-border: rgba(255, 174, 121, 0.34);
-  --fs-type-active-gradient: linear-gradient(102deg, rgba(255, 142, 70, 0.26) 0%, rgba(201, 96, 51, 0.18) 100%);
-  --fs-type-active-border: rgba(255, 174, 121, 0.54);
-  --fs-result-selected-gradient: linear-gradient(98deg, rgba(255, 142, 70, 0.26) 0%, rgba(201, 96, 51, 0.2) 100%);
-  --fs-result-selected-border: rgba(255, 174, 121, 0.58);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(141, 173, 134, 0.18) 0%, rgba(90, 117, 84, 0.14) 100%);
+  --fs-control-accent-border: rgba(176, 205, 170, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(141, 173, 134, 0.24) 0%, rgba(90, 117, 84, 0.18) 100%);
+  --fs-type-active-border: rgba(176, 205, 170, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(141, 173, 134, 0.24) 0%, rgba(90, 117, 84, 0.2) 100%);
+  --fs-result-selected-border: rgba(176, 205, 170, 0.56);
 }
 
 html[data-theme="oxide"] {
-  --fs-bg: #18100d;
-  --fs-surface: #241713;
-  --fs-surface-2: rgba(255, 241, 236, 0.05);
-  --fs-surface-active: #331f1a;
-  --fs-border: rgba(217, 118, 84, 0.24);
-  --fs-border-soft: rgba(217, 118, 84, 0.14);
-  --fs-text: #f5ddd2;
-  --fs-text-secondary: #ebc6b6;
-  --fs-search-text: #fff2ec;
-  --fs-muted: #c19583;
-  --fs-accent: #d97654;
-  --fs-nav-active-accent: #d97654;
-  --fs-accent-soft: rgba(217, 118, 84, 0.22);
+  --fs-bg: #120d0d;
+  --fs-surface: #1e1616;
+  --fs-surface-2: rgba(255, 238, 238, 0.05);
+  --fs-surface-active: #2b1f1f;
+  --fs-border: rgba(216, 86, 66, 0.24);
+  --fs-border-soft: rgba(216, 86, 66, 0.14);
+  --fs-text: #f2dcd7;
+  --fs-text-secondary: #e7c2ba;
+  --fs-search-text: #fff0ec;
+  --fs-muted: #c08f86;
+  --fs-accent: #d85642;
+  --fs-nav-active-accent: #d85642;
+  --fs-accent-soft: rgba(216, 86, 66, 0.22);
   --fs-shadow: 0 30px 64px -28px rgba(11, 5, 3, 0.92);
   --fs-dots: rgba(217, 118, 84, 0.34);
   --fs-glow: 0 0 22px rgba(217, 118, 84, 0.18);
-  /* 赤铜机芯：铜锈暖光加机芯压纹，让暖色主题更像硬件而不是普通橙色皮肤。 */
+  /* 赤焰极简：压低色系数量，只保留关键交互位的红色冲击。 */
   --fs-window-bg:
-    radial-gradient(circle at 88% -16%, rgba(217, 118, 84, 0.24) 0%, transparent 54%),
-    repeating-linear-gradient(135deg, rgba(255, 205, 182, 0.03) 0 1px, transparent 1px 14px),
-    #18100d;
-  --fs-window-border: rgba(217, 137, 111, 0.34);
-  --fs-panel-bg: rgba(31, 19, 16, 0.82);
-  --fs-control-bg: rgba(40, 25, 21, 0.9);
-  --fs-control-hover: rgba(52, 33, 28, 0.95);
-  --fs-menu-bg: rgba(34, 21, 18, 0.97);
-  --fs-item-hover: rgba(217, 118, 84, 0.15);
-  --fs-selected-bg: rgba(217, 118, 84, 0.22);
-  --fs-selected-border: rgba(236, 161, 135, 0.56);
-  --fs-focus-shadow: 0 0 0 3px rgba(217, 118, 84, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+    radial-gradient(circle at 88% -18%, rgba(216, 86, 66, 0.24) 0%, transparent 54%),
+    linear-gradient(0deg, rgba(90, 31, 24, 0.24) 0%, rgba(90, 31, 24, 0) 58%),
+    #120d0d;
+  --fs-window-border: rgba(216, 109, 94, 0.34);
+  --fs-panel-bg: rgba(31, 21, 21, 0.82);
+  --fs-control-bg: rgba(39, 27, 27, 0.9);
+  --fs-control-hover: rgba(50, 34, 34, 0.95);
+  --fs-menu-bg: rgba(34, 23, 23, 0.97);
+  --fs-item-hover: rgba(216, 86, 66, 0.15);
+  --fs-selected-bg: rgba(216, 86, 66, 0.22);
+  --fs-selected-border: rgba(232, 146, 134, 0.54);
+  --fs-focus-shadow: 0 0 0 3px rgba(216, 86, 66, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 赤焰极简：减少模糊并拉高对比，保证红色强调点有冲击力。 */
+  --fs-theme-blur: 10px;
+  --fs-theme-saturate: 112%;
+  --fs-theme-contrast: 114%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
-  /* 非渐变识别元素：赤铜主题强调暖金属压边，避免材质感不够。 */
-  --fs-material-frame: inset 0 0 0 1px rgba(236, 161, 135, 0.12), inset 0 -1px 0 rgba(87, 42, 28, 0.46);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(236, 161, 135, 0.12);
+  /* 非渐变识别元素：用窄描边保持极简，不再叠加“铜锈纹理”噪声。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(232, 146, 134, 0.12), inset 0 -1px 0 rgba(79, 33, 27, 0.46);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(232, 146, 134, 0.12);
   --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --fs-control-accent-gradient: linear-gradient(102deg, rgba(217, 118, 84, 0.18) 0%, rgba(131, 62, 40, 0.14) 100%);
-  --fs-control-accent-border: rgba(236, 161, 135, 0.34);
-  --fs-type-active-gradient: linear-gradient(102deg, rgba(217, 118, 84, 0.26) 0%, rgba(131, 62, 40, 0.18) 100%);
-  --fs-type-active-border: rgba(236, 161, 135, 0.54);
-  --fs-result-selected-gradient: linear-gradient(98deg, rgba(217, 118, 84, 0.26) 0%, rgba(131, 62, 40, 0.2) 100%);
-  --fs-result-selected-border: rgba(236, 161, 135, 0.58);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(216, 86, 66, 0.18) 0%, rgba(124, 47, 38, 0.14) 100%);
+  --fs-control-accent-border: rgba(232, 146, 134, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(216, 86, 66, 0.26) 0%, rgba(124, 47, 38, 0.18) 100%);
+  --fs-type-active-border: rgba(232, 146, 134, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(216, 86, 66, 0.26) 0%, rgba(124, 47, 38, 0.2) 100%);
+  --fs-result-selected-border: rgba(232, 146, 134, 0.56);
 }
 
 html[data-theme="vector"] {
-  --fs-bg: #08161a;
-  --fs-surface: #10262c;
-  --fs-surface-2: rgba(238, 255, 252, 0.06);
-  --fs-surface-active: #17343d;
-  --fs-border: rgba(74, 180, 174, 0.24);
-  --fs-border-soft: rgba(74, 180, 174, 0.14);
-  --fs-text: #d2f1ef;
-  --fs-text-secondary: #c0e2e0;
-  --fs-search-text: #effffd;
-  --fs-muted: #85b8b4;
-  --fs-accent: #30d3c3;
-  --fs-nav-active-accent: #30d3c3;
-  --fs-accent-soft: rgba(48, 211, 195, 0.2);
-  --fs-shadow: 0 30px 64px -28px rgba(0, 9, 10, 0.92);
-  --fs-dots: rgba(48, 211, 195, 0.38);
-  --fs-glow: 0 0 24px rgba(48, 211, 195, 0.22);
-  /* 精密示波：环纹扫光与冷青仪表高光组合出分析工具语气。 */
+  --fs-bg: #081019;
+  --fs-surface: #111b29;
+  --fs-surface-2: rgba(233, 244, 255, 0.06);
+  --fs-surface-active: #1a293c;
+  --fs-border: rgba(124, 154, 196, 0.24);
+  --fs-border-soft: rgba(124, 154, 196, 0.14);
+  --fs-text: #dce8fa;
+  --fs-text-secondary: #c8d8ef;
+  --fs-search-text: #f3f8ff;
+  --fs-muted: #95accb;
+  --fs-accent: #88c0ff;
+  --fs-nav-active-accent: #88c0ff;
+  --fs-accent-soft: rgba(136, 192, 255, 0.2);
+  --fs-shadow: 0 30px 64px -28px rgba(1, 8, 14, 0.92);
+  --fs-dots: rgba(136, 192, 255, 0.34);
+  --fs-glow: 0 0 24px rgba(136, 192, 255, 0.2);
+  /* 极夜玻璃：深蓝黑基底叠加冷光，强调安静但清晰的科技感。 */
   --fs-window-bg:
-    repeating-radial-gradient(circle at 84% 48%, rgba(48, 211, 195, 0.12) 0 6px, transparent 6px 18px),
-    linear-gradient(158deg, rgba(67, 139, 170, 0.18) 0%, transparent 64%),
-    #08161a;
-  --fs-window-border: rgba(74, 180, 174, 0.34);
-  --fs-panel-bg: rgba(12, 32, 37, 0.82);
-  --fs-control-bg: rgba(18, 40, 46, 0.9);
-  --fs-control-hover: rgba(25, 52, 60, 0.95);
-  --fs-menu-bg: rgba(14, 35, 40, 0.97);
-  --fs-item-hover: rgba(48, 211, 195, 0.15);
-  --fs-selected-bg: rgba(48, 211, 195, 0.21);
-  --fs-selected-border: rgba(101, 226, 215, 0.58);
-  --fs-focus-shadow: 0 0 0 3px rgba(48, 211, 195, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+    radial-gradient(circle at 82% -18%, rgba(136, 192, 255, 0.22) 0%, transparent 56%),
+    linear-gradient(160deg, rgba(62, 94, 140, 0.18) 0%, transparent 62%),
+    #081019;
+  --fs-window-border: rgba(136, 167, 210, 0.34);
+  --fs-panel-bg: rgba(15, 26, 39, 0.82);
+  --fs-control-bg: rgba(21, 35, 51, 0.9);
+  --fs-control-hover: rgba(30, 46, 66, 0.95);
+  --fs-menu-bg: rgba(16, 30, 46, 0.97);
+  --fs-item-hover: rgba(136, 192, 255, 0.15);
+  --fs-selected-bg: rgba(136, 192, 255, 0.2);
+  --fs-selected-border: rgba(170, 209, 255, 0.56);
+  --fs-focus-shadow: 0 0 0 3px rgba(136, 192, 255, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
   --fs-radius-window: 8px;
   --fs-radius-panel: 12px;
   --fs-radius-control: 10px;
   --fs-radius-item: 10px;
+  /* 极夜玻璃：中高模糊 + 冷色饱和，营造深色玻璃氛围。 */
+  --fs-theme-blur: 16px;
+  --fs-theme-saturate: 128%;
+  --fs-theme-contrast: 106%;
   --fs-brand-blue: #1a73e8;
   --fs-brand-red: #ea4335;
   --fs-brand-yellow: #fbbc05;
   --fs-brand-green: #34a853;
   --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
   --fs-icon-filter: invert(1) brightness(1.08);
-  /* 非渐变识别元素：声呐边缘描边。 */
-  --fs-material-frame: inset 0 0 0 1px rgba(101, 226, 215, 0.14), inset 0 0 0 2px rgba(36, 110, 124, 0.2);
-  --fs-material-panel-frame: inset 0 0 0 1px rgba(101, 226, 215, 0.12);
+  /* 非渐变识别元素：用冷高光细描边突出玻璃层级。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(170, 209, 255, 0.14), inset 0 0 0 2px rgba(58, 92, 132, 0.2);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(170, 209, 255, 0.12);
   --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --fs-control-accent-gradient: linear-gradient(102deg, rgba(48, 211, 195, 0.16) 0%, rgba(62, 144, 170, 0.14) 100%);
-  --fs-control-accent-border: rgba(101, 226, 215, 0.34);
-  --fs-type-active-gradient: linear-gradient(102deg, rgba(48, 211, 195, 0.24) 0%, rgba(62, 144, 170, 0.18) 100%);
-  --fs-type-active-border: rgba(101, 226, 215, 0.54);
-  --fs-result-selected-gradient: linear-gradient(98deg, rgba(48, 211, 195, 0.24) 0%, rgba(62, 144, 170, 0.2) 100%);
-  --fs-result-selected-border: rgba(101, 226, 215, 0.58);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(136, 192, 255, 0.16) 0%, rgba(75, 118, 178, 0.14) 100%);
+  --fs-control-accent-border: rgba(170, 209, 255, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(136, 192, 255, 0.24) 0%, rgba(75, 118, 178, 0.18) 100%);
+  --fs-type-active-border: rgba(170, 209, 255, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(136, 192, 255, 0.24) 0%, rgba(75, 118, 178, 0.2) 100%);
+  --fs-result-selected-border: rgba(170, 209, 255, 0.56);
 }
 
-/* 浅色主题兼容规则：仅增强 4 个浅色主题的可读性，不覆盖各主题自己的材质配方。 */
+/* 语义 token：把“弹层”和“信息行”抽象成统一语义，避免组件各写一套颜色。 */
+html[data-theme] {
+  --fs-popup-bg: var(--fs-menu-bg, var(--fs-surface));
+  --fs-popup-border: var(--fs-border);
+  --fs-popup-shadow: var(--fs-shadow);
+  --fs-table-row-bg: var(--fs-control-bg, var(--fs-surface-2));
+  --fs-table-row-hover: var(--fs-item-hover, var(--fs-surface-2));
+  --fs-table-row-border: var(--fs-border-soft, var(--fs-border));
+}
+
+/* 浅色主题兼容规则：仅增强 3 个浅色主题（chrome/mac/paper）的可读性。 */
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .search-box {
@@ -675,7 +675,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .type-select-menu {
@@ -687,7 +686,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .type-select-item:hover {
@@ -696,7 +694,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .type-select-item.active {
@@ -707,7 +704,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   input::placeholder {
@@ -827,7 +823,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"],
     [data-theme="paper"]
   )
@@ -927,8 +922,8 @@ html:is(
   width: 20px;
   height: 20px;
   margin-right: 8px;
-  /* 设置图标与主 logo 统一跟随主题滤镜策略。 */
-  filter: var(--fs-icon-filter, none) drop-shadow(0 0 3px color-mix(in srgb, var(--fs-accent) 30%, transparent));
+  /* 设置页左上角 logo 通过切换黑/白资源适配亮暗主题，因此这里不再使用反色滤镜。 */
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fs-accent) 30%, transparent));
 }
 
 .settings-btn {
@@ -958,6 +953,21 @@ html:is(
   position: relative;
   margin-right: 4px;
   -webkit-app-region: no-drag;
+}
+
+/* 类型下拉移除后，用纯文本承载当前类型，保持对齐并沿用主题色。 */
+.type-select-text {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fs-text);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .type-select-btn {
@@ -1568,7 +1578,6 @@ input::placeholder {
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"],
     [data-theme="paper"]
   )
@@ -1829,7 +1838,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"],
     [data-theme="paper"]
   )
@@ -2381,7 +2389,7 @@ html:is(
 }
 
 .settings-nav-account-card:hover {
-  /* 侧栏悬停使用主题 token，保证 12 套主题都有自己的 hover 语气。 */
+  /* 侧栏悬停使用主题 token，保证 11 套主题都有自己的 hover 语气。 */
   background: var(--fs-item-hover, var(--fs-surface-2));
   border-color: transparent;
   box-shadow: none;
@@ -2561,13 +2569,11 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .settings-nav-account-card.active,
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"]
   )
   .settings-nav-item.active {
@@ -2642,13 +2648,38 @@ html:is(
 .settings-search-preview {
   width: 600px;
   margin: auto;
-  pointer-events: none;
+  /* 允许滚动查看预览结果：预览本身无交互逻辑，开启事件不会影响真实操作。 */
+  pointer-events: auto;
   overflow: hidden;
 
 }
 
 .settings-search-preview .container.search-container {
   margin: 0;
+}
+
+/* 预览区仅用于展示：禁用按钮/列表项的 hover 与点击，保留结果区滚动能力。 */
+.settings-search-preview .search-box,
+.settings-search-preview .search-box *,
+.settings-search-preview .settings-preview-results-scroll li,
+.settings-search-preview .settings-preview-results-scroll .action-group,
+.settings-search-preview .settings-preview-results-scroll .action-btn,
+.settings-search-preview .list-bottom-info {
+  pointer-events: none;
+}
+
+/* 设置页搜索预览：一次只展示 3 条结果，超出的通过滚动查看，避免预览区域占满页面。 */
+.settings-search-preview .settings-preview-results-scroll {
+  max-height: 156px; /* 3 * 52px：与 .result-item-wrapper 默认高度保持一致 */
+  overflow-y: auto;
+  padding-right: 4px; /* 防止滚动条贴边，视觉更干净 */
+  overscroll-behavior: contain; /* 避免滚动到边界时带动外层设置页滚动 */
+  pointer-events: auto;
+}
+
+/* 紧凑模式下行高更小：同步调整预览滚动容器高度，保证仍然只显示 3 条。 */
+.settings-search-preview .container.search-container.compact .settings-preview-results-scroll {
+  max-height: 132px; /* 3 * 44px：与紧凑模式 .result-item-wrapper 高度一致 */
 }
 
 @media (max-width: 500px) {
@@ -2703,7 +2734,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"],
     [data-theme="paper"]
   )
@@ -2725,6 +2755,7 @@ html:is(
   gap: 8px;
 }
 
+/* 设置分组标题说明入口：统一 hover 提示触发点，减少各分区重复样式定义。 */
 .membership-badge {
   font-size: 11px;
   font-weight: 650;
@@ -2839,10 +2870,10 @@ html:is(
   position: fixed;
   max-width: 520px;
   padding: 10px 12px;
-  background: var(--fs-surface);
-  border: 1px solid var(--fs-border);
+  background: var(--fs-popup-bg, var(--fs-surface));
+  border: 1px solid var(--fs-popup-border, var(--fs-border));
   border-radius: 10px;
-  box-shadow: var(--fs-shadow);
+  box-shadow: var(--fs-popup-shadow, var(--fs-shadow));
   color: var(--fs-text);
   z-index: 2000;
   pointer-events: none;
@@ -2884,9 +2915,9 @@ html:is(
   left: var(--fs-tooltip-arrow-left, 14px);
   width: 10px;
   height: 10px;
-  background: var(--fs-surface);
-  border-right: 1px solid var(--fs-border);
-  border-bottom: 1px solid var(--fs-border);
+  background: var(--fs-popup-bg, var(--fs-surface));
+  border-right: 1px solid var(--fs-popup-border, var(--fs-border));
+  border-bottom: 1px solid var(--fs-popup-border, var(--fs-border));
   transform: rotate(45deg);
 }
 
@@ -3211,8 +3242,8 @@ html:is(
 
 .theme-card.theme-noir .theme-preview {
   background:
-    radial-gradient(circle at 50% -10%, rgba(193, 156, 255, 0.24) 0%, transparent 42%),
-    #15101b;
+    radial-gradient(circle at 50% -10%, rgba(216, 178, 106, 0.26) 0%, transparent 42%),
+    #14100d;
 }
 
 .theme-card.theme-noir .theme-preview::before {
@@ -3222,7 +3253,7 @@ html:is(
   left: 9%;
   width: 58%;
   height: 7px;
-  background: rgba(193, 156, 255, 0.3);
+  background: rgba(216, 178, 106, 0.32);
   border-radius: 2px;
 }
 
@@ -3233,9 +3264,9 @@ html:is(
   left: 10%;
   width: 80%;
   height: 35%;
-  background: rgba(30, 22, 40, 0.92);
+  background: rgba(34, 26, 20, 0.92);
   border-radius: 7px;
-  box-shadow: inset 0 0 0 1px rgba(214, 190, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(231, 199, 138, 0.34);
 }
 
 .theme-card.theme-terminal .theme-preview {
@@ -3298,39 +3329,11 @@ html:is(
     0 4px 10px rgba(65, 74, 88, 0.16);
 }
 
-.theme-card.theme-voltage .theme-preview {
-  background:
-    radial-gradient(circle at 8% -20%, rgba(143, 175, 255, 0.28) 0%, transparent 56%),
-    #172536;
-}
-
-.theme-card.theme-voltage .theme-preview::before {
-  content: "";
-  position: absolute;
-  top: 14%;
-  left: 10%;
-  width: 56%;
-  height: 7px;
-  background: rgba(115, 206, 255, 0.3);
-  border-radius: 2px;
-}
-
-.theme-card.theme-voltage .theme-preview::after {
-  content: "";
-  position: absolute;
-  top: 38%;
-  left: 10%;
-  width: 80%;
-  height: 35%;
-  background: rgba(38, 56, 80, 0.9);
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px rgba(177, 205, 240, 0.32);
-}
-
 .theme-card.theme-blueprint .theme-preview {
   background:
-    repeating-linear-gradient(90deg, rgba(45, 116, 218, 0.12) 0 1px, transparent 1px 12px),
-    #eef5ff;
+    repeating-linear-gradient(90deg, rgba(255, 210, 86, 0.14) 0 1px, transparent 1px 10px),
+    repeating-linear-gradient(0deg, rgba(122, 235, 212, 0.12) 0 1px, transparent 1px 10px),
+    #1b1733;
 }
 
 .theme-card.theme-blueprint .theme-preview::before {
@@ -3340,7 +3343,7 @@ html:is(
   left: 10%;
   width: 56%;
   height: 7px;
-  background: rgba(45, 116, 218, 0.24);
+  background: rgba(255, 210, 86, 0.32);
   border-radius: 2px;
 }
 
@@ -3351,9 +3354,9 @@ html:is(
   left: 10%;
   width: 80%;
   height: 34%;
-  background: #ffffff;
-  border-radius: 5px;
-  box-shadow: inset 0 0 0 1px rgba(58, 107, 185, 0.22);
+  background: rgba(47, 39, 89, 0.92);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 226, 144, 0.34);
 }
 
 .theme-card.theme-paper .theme-preview {
@@ -3416,8 +3419,8 @@ html:is(
 
 .theme-card.theme-signal .theme-preview {
   background:
-    radial-gradient(circle at 86% -16%, rgba(255, 142, 70, 0.3) 0%, transparent 54%),
-    #21160f;
+    radial-gradient(circle at 86% -16%, rgba(141, 173, 134, 0.3) 0%, transparent 54%),
+    #152016;
 }
 
 .theme-card.theme-signal .theme-preview::before {
@@ -3427,7 +3430,7 @@ html:is(
   left: 10%;
   width: 58%;
   height: 7px;
-  background: linear-gradient(90deg, rgba(255, 142, 70, 0.36), rgba(255, 188, 143, 0.24));
+  background: linear-gradient(90deg, rgba(141, 173, 134, 0.34), rgba(176, 205, 170, 0.24));
   border-radius: 2px;
 }
 
@@ -3438,15 +3441,15 @@ html:is(
   left: 10%;
   width: 80%;
   height: 35%;
-  background: rgba(61, 39, 27, 0.92);
+  background: rgba(34, 50, 35, 0.92);
   border-radius: 5px;
-  box-shadow: inset 0 0 0 1px rgba(255, 174, 121, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(176, 205, 170, 0.38);
 }
 
 .theme-card.theme-oxide .theme-preview {
   background:
-    radial-gradient(circle at 86% -16%, rgba(217, 118, 84, 0.3) 0%, transparent 54%),
-    #21140f;
+    radial-gradient(circle at 86% -16%, rgba(216, 86, 66, 0.3) 0%, transparent 54%),
+    #1d1313;
 }
 
 .theme-card.theme-oxide .theme-preview::before {
@@ -3456,7 +3459,7 @@ html:is(
   left: 10%;
   width: 58%;
   height: 7px;
-  background: linear-gradient(90deg, rgba(217, 118, 84, 0.34), rgba(236, 161, 135, 0.24));
+  background: linear-gradient(90deg, rgba(216, 86, 66, 0.34), rgba(232, 146, 134, 0.24));
   border-radius: 2px;
 }
 
@@ -3467,15 +3470,15 @@ html:is(
   left: 10%;
   width: 80%;
   height: 35%;
-  background: rgba(61, 38, 31, 0.92);
+  background: rgba(58, 34, 34, 0.92);
   border-radius: 5px;
-  box-shadow: inset 0 0 0 1px rgba(236, 161, 135, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(232, 146, 134, 0.38);
 }
 
 .theme-card.theme-vector .theme-preview {
   background:
-    repeating-radial-gradient(circle at 84% 48%, rgba(48, 211, 195, 0.18) 0 5px, transparent 5px 14px),
-    #0d262d;
+    radial-gradient(circle at 84% -16%, rgba(136, 192, 255, 0.26) 0%, transparent 56%),
+    #0f1b2b;
 }
 
 .theme-card.theme-vector .theme-preview::before {
@@ -3485,7 +3488,7 @@ html:is(
   left: 10%;
   width: 58%;
   height: 7px;
-  background: linear-gradient(90deg, rgba(48, 211, 195, 0.36), rgba(101, 226, 215, 0.24));
+  background: linear-gradient(90deg, rgba(136, 192, 255, 0.34), rgba(170, 209, 255, 0.24));
   border-radius: 2px;
 }
 
@@ -3496,9 +3499,9 @@ html:is(
   left: 10%;
   width: 80%;
   height: 35%;
-  background: rgba(22, 54, 62, 0.92);
+  background: rgba(27, 43, 63, 0.92);
   border-radius: 5px;
-  box-shadow: inset 0 0 0 1px rgba(101, 226, 215, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(170, 209, 255, 0.38);
 }
 
 .theme-card span {
@@ -3573,7 +3576,6 @@ html:is(
 
 html:is(
     [data-theme="chrome"],
-    [data-theme="blueprint"],
     [data-theme="mac"],
     [data-theme="paper"]
   )
@@ -3613,14 +3615,14 @@ html:is(
   z-index: 9999;
   padding: 7px 12px;
   border-radius: 6px;
-  border: 1px solid var(--fs-border);
-  background: var(--fs-surface);
+  border: 1px solid var(--fs-popup-border, var(--fs-border));
+  background: var(--fs-popup-bg, var(--fs-surface));
   color: var(--fs-text);
   /* toast 文案更轻量：避免遮挡搜索内容 */
   font-size: 12px;
   font-weight: 500;
   box-shadow:
-    0 6px 16px rgba(0, 0, 0, 0.18),
+    var(--fs-popup-shadow, 0 6px 16px rgba(0, 0, 0, 0.18)),
     0 3px 6px -4px rgba(0, 0, 0, 0.2);
   max-width: min(420px, calc(100vw - 24px));
   pointer-events: none;
@@ -3671,43 +3673,6 @@ html:is(
 .settings-toast.info .settings-toast-icon {
   color: var(--fs-text-inverse, #ffffff);
   background: var(--fs-accent);
-}
-
-/* 特效选择器样式*/
-.effect-type-options {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.effect-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--fs-surface);
-  border: 1px solid var(--fs-border);
-  font-size: 13px;
-  color: var(--fs-text);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.effect-option:hover {
-  background: var(--fs-surface-2);
-  border-color: var(--fs-border-soft);
-}
-
-.effect-option.active {
-  background: var(--fs-accent-soft);
-  border-color: var(--fs-accent);
-  color: var(--fs-accent);
-  font-weight: 500;
-}
-
-.effect-option input {
-  margin: 0;
 }
 
 /* 账号登录相关样式 */
@@ -3801,10 +3766,10 @@ html:is(
   position: absolute;
   left: 0;
   top: 56px;
-  background: var(--fs-surface);
-  border: 1px solid var(--fs-border);
+  background: var(--fs-popup-bg, var(--fs-surface));
+  border: 1px solid var(--fs-popup-border, var(--fs-border));
   border-radius: 10px;
-  box-shadow: var(--fs-shadow);
+  box-shadow: var(--fs-popup-shadow, var(--fs-shadow));
   padding: 10px;
   display: flex;
   gap: 8px;
@@ -3955,7 +3920,7 @@ html:is(
   /* border-radius: var(--fs-radius-window, 16px); */
   border-color: var(--fs-window-border, var(--fs-border));
   background: var(--fs-window-bg, var(--fs-bg));
-  /* 窗口框架显式使用材质描边 token，保证 12 套主题的边框语言可感知。 */
+  /* 窗口框架显式使用材质描边 token，保证 11 套主题的边框语言可感知。 */
   box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
 }
 
@@ -3987,9 +3952,9 @@ html:is(
 
 .type-select-menu {
   border-radius: calc(var(--fs-radius-control, 10px) + 2px);
-  background: var(--fs-menu-bg, var(--fs-surface));
-  border-color: var(--fs-border);
-  box-shadow: var(--fs-material-panel-frame, none);
+  background: var(--fs-popup-bg, var(--fs-menu-bg, var(--fs-surface)));
+  border-color: var(--fs-popup-border, var(--fs-border));
+  box-shadow: var(--fs-material-panel-frame, none), var(--fs-popup-shadow, none);
 }
 
 .type-select-item:hover {
@@ -4004,10 +3969,12 @@ html:is(
 
 .results li {
   border-radius: var(--fs-radius-item, 10px);
+  background: var(--fs-table-row-bg, var(--fs-surface));
+  border-color: var(--fs-table-row-border, var(--fs-border-soft, var(--fs-border)));
 }
 
 .results li:hover {
-  background: var(--fs-item-hover, var(--fs-surface-2));
+  background: var(--fs-table-row-hover, var(--fs-item-hover, var(--fs-surface-2)));
 }
 
 .results li.selected {
@@ -4058,73 +4025,13 @@ html:is(
   border-color: transparent;
 }
 
-html[data-theme="alloy"] .container,
-html[data-theme="alloy"] .settings-container {
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
-}
-
-html[data-theme="noir"] .container,
-html[data-theme="noir"] .settings-container {
-  backdrop-filter: blur(12px) saturate(106%);
-  -webkit-backdrop-filter: blur(12px) saturate(106%);
-}
-
-html[data-theme="terminal"] .container,
-html[data-theme="terminal"] .settings-container {
-  backdrop-filter: blur(14px) saturate(124%);
-  -webkit-backdrop-filter: blur(14px) saturate(124%);
-}
-
-html[data-theme="chrome"] .container,
-html[data-theme="chrome"] .settings-container {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
-}
-
-html[data-theme="voltage"] .container,
-html[data-theme="voltage"] .settings-container {
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-}
-
-html[data-theme="signal"] .container,
-html[data-theme="signal"] .settings-container {
-  backdrop-filter: blur(15px) saturate(122%);
-  -webkit-backdrop-filter: blur(15px) saturate(122%);
-}
-
-html[data-theme="oxide"] .container,
-html[data-theme="oxide"] .settings-container {
-  backdrop-filter: blur(15px) saturate(118%);
-  -webkit-backdrop-filter: blur(15px) saturate(118%);
-}
-
-html[data-theme="vector"] .container,
-html[data-theme="vector"] .settings-container {
-  backdrop-filter: blur(16px) saturate(126%);
-  -webkit-backdrop-filter: blur(16px) saturate(126%);
-}
-
-html[data-theme="blueprint"] .container,
-html[data-theme="blueprint"] .settings-container {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
-}
-
-html[data-theme="paper"] .container,
-html[data-theme="paper"] .settings-container {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
-}
-
-html[data-theme="mac"] .container,
-html[data-theme="mac"] .settings-container {
-  backdrop-filter: blur(22px) saturate(138%);
-  -webkit-backdrop-filter: blur(22px) saturate(138%);
+/* 统一按主题 token 应用模糊/饱和度/对比度，避免每加一套主题都要新增分支规则。 */
+html[data-theme] .container,
+html[data-theme] .settings-container {
+  backdrop-filter: blur(var(--fs-theme-blur, 16px)) saturate(var(--fs-theme-saturate, 120%))
+    contrast(var(--fs-theme-contrast, 100%));
+  -webkit-backdrop-filter: blur(var(--fs-theme-blur, 16px)) saturate(var(--fs-theme-saturate, 120%))
+    contrast(var(--fs-theme-contrast, 100%));
 }
 
 /* ===== 搜索置顶 + 背景图可读性增强 ===== */
@@ -4255,9 +4162,9 @@ html[data-bg-tone="dark"] .setting-item-title {
   justify-content: space-between;
   gap: 12px;
   min-height: 58px;
-  background-color: var(--fs-control-bg, var(--fs-surface-2));
+  background-color: var(--fs-table-row-bg, var(--fs-control-bg, var(--fs-surface-2)));
   background-image: var(--fs-control-accent-gradient, none);
-  border: 1px solid var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border)));
+  border: 1px solid var(--fs-table-row-border, var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border))));
   border-radius: 10px;
   box-shadow: var(--fs-material-control-frame, none);
   padding: 10px 12px;

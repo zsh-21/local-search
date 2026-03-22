@@ -1,29 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { BackgroundImage } from "../components/BackgroundImage";
-import { ParticleBackground } from "../components/ParticleBackground";
 import { useSettingsController, SettingsTabKey } from "./useSettingsController";
 import { GeneralSection } from "./sections/GeneralSection";
 import { SearchSection } from "./sections/SearchSection";
 import { AccountSection } from "./sections/AccountSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
-import { IconAppearance, IconGeneral, IconPinOff, IconSearch, IconShortcuts } from "../components/icons/SettingsIcons";
+import {
+  IconAccount,
+  IconAppearance,
+  IconCommand,
+  IconClear,
+  IconCopyPath,
+  IconFolder,
+  IconFile,
+  IconGeneral,
+  IconOfficialLink,
+  IconOpenFolder,
+  IconPinOff,
+  IconRunAsAdmin,
+  IconSearch,
+  IconSettings,
+  IconShortcuts,
+} from "../components/icons/SettingsIcons";
 import type { AppSettings } from "../appTypes";
+
+// 亮色主题集合：用于切换设置页左上角 Logo（黑/白），保证浅背景下有足够对比度。
+const LIGHT_THEMES = new Set(["chrome", "mac", "paper"]);
 
 // 设置页渲染层：负责整体布局与导航，具体逻辑集中在 useSettingsController，分区 UI 下沉到 sections
 const NAV_ITEMS: { key: Exclude<SettingsTabKey, "account">; label: string; icon: JSX.Element }[] = [
   // 设置侧栏图标统一复用组件，避免在业务组件中继续堆叠内联 SVG。
-  { key: "general", label: "通用", icon: <IconGeneral size={17} /> },
-  { key: "search", label: "搜索", icon: <IconSearch size={17} /> },
-  { key: "shortcuts", label: "快捷键", icon: <IconShortcuts size={17} /> },
-  { key: "appearance", label: "外观", icon: <IconAppearance size={17} /> },
+  { key: "general", label: "通用", icon: <IconGeneral size={17} variant="duotone" /> },
+  { key: "search", label: "搜索", icon: <IconSearch size={17} variant="duotone" /> },
+  { key: "shortcuts", label: "快捷键", icon: <IconShortcuts size={17} variant="duotone" /> },
+  { key: "appearance", label: "外观", icon: <IconAppearance size={17} variant="duotone" /> },
 ];
 
 const SECTION_META: Record<SettingsTabKey, { title: string; desc: string }> = {
   general: { title: "通用", desc: "启动、状态与历史记录" },
   search: { title: "搜索", desc: "默认类型、窗口参数与结果行为" },
   shortcuts: { title: "快捷键", desc: "呼出搜索与面板内快捷操作" },
-  appearance: { title: "外观", desc: "主题、字体、背景图与视觉效果" },
+  // 特效能力已下线：外观分区仅保留主题、字体与背景图配置。
+  appearance: { title: "外观", desc: "主题、字体与背景图" },
   account: { title: "账号", desc: "登录状态与订阅信息" },
 };
 
@@ -44,46 +63,72 @@ type SearchPreviewSample = {
 const SEARCH_PREVIEW_FREQUENCY_CAP = 80;
 
 // 顶部搜索预览样本：用于静态展示排序与样式变化，不参与真实搜索逻辑
+// 为了让用户在预览区看到“所有类型”的真实样式，这里补齐每种类型的代表样本。
 const SEARCH_PREVIEW_SAMPLES: SearchPreviewSample[] = [
   {
-    id: "zip-skill",
-    name: "ui-ux-pro-max-skill.zip",
-    type: "file",
+    id: "app-vscode",
+    name: "Visual Studio Code",
+    type: "app",
     staticScore: 0.96,
-    count: 42,
+    count: 48,
     lastUsedHours: 1,
-    fileMtimeHours: 1,
-    path: "C:\\Users\\21\\AppData\\Local\\Temp\\ui-ux-pro-max-skill.zip",
+    path: "C:\\Program Files\\Microsoft VS Code\\Code.exe",
   },
   {
-    id: "folder-skill",
-    name: "ui-ux-pro-max-skill",
-    type: "folder",
-    staticScore: 0.91,
-    count: 26,
+    id: "settings-theme",
+    name: "主题与字体设置",
+    type: "settings",
+    staticScore: 0.93,
+    count: 30,
     lastUsedHours: 2,
-    fileMtimeHours: 2,
-    path: "C:\\Users\\21\\AppData\\Local\\Temp\\ui-ux-pro-max-skill",
   },
   {
-    id: "folder-main",
-    name: "ui-ux-pro-max-skill-main",
-    type: "folder",
-    staticScore: 0.86,
-    count: 18,
+    id: "file-spec",
+    name: "产品需求说明.docx",
+    type: "file",
+    staticScore: 0.9,
+    count: 22,
     lastUsedHours: 3,
-    fileMtimeHours: 3,
-    path: "C:\\Users\\21\\AppData\\Local\\Temp\\ui-ux-pro-max-skill\\ui-ux-pro-max-skill-main",
+    fileMtimeHours: 4,
+    path: "C:\\Users\\21\\Documents\\产品需求说明.docx",
   },
   {
-    id: "folder-root",
-    name: "ui-ux-pro-max",
+    id: "folder-assets",
+    name: "DesignAssets",
     type: "folder",
-    staticScore: 0.81,
+    staticScore: 0.88,
+    count: 18,
+    lastUsedHours: 4,
+    fileMtimeHours: 6,
+    path: "C:\\Users\\21\\Documents\\DesignAssets",
+  },
+  {
+    id: "image-hero",
+    name: "brand-hero.png",
+    type: "image",
+    staticScore: 0.84,
+    count: 16,
+    lastUsedHours: 6,
+    fileMtimeHours: 2,
+    path: "C:\\Users\\21\\Pictures\\brand-hero.png",
+  },
+  {
+    id: "video-demo",
+    name: "demo-walkthrough.mp4",
+    type: "video",
+    staticScore: 0.82,
+    count: 9,
+    lastUsedHours: 10,
+    fileMtimeHours: 8,
+    path: "C:\\Users\\21\\Videos\\demo-walkthrough.mp4",
+  },
+  {
+    id: "command-dev",
+    name: "npm run dev",
+    type: "command",
+    staticScore: 0.79,
     count: 12,
-    lastUsedHours: 5,
-    fileMtimeHours: 5,
-    path: "C:\\Users\\21\\AppData\\Local\\Temp\\ui-ux-pro-max-skill\\ui-ux-pro-max",
+    lastUsedHours: 2,
   },
 ];
 
@@ -193,25 +238,12 @@ function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: SettingsSearc
   // 结果图标结构尽量与真实面板一致，避免预览出现样式漂移
   const renderResultIcon = (item: SearchPreviewSample) => {
     if (item.type === "folder") {
-      return (
-        <span className="result-icon folder-emoji" aria-hidden="true">
-          📁
-        </span>
-      );
+      // 预览区文件夹结果与真实搜索页保持一致，统一使用彩色文件夹图标。
+      return <IconFolder size={35} className="result-icon" />;
     }
     if (item.type === "settings") {
-      return (
-        <svg className="result-icon" viewBox="0 0 25 25" fill="none" aria-hidden="true">
-          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.8" />
-          <path
-            d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
+      // 设置结果沿用专门的设置图标，和主页面的结果列表保持同一套语义。
+      return <IconSettings size={35} className="result-icon" />;
     }
     if (item.type === "file" || item.type === "image" || item.type === "video") {
       const badge = buildBadgeText(item);
@@ -222,19 +254,12 @@ function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: SettingsSearc
       );
     }
     if (item.type === "command") {
-      return (
-        <svg className="result-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M5 7.5 9 12l-4 4.5M11.5 16.5H19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <rect x="2.5" y="3.5" width="19" height="17" rx="3" stroke="currentColor" strokeWidth="1.6" />
-        </svg>
-      );
+      // 命令类型预览改用 sprite 图标：避免内联 SVG 导致风格与主题色不一致。
+      return <IconCommand size={35} className="result-icon" />;
     }
-    return (
-      <svg className="result-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <rect x="4" y="3.5" width="16" height="17" rx="3" stroke="currentColor" strokeWidth="1.7" />
-        <path d="M8 8.5h8M8 12h8M8 15.5h5.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      </svg>
-    );
+
+    // 未覆盖类型的兜底图标也统一使用 sprite，避免“剩一个内联 SVG”破坏整体一致性。
+    return <IconFile size={35} className="result-icon" />;
   };
 
   const isLimitedByDisplayCount = (Number(draft.searchDisplayLimit) || 0) < previewRows.length;
@@ -245,112 +270,75 @@ function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: SettingsSearc
           {/* 顶部搜索框完整复用真实结构：保证视觉与真实搜索面板一致 */}
           <div className="search-box">
             <div className="search-icon-wrapper">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="search-icon-svg" aria-hidden="true">
-                <path
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0 1 14 0z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              {/* 预览区搜索入口与主页面保持同一套彩色图标。 */}
+              <IconSearch size={18} className="search-icon-svg" />
             </div>
             <div className="search-input-wrap">
               <input type="text" readOnly tabIndex={-1} value="ui-ux-pro-max" aria-label="搜索预览输入框" />
             </div>
             <div className="search-box-right">
               <button type="button" className="clear-btn" tabIndex={-1} aria-label="清空输入" title="清空 (Ctrl+L)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-                </svg>
+                {/* 清空图标改为统一组件，避免预览和主页面出现两套写法。 */}
+                <IconClear size={14} />
               </button>
               <div className="type-select">
-                <button className="type-select-btn" type="button" tabIndex={-1} aria-haspopup="menu" aria-expanded="false">
-                  <span className="type-select-label">{currentDefaultTypeLabel}</span>
-                  <span className="type-select-caret">▾</span>
-                </button>
+                {/* 预览区移除类型下拉，仅展示当前类型文案，避免与真实面板交互造成误解。 */}
+                <span className="type-select-text">{currentDefaultTypeLabel}</span>
               </div>
             </div>
             <button className="settings-btn" type="button" tabIndex={-1} title="打开设置面板">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.8" />
-                <path
-                  d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              {/* 预览区设置按钮沿用统一设置图标，减少视觉断层。 */}
+              <IconSettings size={18} />
             </button>
             <button type="button" className="pin-btn" tabIndex={-1} aria-label="固定搜索面板" title="固定 (Alt+T)">
-              <IconPinOff size={25} />
+              {/* 固定按钮使用与搜索面板一致的图标与尺寸：状态仅通过 active 高亮表达。 */}
+              <IconPinOff size={18} />
             </button>
           </div>
 
           <div className="results">
-            {visibleRows.map((item, index) => {
-              const isSelected = index === 0;
-              const badgeText = buildBadgeText(item);
-              const showPathLine = draft.showResultPath && typeof item.path === "string" && /^[a-zA-Z]:\\/.test(item.path);
-              const actionIds = getVisibleActionIdsForItem(item);
-              return (
-                <div key={item.id} className={`result-item-wrapper ${isSelected ? "selected" : ""}`}>
-                  <li className={isSelected ? "selected" : ""}>
-                    <span className="result-index">{item.rank}</span>
-                    {renderResultIcon(item)}
-                    <div className="result-meta">
-                      <div className="result-name-row">
-                        <span className="app-name">{item.name}</span>
-                        {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
-                        {isSelected ? <span className="shortcut-hint">ENTER</span> : null}
+            {/* 预览搜索面板一次只需要看到 3 条结果：超出的通过滚动查看，避免设置页被长列表撑高。 */}
+            <div className="settings-preview-results-scroll">
+              {visibleRows.map((item, index) => {
+                const isSelected = index === 0;
+                const badgeText = buildBadgeText(item);
+                const showPathLine = draft.showResultPath && typeof item.path === "string" && /^[a-zA-Z]:\\/.test(item.path);
+                const actionIds = getVisibleActionIdsForItem(item);
+                return (
+                  <div key={item.id} className={`result-item-wrapper ${isSelected ? "selected" : ""}`}>
+                    <li className={isSelected ? "selected" : ""}>
+                      <span className="result-index">{item.rank}</span>
+                      {renderResultIcon(item)}
+                      <div className="result-meta">
+                        <div className="result-name-row">
+                          <span className="app-name">{item.name}</span>
+                          {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
+                          {isSelected ? <span className="shortcut-hint">ENTER</span> : null}
+                        </div>
+                        {showPathLine ? <span className="app-path">{item.path}</span> : null}
                       </div>
-                      {showPathLine ? <span className="app-path">{item.path}</span> : null}
-                    </div>
-                    <div className="action-group">
-                      {actionIds.includes("openFolder") ? (
-                        <button type="button" className="action-btn" data-action-id="openFolder" tabIndex={-1}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                              d="M3 7.5c0-1.1.9-2 2-2h5l2 2h7c1.1 0 2 .9 2 2v7.5c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V7.5Z"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </button>
-                      ) : null}
-                      {actionIds.includes("copyPath") ? (
-                        <button type="button" className="action-btn" data-action-id="copyPath" tabIndex={-1}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                              d="M8 4V3c0-.6.4-1 1-1h10c.6 0 1 .4 1 1v10c0 .6-.4 1-1 1h-1M4 8v12c0 .6.4 1 1 1h10c.6 0 1-.4 1-1V8c0-.6-.4-1-1-1H5c-.6 0-1 .4-1 1Z"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </button>
-                      ) : null}
-                      {actionIds.includes("runAsAdmin") ? (
-                        <button type="button" className="action-btn" data-action-id="runAsAdmin" tabIndex={-1}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                              d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-                              stroke="currentColor"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                </div>
-              );
-            })}
+                      <div className="action-group">
+                        {actionIds.includes("openFolder") ? (
+                          <button type="button" className="action-btn" data-action-id="openFolder" tabIndex={-1}>
+                            <IconOpenFolder size={16} />
+                          </button>
+                        ) : null}
+                        {actionIds.includes("copyPath") ? (
+                          <button type="button" className="action-btn" data-action-id="copyPath" tabIndex={-1}>
+                            <IconCopyPath size={16} />
+                          </button>
+                        ) : null}
+                        {actionIds.includes("runAsAdmin") ? (
+                          <button type="button" className="action-btn" data-action-id="runAsAdmin" tabIndex={-1}>
+                            <IconRunAsAdmin size={16} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  </div>
+                );
+              })}
+            </div>
             <div className="list-bottom-info">
               {isLimitedByDisplayCount ? (
                 <div className="no-more-results">{`由于内容太多，展示最匹配的前${draft.searchDisplayLimit}`}</div>
@@ -427,6 +415,10 @@ export function SettingsViewImpl() {
   const currentMeta = useMemo(() => SECTION_META[c.activeKey], [c.activeKey]);
   // 搜索页需要替换顶部标题为预览面板，其余页面保留原标题与描述
   const isSearchTab = c.activeKey === "search";
+  const settingsLogoSrc = useMemo(() => {
+    // 设置页左上角 Logo 需要在亮/暗主题下切换黑白：避免浅色主题里白色描边对比度不足。
+    return LIGHT_THEMES.has(c.draft.theme) ? "tray-black.svg" : "tray.svg";
+  }, [c.draft.theme]);
 
   return (
     <div
@@ -436,7 +428,6 @@ export function SettingsViewImpl() {
       onKeyDown={handleKeyDown}
     >
       <BackgroundImage path={c.draft.backgroundImagePath} opacity={c.draft.backgroundImageOpacity} />
-      <ParticleBackground enabled={c.draft.enableEffect} type={c.draft.effectType} />
 
       <div className="settings-header" >
         <div
@@ -446,7 +437,7 @@ export function SettingsViewImpl() {
             c.onToggleMax();
           }}
         >
-          <img src="tray.svg" className="settings-logo" alt="logo" />
+          <img src={settingsLogoSrc} className="settings-logo" alt="logo" />
           <span className="settings-title">设置</span>
           <button
             type="button"
@@ -457,11 +448,8 @@ export function SettingsViewImpl() {
               window.ipcRenderer?.invoke("open-external", "https://www.yitong.xin/");
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
+            {/* 官网按钮改为统一的外链图标，避免在同一行里混入另一套线稿。 */}
+            <IconOfficialLink size={14} variant="duotone" />
           </button>
         </div>
         <div className="settings-header-spacer" />
@@ -517,10 +505,7 @@ export function SettingsViewImpl() {
                         {c.user.avatarText || c.user.nickname?.slice(0, 1).toUpperCase()}
                       </span>
                     ) : (
-                      <svg className="settings-nav-account-avatar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M20 21a8 8 0 1 0-16 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                        <path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" strokeWidth="1.8" />
-                      </svg>
+                      <IconAccount size={18} variant="duotone" className="settings-nav-account-avatar-icon" />
                     )}
                   </span>
                 </div>

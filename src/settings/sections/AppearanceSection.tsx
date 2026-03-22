@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { AppSettings } from "../../appTypes";
 
-// 外观分区：主题、字体、特效与背景图。
+// 外观分区：主题、字体与背景图。
 export function AppearanceSection({
   draft,
   setDraft,
@@ -26,7 +26,10 @@ export function AppearanceSection({
   return (
     <div className="settings-content">
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">主题界面</div>
+        {/* 主题分组补充说明，强调预览与保存的关系。 */}
+        <div className="settings-hint">切换全局配色与材质风格，点击后立即预览，保存后作为默认主题。</div>
         <div className="theme-grid">
           {themeOptions.map((opt) => {
             const active = draft.theme === opt.id;
@@ -51,7 +54,10 @@ export function AppearanceSection({
       </div>
 
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">字体</div>
+        {/* 字体分组补充说明，提示中英文阅读体验差异。 */}
+        <div className="settings-hint">切换应用整体字体方案，用于优化中文可读性与英文字符观感。</div>
         <div className="font-grid">
           {fontOptions.map((opt) => {
             const active = draft.uiFontFamily === opt.value;
@@ -76,62 +82,13 @@ export function AppearanceSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">
-          <span>特效</span>
-          {membershipBadge}
-        </div>
-        <label className="setting-row">
-          <input
-            type="checkbox"
-            checked={draft.enableEffect}
-            disabled={!isMember}
-            onChange={(e) => {
-              setDraft({ ...draft, enableEffect: e.target.checked });
-              setError("");
-            }}
-          />
-          <span>启用背景特效</span>
-        </label>
-        {draft.enableEffect && (
-          <div className="form-row">
-            <div className="form-label">特效类型</div>
-            <div className="effect-type-options">
-              <label className={`effect-option ${draft.effectType === "particles" ? "active" : ""}`}>
-                <input
-                  type="radio"
-                  name="effectType"
-                  value="particles"
-                  checked={draft.effectType === "particles"}
-                  onChange={() => {
-                    setDraft({ ...draft, effectType: "particles" });
-                    setError("");
-                  }}
-                />
-                粒子
-              </label>
-              <label className={`effect-option ${draft.effectType === "warp" ? "active" : ""}`}>
-                <input
-                  type="radio"
-                  name="effectType"
-                  value="warp"
-                  checked={draft.effectType === "warp"}
-                  onChange={() => {
-                    setDraft({ ...draft, effectType: "warp" });
-                    setError("");
-                  }}
-                />
-                穿梭
-              </label>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">
           <span>背景图片</span>
           {membershipBadge}
         </div>
+        {/* 背景图分组补充说明，提示订阅限制与透明度影响。 */}
+        <div className="settings-hint">设置窗口与搜索面板的背景图，并可调整透明度；订阅账号可用。</div>
         <div className="form-row">
           <div className="form-label">图片</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

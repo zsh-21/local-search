@@ -61,8 +61,6 @@ export function useSettingsController() {
     settings.disabledSearchTypeIds,
     settings.ignoredPaths,
     settings.showResultPath,
-    settings.enableEffect,
-    settings.effectType,
     settings.backgroundImagePath,
     settings.backgroundImageOpacity,
     settings.searchRanking,
@@ -104,8 +102,6 @@ export function useSettingsController() {
       draft.keepStateOnClose === settings.keepStateOnClose &&
       draft.showResultPath === settings.showResultPath &&
       draft.enableHistory === settings.enableHistory &&
-      draft.enableEffect === settings.enableEffect &&
-      draft.effectType === settings.effectType &&
       draft.backgroundImagePath === settings.backgroundImagePath &&
       draft.backgroundImageOpacity === settings.backgroundImageOpacity &&
       rankingEq(draft.searchRanking, settings.searchRanking)

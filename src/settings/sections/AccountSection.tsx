@@ -3,6 +3,7 @@ import { AppSettings } from "../../appTypes";
 import { getStoredTokenFromLocalStorage } from "../../membership";
 import { User } from "../../api";
 import { THEME_STYLE_OPTIONS } from "../../constants/initialValues";
+import { IconRefresh } from "../../components/icons/SettingsIcons";
 
 // 账号分区：登录/退出、会员状态展示、刷新状态入口
 export function AccountSection({
@@ -92,7 +93,10 @@ export function AccountSection({
   return (
     <div className="settings-content">
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">账号信息</div>
+        {/* 账号分区补充说明，清晰交代登录与会员信息的展示范围。 */}
+        <div className="settings-hint">展示登录状态、会员到期信息与头像设置入口。</div>
         {user ? (
           <div className="account-profile">
             <div className="profile-header">
@@ -176,28 +180,9 @@ export function AccountSection({
                 aria-label="刷新状态"
                 title="刷新状态"
               >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                  className={isRefreshingStatus ? "spin-anim" : ""}
-                >
-                  <path
-                    d="M20 12a8 8 0 1 1-2.34-5.66"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M20 4v6h-6"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
+                {/* 刷新按钮复用统一图标，状态动画仍由现有 spin 样式控制。 */}
+                {/* 刷新图标使用双色叠层：与设置页其他图标保持统一；旋转动画仍由 className 控制。 */}
+                <IconRefresh size={20} variant="duotone" className={isRefreshingStatus ? "spin-anim" : ""} />
               </button>
             </div>
 

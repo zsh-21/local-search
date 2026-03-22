@@ -14,22 +14,16 @@ export const FS_BACKUP_SETTINGS_KEY = "fs_backup_settings";
 
 export { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS };
 
-// 主题体系：固定 12 款（4 浅色 + 8 深色），并与 AppSettings.theme 联合类型保持一致。
+// 主题选项精简为 7 套：按需求移除 Chrome、Neon Terminal、Mist Titanium、Forest Ritual。
 export const THEME_STYLE_OPTIONS: Array<{ id: AppSettings["theme"]; label: string }> = [
-  // 深色主题：把极客感、仪表感和高对比层次拆成可感知的不同材质。
-  { id: "dark", label: "Dark · 石墨工业 2.0" },
-  { id: "terminal", label: "Terminal · 终端矩阵" },
-  { id: "vector", label: "Vector · 精密示波" },
-  { id: "alloy", label: "Alloy · 钛银仪表" },
-  { id: "noir", label: "Noir · 黑曜剧场" },
-  { id: "signal", label: "Signal · 琥珀控制台" },
-  { id: "oxide", label: "Oxide · 赤铜机芯" },
-  { id: "voltage", label: "Voltage · 冷电高压" },
-  // 浅色主题：保留官方感与高级办公气质，同时避免浅色只剩“发白”。
-  { id: "chrome", label: "Chrome · 官方品牌纸面 2.0" },
-  { id: "mac", label: "macOS · 珠光玻璃 2.0" },
-  { id: "blueprint", label: "Blueprint · 企业蓝图" },
-  { id: "paper", label: "Paper · 白金档案" },
+  { id: "dark", label: "Dark · 石墨工业基线" },
+  // 保留剩余主题的旧 ID，避免已存储配置发生结构变化。
+  { id: "vector", label: "Night Glass · 极夜玻璃" },
+  { id: "paper", label: "Cream Editorial · 奶油纸张" },
+  { id: "blueprint", label: "Pixel Arcade · 复古像素电玩" },
+  { id: "noir", label: "Obsidian Luxe · 奢雅黑金" },
+  { id: "mac", label: "Pastel Flux · 糖霜未来" },
+  { id: "oxide", label: "Ember Mono · 赤焰极简" },
 ];
 
 export const RESULT_ACTION_OPTIONS: Array<{

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getBootstrapHistoryCache, getSearchTypeOptions, loadBootstrapState, setBootstrapHistoryCache, useSettings } from "../settingsStore";
@@ -270,6 +270,7 @@ export function useSearchController() {
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchingIndicator, setShowSearchingIndicator] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -574,6 +575,23 @@ export function useSearchController() {
   }, []);
 
   useEffect(() => {
+    // 首次进入搜索面板时同步一次索引状态，保证空查询场景也能显示索引线。
+    let cancelled = false;
+    void window.ipcRenderer
+      ?.invoke("get-index-progress")
+      .then((resp: any) => {
+        if (cancelled) return;
+        setIsIndexing(Boolean(resp?.isIndexing));
+        const raw = Number(resp?.progress);
+        if (Number.isFinite(raw)) setIndexProgress(Math.max(0, Math.min(1, raw)));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (searchingIndicatorTimerRef.current != null) {
       window.clearTimeout(searchingIndicatorTimerRef.current);
       searchingIndicatorTimerRef.current = null;
@@ -594,6 +612,52 @@ export function useSearchController() {
       }
     };
   }, [isSearching]);
+
+  useEffect(() => {
+    // 索引进度只在索引期间采样：500ms 低频轮询，避免给渲染层和主进程增加持续压力。
+    if (!isIndexing) {
+      setIndexProgress(0);
+      return;
+    }
+
+    let cancelled = false;
+    let timerId: number | null = null;
+    const poll = async () => {
+      if (cancelled) return;
+      if (!window.ipcRenderer) return;
+      try {
+        const resp = (await window.ipcRenderer.invoke("get-index-progress")) as
+          | {
+              isIndexing?: boolean;
+              progress?: number;
+            }
+          | undefined;
+
+        if (cancelled) return;
+        const raw = Number(resp?.progress);
+        const normalized = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+        setIndexProgress(normalized);
+
+        // 主进程返回非索引态时立即停止采样，防止无意义轮询。
+        if (resp?.isIndexing === false) {
+          setIndexProgress(1);
+          setIsIndexing(false);
+          return;
+        }
+      } catch {}
+
+      if (cancelled) return;
+      timerId = window.setTimeout(() => {
+        void poll();
+      }, 500);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timerId != null) window.clearTimeout(timerId);
+    };
+  }, [isIndexing]);
 
   useEffect(() => {
     queryRef.current = query;
@@ -1611,8 +1675,7 @@ export function useSearchController() {
       else launchApp(selected);
     }
   };
-
-  // 鍒楄〃浣跨敤铏氭嫙婊氬姩锛坮eact-window v2锛夛紝杩欓噷鐩存帴浣跨敤鍏ㄩ噺 results锛岄伩鍏嶁€滈€変腑绱㈠紩瓒呭嚭鍙鍒囩墖鈥濆鑷寸┖鐧芥覆鏌?
+  // 列表使用虚拟滚动（react-window v2）：这里直接使用全量 results，避免“选中索引超出可视切片”导致渲染空白
   const visibleResults = results;
   const currentTypeLabel = useMemo(() => {
     return enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型";
@@ -1674,11 +1737,13 @@ export function useSearchController() {
     setShowBackToTop((prev) => (prev === shouldShow ? prev : shouldShow));
   };
 
-  const statusText = showSearchingIndicator
-    ? "正在搜索..."
+  // 搜索状态线优先级：先显示“搜索中”，否则显示“索引中”。
+  const searchActivity: "idle" | "searching" | "indexing" = showSearchingIndicator
+    ? "searching"
     : isIndexing
-      ? "正在建立本地文件索引..."
-      : "";
+      ? "indexing"
+      : "idle";
+
 
   return {
     settings,
@@ -1709,7 +1774,8 @@ export function useSearchController() {
     listHeight,
     showEmptyState,
     showInputHint,
-    statusText: showSearchingIndicator ? "正在搜索..." : isIndexing ? "正在建立本地文件索引..." : "",
+    searchActivity,
+    indexProgress,
     ITEM_HEIGHT,
     MAX_LIST_HEIGHT,
     inputRef,

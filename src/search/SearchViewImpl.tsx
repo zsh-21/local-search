@@ -1,8 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { List } from "react-window";
 import { BackgroundImage } from "../components/BackgroundImage";
-import { IconPin, IconPinOff } from "../components/icons/SettingsIcons";
-import { ParticleBackground } from "../components/ParticleBackground";
+import {
+  IconCalc,
+  IconChevronUp,
+  IconClear,
+  IconCopyPath,
+  IconDeleteHistory,
+  IconFolder,
+  IconOpenFolder,
+  IconPin,
+  IconPinOff,
+  IconRunAsAdmin,
+  IconSearch,
+  IconSettings,
+} from "../components/icons/SettingsIcons";
 import { AppItem } from "../appTypes";
 import { useSearchController } from "./useSearchController";
 import { normalizeResultKey } from "./searchResultUtils";
@@ -13,6 +25,13 @@ export function SearchViewImpl() {
 
   const isHistoryMode = c.query.trim().length === 0;
   const isCalcMode = c.isCalcMode;
+  // 搜索状态文案统一从 searchActivity 派生，避免依赖不存在的 statusText 字段。
+  const statusText =
+    c.searchActivity === "searching"
+      ? "搜索中..."
+      : c.searchActivity === "indexing"
+        ? `正在索引 ${Math.round(c.indexProgress || 0)}%`
+        : "";
 
   const [actionTooltip, setActionTooltip] = useState<null | {
     text: string;
@@ -243,38 +262,13 @@ export function SearchViewImpl() {
           />
         );
       }
-      return (
-        <svg
-          className="result-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect
-            x="4"
-            y="2.5"
-            width="16"
-            height="19"
-            rx="3"
-            stroke="currentColor"
-            strokeWidth="1.7"
-          />
-          <path
-            d="M8 7.5h8M8 12h3m5 0h.01M8 16.5h3m5 0h.01"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
+      // 回退图标也统一走 sprite：保证主题色、阴影滤镜与其他图标一致。
+      return <IconCalc size={35} className="result-icon" />;
     }
 
     if (item.type === "folder") {
-      return (
-        <span className="result-icon folder-emoji" aria-hidden="true">
-          📂
-        </span>
-      );
+      // 文件夹结果改用彩色 iconfont 图标，避免继续依赖单色 emoji 样式。
+      return <IconFolder size={35} className="result-icon" />;
     }
 
     if (item.type === "app") {
@@ -285,27 +279,8 @@ export function SearchViewImpl() {
     }
 
     if (item.type === "settings") {
-      return (
-        <svg
-          className="result-icon"
-          viewBox="0 0 25 25"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          />
-          <path
-            d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
+      // 设置结果沿用专门的设置图标，确保语义一致且和其他页面统一。
+      return <IconSettings size={35} className="result-icon" />;
     }
 
     if (item.type === "file") {
@@ -447,20 +422,7 @@ export function SearchViewImpl() {
                     title="打开所在目录"
                     aria-label="打开所在目录"
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M3 7.5c0-1.1.9-2 2-2h5l2 2h7c1.1 0 2 .9 2 2v7.5c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V7.5Z"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <IconOpenFolder size={16} />
                   </button>
                 );
               }
@@ -483,21 +445,7 @@ export function SearchViewImpl() {
                     title="复制路径"
                     aria-label="复制路径"
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M8 4V3c0-.6.4-1 1-1h10c.6 0 1 .4 1 1v10c0 .6-.4 1-1 1h-1M4 8v12c0 .6.4 1 1 1h10c.6 0 1-.4 1-1V8c0-.6-.4-1-1-1H5c-.6 0-1 .4-1 1Z"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <IconCopyPath size={16} />
                   </button>
                 );
               }
@@ -520,21 +468,7 @@ export function SearchViewImpl() {
                     title="以管理员身份运行"
                     aria-label="以管理员身份运行"
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <IconRunAsAdmin size={16} />
                   </button>
                 );
               }
@@ -559,20 +493,7 @@ export function SearchViewImpl() {
                     title="删除该历史"
                     aria-label="删除该历史"
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 6l12 12M18 6 6 18"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    <IconDeleteHistory size={16} />
                   </button>
                 );
               }
@@ -641,10 +562,6 @@ export function SearchViewImpl() {
         path={c.settings.backgroundImagePath}
         opacity={c.settings.backgroundImageOpacity}
       />
-      <ParticleBackground
-        enabled={c.settings.enableEffect}
-        type={c.settings.effectType}
-      />
       {actionTooltip ? (
         <div
           className="fs-tooltip-pop"
@@ -686,21 +603,8 @@ export function SearchViewImpl() {
 
       <div className="search-box">
         <div className="search-icon-wrapper">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            className="search-icon-svg"
-          >
-            <path
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          {/* 搜索框前缀改为彩色图标，避免浅色/深色主题里只剩单调线稿。 */}
+          <IconSearch size={18} className="search-icon-svg" />
         </div>
         <div className="search-input-wrap">
           <input
@@ -737,71 +641,14 @@ export function SearchViewImpl() {
               aria-label="清空输入"
               title="清空 (Ctrl+L)"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 6l12 12M18 6 6 18"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              {/* 清空按钮改用统一图标组件，便于后续复用和统一颜色。 */}
+              <IconClear size={14} />
             </button>
           ) : null}
 
           <div className="type-select" ref={c.typeSelectRef}>
-            <button
-              className="type-select-btn"
-              type="button"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                c.clearActionSelection();
-                c.setTypeMenuOpen((v) => !v);
-              }}
-              aria-haspopup="menu"
-              aria-expanded={c.typeMenuOpen}
-            >
-              <span className="type-select-label">{c.currentTypeLabel}</span>
-              <span className="type-select-caret">▾</span>
-            </button>
-            {c.typeMenuOpen ? (
-              <div
-                className="type-select-menu"
-                role="menu"
-                ref={c.typeMenuRef}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <div className="type-select-menu-inner">
-                  {c.searchTypeOptions.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`type-select-item ${opt.id === c.searchTypeId ? "active" : ""}`}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        c.clearActionSelection();
-                        c.setSearchTypeId(opt.id);
-                        c.setTypeMenuOpen(false);
-                      }}
-                    >
-                      <div className="type-select-item-left">
-                        <span>{opt.label}</span>
-                      </div>
-                      {opt.id === c.searchTypeId && (
-                        <span className="check-mark">✓</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+            {/* 移除类型下拉入口，仅展示当前类型文案，避免误触引导。 */}
+            <span className="type-select-text">{c.currentTypeLabel}</span>
           </div>
         </div>
 
@@ -814,26 +661,8 @@ export function SearchViewImpl() {
           type="button"
           title={`打开设置面板 (${c.settings.settingsShortcut})`}
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            />
-            <path
-              d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2.05 2.05 0 0 1-1.45 3.5 2 2 0 0 1-1.45-.6l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.54V21a2.05 2.05 0 0 1-4.1 0v-.08a1.7 1.7 0 0 0-1-1.54 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-1.45.6 2.05 2.05 0 0 1-1.45-3.5l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.54-1H3a2.05 2.05 0 0 1 0-4.1h.08a1.7 1.7 0 0 0 1.54-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06A2.05 2.05 0 0 1 5.71 3.5c.53 0 1.04.2 1.45.6l.06.06c.5.5 1.23.65 1.87.34a1.7 1.7 0 0 0 1-1.54V3a2.05 2.05 0 0 1 4.1 0v.08c0 .67.4 1.27 1 1.54.64.31 1.37.16 1.87-.34l.06-.06c.41-.4.92-.6 1.45-.6a2.05 2.05 0 0 1 1.45 3.5l-.06.06c-.5.5-.65 1.23-.34 1.87.27.6.87 1 1.54 1H21a2.05 2.05 0 0 1 0 4.1h-.08c-.67 0-1.27.4-1.54 1Z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          {/* 设置按钮与结果页设置图标保持一致，避免同一语义出现两套线稿。 */}
+          <IconSettings size={18} />
         </button>
         <button
           type="button"
@@ -846,16 +675,17 @@ export function SearchViewImpl() {
           aria-label={pinButtonAriaLabel}
           title={pinButtonTitle}
         >
-          {c.isPanelPinned ? <IconPin size={25} /> : <IconPinOff size={25} />}
+          {/* 固定/取消固定使用同一图标：通过 active 高亮与否表达状态，且尺寸与设置按钮保持一致。 */}
+          {c.isPanelPinned ? <IconPin size={18} /> : <IconPinOff size={18} />}
         </button>
 
         {/* <div className="drag-icon" title="按住拖拽移动" /> */}
       </div>
 
-      {c.statusText && (
+      {statusText && (
         <div className="status">
           <span className="spinner" />
-          <span className="status-text">{c.statusText}</span>
+          <span className="status-text">{statusText}</span>
         </div>
       )}
 
@@ -912,18 +742,8 @@ export function SearchViewImpl() {
                   title="返回顶部"
                   type="button"
                 >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m18 15-6-6-6 6" />
-                  </svg>
+                  {/* 回到顶部箭头改为 sprite 图标：统一风格与主题色，避免保留内联 SVG。 */}
+                  <IconChevronUp size={18} />
                 </button>
               )}
             </>

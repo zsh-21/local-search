@@ -45,17 +45,13 @@ export interface AppSettings {
   settingsShortcut: string;
   // 面板内“写入选中项到输入框”的快捷键（默认 Alt+Enter）
   acceptSelectedResultShortcut: string;
-  // 主题集合扩展为 12 款：4 个浅色（chrome/mac/blueprint/paper）+ 8 个深色（dark 与 7 个新增极客主题）
+  // 主题集合精简为 7 套：移除 Chrome/Neon Terminal/Mist Titanium/Forest Ritual。
+  // 历史配置中的已移除主题会在归一化阶段回落到 dark，避免出现无效主题值。
   theme:
     | "dark"
-    | "terminal"
     | "vector"
-    | "alloy"
     | "noir"
-    | "signal"
     | "oxide"
-    | "voltage"
-    | "chrome"
     | "mac"
     | "blueprint"
     | "paper";
@@ -69,8 +65,6 @@ export interface AppSettings {
   keepStateOnClose: boolean;
   showResultPath: boolean;
   enableHistory: boolean;
-  enableEffect: boolean;
-  effectType: "particles" | "warp" | "waves";
   backgroundImagePath: string;
   backgroundImageOpacity: number;
   // 自定义头像：存储本地图片路径（通过主进程转为 dataUrl 显示）

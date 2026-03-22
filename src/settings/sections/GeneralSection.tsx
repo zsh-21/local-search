@@ -15,16 +15,19 @@ export function GeneralSection({
   return (
     <div className="settings-content">
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">通用</div>
 
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconPower size={18} />
+              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
+              <IconPower size={18} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">开机自启</div>
-              <div className="setting-item-desc">随系统启动自动运行搜索面板。</div>
+              {/* 说明文案补充使用场景，帮助用户理解影响范围。 */}
+              <div className="setting-item-desc">随系统启动自动运行搜索面板，减少手动打开步骤。</div>
             </div>
           </div>
           <label className="setting-item-control" aria-label="开机自启">
@@ -42,11 +45,13 @@ export function GeneralSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconState size={18} />
+              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
+              <IconState size={18} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">保留搜索状态</div>
-              <div className="setting-item-desc">再次呼出时保留上次输入与选中状态。</div>
+              {/* 说明文案补充状态含义，避免用户误解为“清空/缓存”。 */}
+              <div className="setting-item-desc">关闭窗口后仍保留输入与选中，便于继续上次操作。</div>
             </div>
           </div>
           <label className="setting-item-control" aria-label="保留搜索状态">
@@ -64,11 +69,13 @@ export function GeneralSection({
         <div className="setting-item-card setting-item-card-stack">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconHistory size={18} />
+              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
+              <IconHistory size={18} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">历史记录</div>
-              <div className="setting-item-desc">控制历史记录开关、上限和清理动作。</div>
+              {/* 说明文案补充性能与容量影响，帮助理解开关意义。 */}
+              <div className="setting-item-desc">控制历史记录开关、最大条数与清理动作，避免记录过多影响性能。</div>
             </div>
           </div>
           <label className="setting-item-control" aria-label="启用历史记录">

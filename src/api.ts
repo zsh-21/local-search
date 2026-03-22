@@ -13,14 +13,9 @@ export interface User {
   // 主题字段与本地设置保持同一集合，避免登录后主题回显出现未知值。
   theme:
     | "dark"
-    | "terminal"
     | "vector"
-    | "alloy"
     | "noir"
-    | "signal"
     | "oxide"
-    | "voltage"
-    | "chrome"
     | "mac"
     | "blueprint"
     | "paper";

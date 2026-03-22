@@ -394,7 +394,8 @@ export function SearchSection({
         onFocus={(e) => showInfoTooltipByRect(help.text, help.example, e.currentTarget.getBoundingClientRect())}
         onBlur={() => setTooltip(null)}
       >
-        <IconInfo size={14} />
+        {/* 信息提示图标使用双色叠层：与设置页其他图标保持统一的层次感。 */}
+        <IconInfo size={14} variant="duotone" />
       </button>
     </span>
   );
@@ -402,10 +403,13 @@ export function SearchSection({
   return (
     <div className="settings-content">
       <div className="settings-group" style={{ zIndex: defaultTypeMenuOpen ? 100 : undefined }}>
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">
           <span>默认类型</span>
           {membershipBadge}
         </div>
+        {/* 默认类型补充说明，强调首次打开的默认选择与订阅限制。 */}
+        <div className="settings-hint">设置搜索框初始选中的类型，每次打开面板会自动选中该项（订阅可配置）。</div>
         <div className="form-row">
           <div className="form-label">默认选择</div>
           <div className="settings-type-select type-select" ref={defaultTypeSelectRef}>
@@ -490,11 +494,11 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">
-          <span>列表显示</span>
-        </div>
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
+        <div className="settings-group-title">列表显示</div>
+          {/* 说明文案补充影响范围，强调仅影响展示而非命中结果。 */}
           <div className="settings-hint">
-            搜索结果列表最多展示多少条（仅影响列表展示，不影响实际命中数量）。范围 20-100，默认 50。
+            控制搜索结果列表的展示密度与条数（仅影响列表展示，不影响实际命中数量）。范围 20-100，默认 50。
           </div>
           <div className="form-row">
             <div className="form-label">展示条数</div>
@@ -551,13 +555,13 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">
-          <span>搜索窗口尺寸</span>
-        </div>
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
+        <div className="settings-group-title">搜索窗口尺寸</div>
+        {/* 说明文案补充限制范围，帮助用户理解生效边界。 */}
         <div className="settings-hint">
           初始宽度用于控制搜索窗口首次打开的宽度；最大高度用于控制搜索结果展开后的最大高度。
           <br />
-          宽度范围 450-1000；高度最大值不超过当前显示器可用高度。
+          宽度范围 450-1000；高度最大值不超过当前显示器可用高度，避免遮挡其他窗口。
         </div>
         <div className="form-row">
           <div className="form-label">初始宽度</div>
@@ -625,11 +629,11 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">
-          <span>结果排序</span>
-        </div>
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
+        <div className="settings-group-title">结果排序</div>
+        {/* 说明文案补充排序影响范围，便于用户理解调整目的。 */}
         <div className="settings-hint">
-          调整静态匹配、Frecency 与类型优先级。信号权重保存时会自动归一化到总和 100。
+          调整静态匹配、Frecency 与类型优先级，决定结果排序策略。信号权重保存时会自动归一化到总和 100。
         </div>
         <div className="form-row">
           <div className="form-label">{renderLabelWithInfo("匹配度权重", RANKING_SIGNAL_HELP.match)}</div>
@@ -877,11 +881,11 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
-        <div className="settings-group-title">
-          <span>路径黑名单</span>
-        </div>
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
+        <div className="settings-group-title">路径黑名单</div>
+        {/* 说明文案补充使用场景，避免误解为删除文件。 */}
         <div className="settings-hint">
-          命中前缀的路径及其子目录将被忽略（可配置多个，上不封顶）
+          命中前缀的路径及其子目录将被忽略（可配置多个，上不封顶），适合排除缓存或临时目录。
         </div>
         <div className="form-row">
           <div className="form-label">新增路径</div>
@@ -964,10 +968,13 @@ export function SearchSection({
         : null}
 
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">
           <span>自定义类型</span>
           {membershipBadge}
         </div>
+        {/* 自定义类型补充说明，强调后缀格式与影响范围。 */}
+        <div className="settings-hint">按文件后缀扩展自定义搜索类型，新增后会参与默认类型、排序与开关控制（订阅可配置）。</div>
         {/* 自定义类型作为高级功能：非会员保持禁用，但支持回车提交，提高录入效率 */}
         <div className="form-row">
           <div className="form-label">新增后缀</div>
@@ -1045,10 +1052,13 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">
           <span>类型顺序</span>
           {membershipBadge}
         </div>
+        {/* 类型顺序补充说明，强调拖拽与禁用对默认类型的影响。 */}
+        <div className="settings-hint">可拖拽排序、启停单个类型，并自动维护默认类型可用性（订阅可配置）。</div>
         <div className="type-order-list">
           <div className="type-order-list-inner">
             {typeOptions.map((opt) => (
@@ -1117,14 +1127,16 @@ export function SearchSection({
       </div>
 
       <div className="settings-group">
+        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">
           <span>结果右侧按钮</span>
           {membershipBadge}
         </div>
+        {/* 说明文案补充选择建议，帮助用户控制按钮数量。 */}
         <div className="settings-hint">
           {!isMember
-            ? "订阅后可自定义；非会员使用默认按钮"
-            : "最多显示 3 项，可调整顺序；后续新增按钮也在此处选择展示"}
+            ? "订阅后可自定义；非会员使用默认按钮，仍会显示常用操作。"
+            : "最多显示 3 项，可调整顺序；建议保留常用操作，避免过多按钮干扰。"}
         </div>
         <div className="action-config-list">
           {resultActionOptions.map((opt) => {
