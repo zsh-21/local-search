@@ -26,6 +26,8 @@ let win: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
 let searchReadyToShow = false;
 let searchViewWarmedUp = false;
+let searchMainFrameReady = false;
+let searchFallbackReady = false;
 let pendingSearchShow = false;
 let searchShowFallbackTimer: NodeJS.Timeout | null = null;
 
@@ -70,13 +72,17 @@ function clearSearchShowFallbackTimer() {
 
 function showSearchWindowIfReady() {
   if (!pendingSearchShow) return;
-  if (!searchReadyToShow) return;
+  // 首次显示必须满足“主框架已完成加载”，避免先 show 再渲染导致白屏。
+  if (!searchMainFrameReady) return;
+  // 优先等待渲染层握手；仅在超时兜底触发后才允许绕过握手直接显示。
+  if (!searchReadyToShow && !searchFallbackReady) return;
   showSearchWindowImmediately();
 }
 
 function showSearchWindowImmediately() {
   if (!win || win.isDestroyed()) return;
   pendingSearchShow = false;
+  searchFallbackReady = false;
   clearSearchShowFallbackTimer();
   win.show();
   win.focus();
@@ -89,9 +95,11 @@ function showSearchWindowImmediately() {
 function prepareSearchShowFallback() {
   // 冷路径兜底：首次加载或页面重载时，避免握手异常导致窗口一直不可见。
   clearSearchShowFallbackTimer();
+  searchFallbackReady = false;
   searchShowFallbackTimer = setTimeout(() => {
     if (!pendingSearchShow) return;
-    searchReadyToShow = true;
+    // 仅标记“兜底可显示”，真正 show 仍由 showSearchWindowIfReady 判断主框架是否已加载完成。
+    searchFallbackReady = true;
     showSearchWindowIfReady();
   }, SEARCH_SHOW_FALLBACK_TIMEOUT_MS);
 }
@@ -164,13 +172,22 @@ export function createWindow() {
     clearSearchShowFallbackTimer();
     searchReadyToShow = false;
     searchViewWarmedUp = false;
+    searchMainFrameReady = false;
+    searchFallbackReady = false;
     win = null;
   });
 
   win.webContents.on('did-start-loading', () => {
-    // 仅在页面真实重载时重置握手状态，避免后续正常呼出重复走冷路径。
+    // 页面真正重载时重置握手状态，防止沿用上一轮可见状态导致误显示。
     searchReadyToShow = false;
     searchViewWarmedUp = false;
+    searchMainFrameReady = false;
+    searchFallbackReady = false;
+  });
+  win.webContents.on('did-finish-load', () => {
+    // 主框架加载完成后再尝试显示窗口，避免首开出现空白窗口。
+    searchMainFrameReady = true;
+    showSearchWindowIfReady();
   });
 
   win.on('focus', () => {
@@ -341,10 +358,12 @@ export function openSearchWindow() {
     searchAllowBlurHide = false;
     const wc = win.webContents;
     const isRendererLoading = typeof wc?.isLoading === 'function' && wc.isLoading();
-    const canUseHotPath = searchViewWarmedUp && !isRendererLoading;
+    // 热路径必须同时满足“主框架已加载 + 渲染已握手”，避免冷启动时直接 show 出现白屏。
+    const canUseHotPath = searchViewWarmedUp && searchMainFrameReady && !isRendererLoading;
     // 已预热窗口走热路径秒开；未预热或重载中则继续走冷路径。
     if (canUseHotPath) {
       pendingSearchShow = false;
+      searchFallbackReady = false;
       clearSearchShowFallbackTimer();
     } else {
       pendingSearchShow = true;
@@ -370,6 +389,8 @@ export function openSearchWindow() {
   // 新建窗口默认走冷路径，等待渲染握手并保留超时兜底。
   pendingSearchShow = true;
   searchReadyToShow = false;
+  searchMainFrameReady = false;
+  searchFallbackReady = false;
   prepareSearchShowFallback();
   // 首次冷启动等待首帧就绪后再显示，避免空白闪烁。
   showWhenReady();
@@ -451,6 +472,7 @@ export function setSearchAllowBlurHide(allow: boolean) {
 export function setSearchViewReady(ready: boolean) {
   // 渲染层握手完成后标记为已预热，后续呼出可直接走热路径。
   searchReadyToShow = ready;
+  if (ready) searchFallbackReady = false;
   if (ready) {
     searchViewWarmedUp = true;
     showSearchWindowIfReady();
@@ -472,6 +494,8 @@ export function closeAllWindows() {
   win = null;
   searchReadyToShow = false;
   searchViewWarmedUp = false;
+  searchMainFrameReady = false;
+  searchFallbackReady = false;
   pendingSearchShow = false;
   clearSearchShowFallbackTimer();
 }

@@ -34,6 +34,8 @@ let indexStatsTimer: ReturnType<typeof setInterval> | null = null;
 let indexStatsInFlight = false;
 let lastIndexStatsSignature = '';
 let lastIndexingState = false;
+// 启动索引初始化任务只允许执行一次，避免重复触发导致多次重建。
+let startupIndexBootstrapPromise: Promise<void> | null = null;
 const TRAY_WARMUP_TIMEOUT_MS = 3000;
 const ICON_FIRST_ROUND_TIMEOUT_MS = 1200;
 const ICON_FIRST_ROUND_MAX_COUNT = 180;
@@ -183,6 +185,35 @@ if (!gotTheLock) {
       .setIgnoredPaths(initialSettings.ignoredPaths, initialSettings.preferredFileExtensions)
       .then(() => fileIndex.loadCache())
       .catch(() => false);
+    const runStartupIndexBootstrapOnce = () => {
+      // 启动索引流程使用 single-flight 守卫：同一启动周期内最多触发一次完整初始化链路。
+      if (startupIndexBootstrapPromise) return startupIndexBootstrapPromise;
+      startupIndexBootstrapPromise = (async () => {
+        try {
+          const currentAppVersion = app.getVersion();
+          // 复用启动阶段缓存加载任务，保证顺序固定为 loadCache -> 判定 -> rebuild/buildIfEmpty。
+          const cacheLoaded = await indexCacheLoadPromise;
+          const meta = loadFileIndexMeta();
+          const systemInfo = await SystemDetector.getInstance().detect();
+          const driveSignature = buildDriveSignature(systemInfo?.drives || []);
+          const shouldRebuild =
+            !meta ||
+            meta.version !== FILE_INDEX_VERSION ||
+            meta.appVersion !== currentAppVersion ||
+            meta.driveSignature !== driveSignature;
+          setBootstrapIndexStatus({ hasCache: cacheLoaded, isIndexing: shouldRebuild || !cacheLoaded });
+          if (shouldRebuild) {
+            saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion, driveSignature });
+            await fileIndex.rebuild();
+            return;
+          }
+          if (!cacheLoaded) {
+            await fileIndex.buildIfEmpty();
+          }
+        } catch {}
+      })();
+      return startupIndexBootstrapPromise;
+    };
     const firstRoundIconPrewarmPromise = prewarmInstalledAppIcons(getInstalledAppsCache(), {
       maxCount: ICON_FIRST_ROUND_MAX_COUNT,
       concurrency: ICON_FIRST_ROUND_CONCURRENCY,
@@ -226,28 +257,8 @@ if (!gotTheLock) {
     startIndexStatsWriter();
     app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });
 
-    void (async () => {
-      try {
-        const currentAppVersion = app.getVersion();
-        // 复用启动阶段的缓存加载任务，避免重复 loadCache 造成额外阻塞。
-        const cacheLoaded = await indexCacheLoadPromise;
-        const meta = loadFileIndexMeta();
-        const systemInfo = await SystemDetector.getInstance().detect();
-        const driveSignature = buildDriveSignature(systemInfo?.drives || []);
-        const shouldRebuild =
-          !meta ||
-          meta.version !== FILE_INDEX_VERSION ||
-          meta.appVersion !== currentAppVersion ||
-          meta.driveSignature !== driveSignature;
-        setBootstrapIndexStatus({ hasCache: cacheLoaded, isIndexing: shouldRebuild || !cacheLoaded });
-        if (shouldRebuild) {
-          saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion, driveSignature });
-          void fileIndex.rebuild();
-        } else if (!cacheLoaded) {
-          void fileIndex.buildIfEmpty();
-        }
-      } catch {}
-    })();
+    // 面板显示或其他流程不会重复触发全量索引初始化：统一收口到启动期单例任务。
+    void runStartupIndexBootstrapOnce();
   });
 }
 

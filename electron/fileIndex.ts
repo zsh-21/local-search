@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import fs from 'node:fs/promises';
+﻿import fs from 'node:fs/promises';
 import { createReadStream, createWriteStream, existsSync, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -52,6 +52,8 @@ const TOKENIZE_CACHE_MAX = 4000;
 const TOKENIZE_CACHE_KEY_MAX_LENGTH = 96;
 // 搜索窗口隐藏后进入空闲内存压缩模式的延迟时间：避免频繁开关窗口导致重复释放/重建。
 const IDLE_COMPACT_DELAY_MS = 45_000;
+// 极速常驻策略：索引构建完成后保持常驻内存，避免二次打开面板时触发恢复造成卡顿。
+const ENABLE_IDLE_COMPACT = false;
 
 function getTokenizeCacheEntry(key: string) {
 	const cached = tokenizeCache.get(key);
@@ -446,6 +448,11 @@ export class FileIndex {
 	}
 
 	private scheduleIdleCompactIfNeeded() {
+		// 极速常驻模式下禁用空闲压缩，避免“恢复索引”造成重复索引会话与首查延迟。
+		if (!ENABLE_IDLE_COMPACT) {
+			this.clearIdleCompactTimer();
+			return;
+		}
 		if (this.searchWindowVisible) return;
 		if (this.isIndexing) return;
 		if (this.isCompacted) return;
@@ -457,6 +464,7 @@ export class FileIndex {
 	}
 
 	private async compactForIdle() {
+		if (!ENABLE_IDLE_COMPACT) return;
 		if (this.searchWindowVisible) return;
 		if (this.isIndexing) return;
 		if (this.isCompacted) return;
@@ -1168,7 +1176,7 @@ export class FileIndex {
 
 		const totalCount = results.length;
 		const output = { results, isIndexing: this.isIndexing, totalCount, rawCount };
-		// 查询结束后恢复空闲压缩调度，确保“隐藏且无交互”时回落到低内存。
+		// 查询结束后统一走调度入口：在极速常驻模式下该入口会直接短路，不触发压缩。
 		this.scheduleIdleCompactIfNeeded();
 		return output;
 

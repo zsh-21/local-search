@@ -105,6 +105,44 @@ const indexProgressRuntime: IndexProgressRuntime = {
   lastCount: 0,
   lastProgress: 0,
 };
+type LastKnownIndexProgress = {
+  hasValue: boolean;
+  isIndexing: boolean;
+  progress: number;
+  updatedAt: number;
+};
+const INDEX_PROGRESS_FALLBACK_STALE_MS = 20_000;
+const lastKnownIndexProgress: LastKnownIndexProgress = {
+  hasValue: false,
+  isIndexing: false,
+  progress: 1,
+  updatedAt: 0,
+};
+
+function rememberLastKnownIndexProgress(next: { isIndexing: boolean; progress: number }) {
+  const progressRaw = Number(next?.progress);
+  // 记录最近一次成功进度：当 fileIndex.getStatus 抛错时可直接回退，避免 UI 长期卡在 1%。
+  lastKnownIndexProgress.hasValue = true;
+  lastKnownIndexProgress.isIndexing = Boolean(next?.isIndexing);
+  lastKnownIndexProgress.progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(1, progressRaw)) : 1;
+  lastKnownIndexProgress.updatedAt = Date.now();
+}
+
+function getLastKnownIndexProgressFallback() {
+  if (!lastKnownIndexProgress.hasValue) return null;
+  const now = Date.now();
+  // 兜底状态过旧时强制回到“非索引中”，避免异常分支长期卡在索引态。
+  if (
+    lastKnownIndexProgress.isIndexing &&
+    now - lastKnownIndexProgress.updatedAt > INDEX_PROGRESS_FALLBACK_STALE_MS
+  ) {
+    return { isIndexing: false, progress: 1 };
+  }
+  return {
+    isIndexing: lastKnownIndexProgress.isIndexing,
+    progress: lastKnownIndexProgress.progress,
+  };
+}
 
 function estimateIndexProgress(status: { isIndexing?: boolean; indexedCount?: number; progress?: number }) {
   const isIndexing = Boolean(status?.isIndexing);
@@ -354,17 +392,23 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-index-progress', async () => {
-    // 索引进度对 UI 可感知性影响很大：这里返回单调递增的估算值，避免索引期长期显示 0%。
+    // 索引进度对 UI 观感影响很大：优先返回单调递增估算，并维护成功快照做异常兜底。
     try {
       const status = await fileIndex.getStatus();
-      return estimateIndexProgress(status ?? {});
+      const estimated = estimateIndexProgress(status ?? {});
+      rememberLastKnownIndexProgress(estimated);
+      return estimated;
     } catch {
-      // 异常兜底复用启动快照，保证调用方始终拿到结构一致的返回值。
+      const fallback = getLastKnownIndexProgressFallback();
+      if (fallback) return fallback;
+      // 再兜底回退到启动快照，保证调用方始终拿到结构一致的返回值。
       const snapshot = getBootstrapState();
-      return estimateIndexProgress({
+      const estimated = estimateIndexProgress({
         isIndexing: snapshot.indexStatus?.isIndexing,
         indexedCount: 0,
       });
+      rememberLastKnownIndexProgress(estimated);
+      return estimated;
     }
   });
 
