@@ -1,4 +1,4 @@
-﻿import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿﻿import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppItem, AppSettings, SearchResponse } from "../appTypes";
 import { refreshUserStatusSilently } from "../membership";
 import { getBootstrapHistoryCache, getSearchTypeOptions, loadBootstrapState, setBootstrapHistoryCache, useSettings } from "../settingsStore";
@@ -18,6 +18,7 @@ import {
   limitResults as limitResultsUtil,
   mergeResultsStable,
 } from "./searchResultUtils";
+import { isStrictSearchMatch, parseSearchMatchIntent, pickSearchMatchTargetText } from "../../shared/searchMatch";
 
 type RefreshHistoryOpts = { typeId?: string; preserveSelectedPath?: string };
 type CalcHistoryRecord = { expression: string; result: string; lastUsed: number };
@@ -253,8 +254,32 @@ export function useSearchController() {
     const m = s.match(/^([a-zA-Z])\s*(?::|\uFF1A)\s*(?![\\/])/);
     if (!m) return { term: s, drive: "" };
     const drive = (m[1] || "").toLowerCase();
+    // p: 语义保留给“路径匹配前缀”，不再当作盘符过滤解析。
+    if (drive === "p") return { term: s, drive: "" };
     const term = s.slice(m[0].length).trim();
     return { term, drive };
+  };
+  const resolveGhostCandidateByInput = (rawInput: string, candidateName: string) => {
+    // 统一幽灵提示候选构造：盘符前缀输入时按“term 命中 + 前缀回填”，普通输入按原始前缀匹配。
+    const normalizedInput = typeof rawInput === "string" ? rawInput : "";
+    const normalizedName = typeof candidateName === "string" ? candidateName.trim() : "";
+    if (!normalizedName) return "";
+    const parsed = parseDrivePrefix(normalizedInput);
+    if (parsed.drive) {
+      const inputTerm = parsed.term;
+      const termLower = inputTerm.toLocaleLowerCase();
+      const nameLower = normalizedName.toLocaleLowerCase();
+      if (!termLower || !nameLower.startsWith(termLower) || normalizedName.length <= inputTerm.length) return "";
+      const prefixMatch = normalizedInput.match(/^\s*([a-zA-Z])\s*(?::|\uFF1A)\s*(?![\\/])/);
+      const prefix = prefixMatch
+        ? normalizedInput.slice(0, prefixMatch[0].length)
+        : `${parsed.drive}:`;
+      return `${prefix}${normalizedName}`;
+    }
+    const inputLower = normalizedInput.toLocaleLowerCase();
+    const nameLower = normalizedName.toLocaleLowerCase();
+    if (!nameLower.startsWith(inputLower) || normalizedName.length <= normalizedInput.length) return "";
+    return normalizedName;
   };
 
   // 鎼滅储杈撳叆涓庣被鍨嬮€夋嫨锛氶┍鍔ㄦ煡璇笌缁撴灉杩囨护
@@ -516,7 +541,8 @@ export function useSearchController() {
     Math.round(maxWindowHeight) - SEARCH_WINDOW_TOP_BAR_HEIGHT - SEARCH_WINDOW_BOTTOM_BAR_HEIGHT,
   );
   const DISPLAY_LIMIT = settings.searchDisplayLimit;
-  const MAX_PENDING_APPEND_ITEMS = Math.max(DISPLAY_LIMIT, 200);
+  // 增量队列上限与主进程技术兜底对齐，避免误伤“严格命中但条数较多”的结果。
+  const MAX_PENDING_APPEND_ITEMS = 500;
   const lastVisibleStartIndexRef = useRef(0);
 
   useEffect(() => {
@@ -709,18 +735,13 @@ export function useSearchController() {
     }
     // 用户键盘下移选择其它项时，保留现有键盘导航幽灵提示，不被首条结果覆盖。
     if (lastSelectedBy === "keyboard" && selectedIndex > 0) return;
-    const firstName = typeof results[0]?.name === "string" ? results[0].name.trim() : "";
-    if (!firstName) {
+    const firstName = typeof results[0]?.name === "string" ? results[0].name : "";
+    const nextGhostValue = resolveGhostCandidateByInput(inputValue, firstName);
+    if (!nextGhostValue) {
       setGhostInputValue("");
       return;
     }
-    const inputLower = inputValue.toLocaleLowerCase();
-    const firstLower = firstName.toLocaleLowerCase();
-    if (!firstLower.startsWith(inputLower) || firstName.length <= inputValue.length) {
-      setGhostInputValue("");
-      return;
-    }
-    setGhostInputValue(firstName);
+    setGhostInputValue(nextGhostValue);
   }, [inputValue, results, lastSelectedBy, selectedIndex]);
 
   useEffect(() => {
@@ -739,7 +760,16 @@ export function useSearchController() {
     return filterItemsBySearchTypeUtil(items, typeId, settings.customSearchTypes || []);
   };
 
-  const limitResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
+  const limitHistoryResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
+  const applyStrictSearchResults = useCallback((items: AppItem[], rawQuery: string) => {
+    // 搜索结果过滤与高亮共用同一判定：只有能定位高亮片段的项才展示。
+    const intent = parseSearchMatchIntent(rawQuery);
+    if (!intent.term || intent.tokens.length === 0) return [];
+    return items.filter((item) => {
+      const target = pickSearchMatchTargetText(item, intent);
+      return isStrictSearchMatch(target, intent);
+    });
+  }, []);
   const applyCalcResults = useCallback((currentCalcItem: AppItem | null, preservePath?: string) => {
     // 纯计算模式：只显示计算相关结果，避免与文件搜索结果混排。
     const history = calcHistoryItemsRef.current;
@@ -800,8 +830,9 @@ export function useSearchController() {
     pendingAppendRef.current = [];
     startTransition(() => {
       setResults((prev) => {
-        const next = limitResults(mergeResultsStable(prev, batch));
-        setTotalCount((c) => Math.max(c, next.length));
+        const next = mergeResultsStable(prev, batch);
+        // 底部数量与当前可见结果保持一致，避免“计数大于展示项”的感知偏差。
+        setTotalCount(next.length);
         return next;
       });
     });
@@ -879,7 +910,7 @@ export function useSearchController() {
   const applyHistoryResults = (historyItems: AppItem[], opts?: RefreshHistoryOpts) => {
     const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
     const filtered = filterItemsBySearchType(historyItems, typeId);
-    const deduped = limitResults(dedupeResults(filtered));
+    const deduped = limitHistoryResults(dedupeResults(filtered));
     setResults(deduped);
     setTotalCount(deduped.length);
     const preservePath = typeof opts?.preserveSelectedPath === "string" ? opts.preserveSelectedPath : "";
@@ -1006,10 +1037,11 @@ export function useSearchController() {
       if (payloadSessionId !== currentSessionId) return;
 
       const filteredMore = filterItemsBySearchType(payload.results, currentTypeId);
-      if (filteredMore.length <= 0) return;
+      const strictMore = applyStrictSearchResults(filteredMore, currentQuery);
+      if (strictMore.length <= 0) return;
       const hadPending = pendingAppendRef.current.length > 0;
       // 增量结果改为原地追加：避免每批结果都新建大数组导致短时内存抖动。
-      pendingAppendRef.current.push(...filteredMore);
+      pendingAppendRef.current.push(...strictMore);
       // 队列长度限制到可展示上限附近，防止高频 IPC 批量推送时积压过多临时对象。
       if (pendingAppendRef.current.length > MAX_PENDING_APPEND_ITEMS) {
         pendingAppendRef.current.length = MAX_PENDING_APPEND_ITEMS;
@@ -1094,14 +1126,13 @@ export function useSearchController() {
         if (parseDrivePrefix(queryRef.current).term !== trimmed) return;
         if (searchTypeIdRef.current !== searchTypeId) return;
         const nextResults = filterItemsBySearchType(resp?.results ?? [], searchTypeId);
+        const strictMatched = applyStrictSearchResults(nextResults, trimmed);
         setSelectedIndex(0);
         startTransition(() => {
-          const limited = limitResults(dedupeResults(nextResults));
-          setResults(limited);
-          const rawTotal = typeof resp?.totalCount === "number" ? resp.totalCount : limited.length;
-          // 濡傛灉娌℃湁鏇村缁撴灉锛屼笖褰撳墠缁撴灉鏁伴噺灏忎簬鍚庣杩斿洖鐨勬€绘暟锛堣鏄庡墠绔幓閲嶄簡锛夛紝鍒欎互褰撳墠缁撴灉鏁伴噺涓哄噯锛岄伩鍏嶇晫闈㈡樉绀衡€?2鏉＄粨鏋溾€濅絾鍒楄〃鍙湁3椤?
-          const finalTotal = (!resp?.hasMore && limited.length < rawTotal) ? limited.length : rawTotal;
-          setTotalCount(finalTotal);
+          const merged = dedupeResults(strictMatched);
+          setResults(merged);
+          // 底部数量按“当前已展示结果”统计，确保 UI 数字与列表严格一致。
+          setTotalCount(merged.length);
           setIsIndexing(Boolean(resp?.isIndexing));
           setHasMore(Boolean(resp?.hasMore));
         });
@@ -1111,7 +1142,7 @@ export function useSearchController() {
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [query, searchTypeId, isIndexing, applyCalcResults]);
+  }, [query, searchTypeId, isIndexing, applyCalcResults, applyStrictSearchResults]);
 
   useEffect(() => {
     // 娓叉煋灞傚浘鏍囪ˉ鎶撳凡涓嬫矇鍒颁富杩涚▼缂撳瓨閾捐矾锛岃繖閲岀洿鎺ョ鐢紝閬垮厤鍓嶅悗绔噸澶嶆姄鍙栥€?    return;
@@ -1211,13 +1242,14 @@ export function useSearchController() {
         if (searchTypeIdRef.current !== currentTypeId) return;
 
         const nextResults = filterItemsBySearchType(resp?.results ?? [], currentTypeId);
-        const respTotal = typeof resp?.totalCount === "number" ? resp.totalCount : 0;
-        const serverOrdered = limitResults(dedupeResults(nextResults));
+        const strictMatched = applyStrictSearchResults(nextResults, trimmed);
+        const serverOrdered = dedupeResults(strictMatched);
         startTransition(() => {
           setResults((prev) => {
             // 澧為噺鍥炲～/绱㈠紩鍒锋柊鏃跺彧鈥滆ˉ榻?鏇存柊鈥濇暟鎹紝涓嶉噸鎺掑凡鍔犺浇鐨勫垪琛ㄩ『搴忥紝閬垮厤鎷栨嫿/鎿嶄綔鏃跺嚭鐜拌烦鍔?
-            const merged = limitResults(mergeResultsStable(prev, serverOrdered));
-            setTotalCount((c) => Math.max(c, respTotal, merged.length));
+            const merged = mergeResultsStable(prev, serverOrdered);
+            // 索引阶段增量回填时也以已渲染数量为准，避免总数与实际列表脱节。
+            setTotalCount(merged.length);
             return merged;
           });
           setIsIndexing(Boolean(resp?.isIndexing));
@@ -1235,7 +1267,7 @@ export function useSearchController() {
       cancelled = true;
       window.clearTimeout(timerId);
     };
-  }, [query, isIndexing, isSearching]);
+  }, [query, isIndexing, isSearching, applyStrictSearchResults]);
 
   useEffect(() => {
     if (listRef.current && lastSelectedBy === "keyboard") {
@@ -1685,7 +1717,7 @@ export function useSearchController() {
       setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => {
         const next = (prev + 1) % results.length;
-        setGhostInputValue(results[next]?.name || "");
+        setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[next]?.name || ""));
         return next;
       });
       e.preventDefault();
@@ -1693,26 +1725,26 @@ export function useSearchController() {
       setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => {
         const next = (prev - 1 + results.length) % results.length;
-        setGhostInputValue(results[next]?.name || "");
+        setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[next]?.name || ""));
         return next;
       });
       e.preventDefault();
     } else if (e.key === "Home") {
       setLastSelectedBy("keyboard");
-      setGhostInputValue(results[0]?.name || "");
+      setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[0]?.name || ""));
       setSelectedIndex(0);
       e.preventDefault();
     } else if (e.key === "End") {
       setLastSelectedBy("keyboard");
       const next = Math.max(0, results.length - 1);
-      setGhostInputValue(results[next]?.name || "");
+      setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[next]?.name || ""));
       setSelectedIndex(next);
       e.preventDefault();
     } else if (e.key === "PageDown") {
       setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => {
         const next = Math.min(results.length - 1, prev + 10);
-        setGhostInputValue(results[next]?.name || "");
+        setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[next]?.name || ""));
         return next;
       });
       e.preventDefault();
@@ -1720,7 +1752,7 @@ export function useSearchController() {
       setLastSelectedBy("keyboard");
       setSelectedIndex((prev) => {
         const next = Math.max(0, prev - 10);
-        setGhostInputValue(results[next]?.name || "");
+        setGhostInputValue(resolveGhostCandidateByInput(inputValue, results[next]?.name || ""));
         return next;
       });
       e.preventDefault();

@@ -18,6 +18,7 @@ import {
 import { AppItem } from "../appTypes";
 import { useSearchController } from "./useSearchController";
 import { normalizeResultKey } from "./searchResultUtils";
+import { buildSearchHighlightRanges, parseSearchMatchIntent, type SearchHighlightRange } from "../../shared/searchMatch";
 
 // 搜索页渲染层：纯 UI/交互展示，状态与副作用集中在 useSearchController
 export function SearchViewImpl() {
@@ -195,28 +196,27 @@ export function SearchViewImpl() {
   };
 
   // 仅在输入较稳定时高亮，避免短字符导致过度高亮与误匹配
-  const highlightQuery = useMemo(() => {
-    const q = c.query.trim();
-    if (q.length < 2 || q.length > 32) return "";
-    return q.toLowerCase();
-  }, [c.query]);
+  const highlightIntent = useMemo(() => parseSearchMatchIntent(c.trimmedQuery), [c.trimmedQuery]);
+  const highlightPathMode = highlightIntent.matchTarget === "path" && highlightIntent.tokens.length > 0;
+  const highlightNameMode = highlightIntent.matchTarget === "name" && highlightIntent.tokens.length > 0;
 
   // 将命中片段拆分为“前/中/后”，仅渲染一次高亮，避免视觉干扰
-  const renderHighlightedText = (text: string) => {
-    if (!highlightQuery) return text;
-    const lower = (text || "").toLowerCase();
-    const idx = lower.indexOf(highlightQuery);
-    if (idx < 0) return text;
-    const before = text.slice(0, idx);
-    const mid = text.slice(idx, idx + highlightQuery.length);
-    const after = text.slice(idx + highlightQuery.length);
-    return (
-      <>
-        {before}
-        <span className="match">{mid}</span>
-        {after}
-      </>
-    );
+  const renderHighlightedText = (text: string, ranges: SearchHighlightRange[]) => {
+    if (!ranges || ranges.length === 0) return text;
+    const nodes: React.ReactNode[] = [];
+    let cursor = 0;
+    for (let i = 0; i < ranges.length; i++) {
+      const range = ranges[i];
+      if (range.start > cursor) nodes.push(text.slice(cursor, range.start));
+      nodes.push(
+        <span className="match" key={`${range.start}-${range.end}-${i}`}>
+          {text.slice(range.start, range.end)}
+        </span>,
+      );
+      cursor = range.end;
+    }
+    if (cursor < text.length) nodes.push(text.slice(cursor));
+    return <>{nodes}</>;
   };
 
   const buildIconClassName = (icon: string | undefined, extra?: string) => {
@@ -337,8 +337,16 @@ export function SearchViewImpl() {
       typeof item.path === "string" && item.path.trim().length > 0;
     // 仅展示盘符开头的完整路径，避免显示非路径字符串（如 ms-settings:）。
     const isDrivePath = /^[a-zA-Z]:\\/.test(item.path || "");
+    const nameHighlightRanges = highlightNameMode
+      ? buildSearchHighlightRanges(displayName, highlightIntent)
+      : [];
+    const pathHighlightRanges = highlightPathMode
+      ? buildSearchHighlightRanges(item.path, highlightIntent)
+      : [];
     const showPathLine =
-      !isNativeCalcItem && c.settings.showResultPath && hasPath && isDrivePath;
+      !isNativeCalcItem &&
+      hasPath &&
+      (highlightPathMode || (c.settings.showResultPath && isDrivePath));
     const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
@@ -381,7 +389,7 @@ export function SearchViewImpl() {
                 data-title-delay="500"
                 data-title-no-scroll="true"
               >
-                {renderHighlightedText(displayName)}
+                {renderHighlightedText(displayName, nameHighlightRanges)}
               </span>
               {badgeText ? (
                 <span className="file-ext-badge">{badgeText}</span>
@@ -395,7 +403,7 @@ export function SearchViewImpl() {
                 data-title-delay="500"
                 data-title-no-scroll="true"
               >
-                {renderHighlightedText(item.path)}
+                {renderHighlightedText(item.path, pathHighlightRanges)}
               </span>
             ) : null}
           </div>
@@ -510,17 +518,19 @@ export function SearchViewImpl() {
     const ignored = Array.isArray(c.settings.ignoredPaths)
       ? c.settings.ignoredPaths
       : [];
+    // 底部统计统一使用当前可见列表长度，确保数字与用户眼前结果严格一致。
+    const visibleCount = c.visibleResults.length;
     const hasIgnored = ignored.some(
       (p) => typeof p === "string" && p.trim().length > 0,
     );
     return (
       <div className="list-bottom-info">
         {isHistoryMode ? (
-          <div className="no-more-results">{`已显示全部 ${c.results.length} 条历史记录`}</div>
-        ) : c.totalCount > c.settings.searchDisplayLimit ? (
-          <div className="no-more-results">{`由于内容太多，展示最匹配的前${c.settings.searchDisplayLimit}`}</div>
+          <div className="no-more-results">{`已显示全部 ${visibleCount} 条历史记录`}</div>
+        ) : c.hasMore ? (
+          <div className="no-more-results">{`已显示 ${visibleCount} 条高匹配结果（仍在加载更多）`}</div>
         ) : (
-          <div className="no-more-results">{`共 ${c.totalCount} 个结果`}</div>
+          <div className="no-more-results">{`共 ${visibleCount} 个结果`}</div>
         )}
         {hasIgnored ? (
           <div className="no-more-results ignore-tips">

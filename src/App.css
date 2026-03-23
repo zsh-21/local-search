@@ -1722,10 +1722,17 @@ html:is(
 }
 
 .match {
-  background: rgba(255, 255, 255, 0.1);
+  /* 高亮强化：提高背景与边框对比度，确保命中词在深浅主题下都足够醒目。 */
+  background: color-mix(in srgb, var(--fs-accent) 34%, transparent);
   color: var(--fs-text);
-  border-radius: 4px;
-  padding: 0 2px;
+  border-radius: 5px;
+  padding: 0 3px;
+  font-weight: 700;
+}
+
+.results li.selected .match {
+  background: color-mix(in srgb, var(--fs-accent) 42%, transparent);
+  border-color: color-mix(in srgb, var(--fs-accent) 76%, transparent);
 }
 
 .app-path {

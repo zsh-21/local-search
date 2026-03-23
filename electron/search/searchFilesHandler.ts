@@ -5,6 +5,7 @@ import { fileIndexStrategy } from './strategies/fileIndexStrategy';
 import { createRecentIndexStrategy } from './strategies/recentIndexStrategy';
 import { settingsStrategy } from './strategies/settingsStrategy';
 import type { SearchContext, SearchStrategyDeps } from './strategies/types';
+import { isStrictSearchMatch, parseSearchMatchIntent, pickSearchMatchTargetText } from '../../shared/searchMatch';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -35,16 +36,6 @@ function stripInvisibleChars(input: string) {
     .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function deriveSearchTerm(input: string) {
-  const s = stripInvisibleChars(input);
-  if (!s) return '';
-  const normalized = s.replace(/\//g, '\\');
-  // 路径型输入直接用完整路径参与检索，提升路径片段命中率
-  const isPathLike = normalized.includes('\\') || normalized.startsWith('\\\\') || /^[a-zA-Z]:\\/.test(normalized);
-  if (isPathLike) return normalized;
-  return s;
 }
 
 async function tryResolveDirectPathCandidate(rawInput: string) {
@@ -79,31 +70,39 @@ export async function handleSearchFiles(
 ) {
   const { fileIndex, reconcileRecentIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey, iconDataCache } = deps;
   const rawQueryForEvents = typeof query === 'string' ? query : '';
-  const queryForSearch = deriveSearchTerm(rawQueryForEvents);
-  const isPathQuery = queryForSearch.includes('\\') || queryForSearch.startsWith('\\\\') || /^[a-zA-Z]:\\/.test(queryForSearch);
+  // 统一解析查询语义：支持 p: 前缀路径匹配，并与前端高亮规则保持一致。
+  const searchIntent = parseSearchMatchIntent(rawQueryForEvents);
+  const queryForSearch = searchIntent.term;
+  const isPathQuery = searchIntent.matchTarget === 'path';
   const status = await fileIndex.getStatus();
-  // 支持单字符搜索：由渲染端控制防抖与噪声；主进程这里只做空值拦截
+  // 支持单字符搜索：主进程只拦空值，防抖由渲染层负责。
   if (!queryForSearch || queryForSearch.trim().length < 1) {
     return { results: [], isIndexing: status.isIndexing };
   }
 
-  // 索引未完成时加大暂停时长，把主线程响应优先级放到搜索输入上
+  // 索引期适当暂停后台索引，优先保证搜索输入响应。
   fileIndex.pauseIndexingFor(status.isIndexing ? 2000 : 900);
   // 搜索时顺带触发一次轻量兜底扫描：提升新建/改动文件被检索到的概率（不阻塞当前请求）
   scheduleReconcileRecentIndex(() => reconcileRecentIndex());
 
   const nameScorer = createNameScorer(queryForSearch);
   const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;
+  // 严格匹配过滤：只有能定位到高亮区间的结果才允许进入结果集。
+  const filterStrictResults = <T extends { name?: string; path?: string }>(items: T[]) =>
+    items.filter((item) => {
+      const target = pickSearchMatchTargetText(item, searchIntent);
+      return isStrictSearchMatch(target, searchIntent);
+    });
 
   const searchTypeId = typeof options?.searchTypeId === 'string' ? options.searchTypeId : 'all';
-  // 搜索会话 ID：用于将后台分批推送的 more-results 与当前搜索绑定
+  // 搜索会话 ID：用于绑定当前搜索与 more-results 增量回填。
   const searchSessionId =
     typeof options?.searchSessionId === 'string' && options.searchSessionId.trim()
       ? options.searchSessionId.trim()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-  // 内置命令：通过搜索框触发“清空所有配置/缓存/索引”
-  if (lowerQuery === 'clear:cache') {
+  // 路径模式下跳过命令捷径，避免 p: 查询被“系统命令”抢占。
+  if (searchIntent.matchTarget !== 'path' && lowerQuery === 'clear:cache') {
     return {
       results: [
         {
@@ -138,6 +137,7 @@ export async function handleSearchFiles(
   });
 
   const commandResults = (() => {
+    if (searchIntent.matchTarget === 'path') return [];
     if (searchTypeId !== 'all') return [];
     const items = [
       {
@@ -212,11 +212,27 @@ export async function handleSearchFiles(
   const directPathCandidate = await tryResolveDirectPathCandidate(rawQueryForEvents);
 
   const resultFromSettings = await settingsStrategy.execute(ctx, strategyDeps);
-  if (resultFromSettings.kind === 'return') return resultFromSettings.response;
+  if (resultFromSettings.kind === 'return') {
+    const strictSettings = filterStrictResults(resultFromSettings.response.results || []);
+    return {
+      ...resultFromSettings.response,
+      results: strictSettings,
+      totalCount: strictSettings.length,
+      hasMore: false,
+    };
+  }
   const settingsResults = resultFromSettings.items;
 
   const resultFromApps = await appsStrategy.execute(ctx, strategyDeps);
-  if (resultFromApps.kind === 'return') return resultFromApps.response;
+  if (resultFromApps.kind === 'return') {
+    const strictApps = filterStrictResults(resultFromApps.response.results || []);
+    return {
+      ...resultFromApps.response,
+      results: strictApps,
+      totalCount: strictApps.length,
+      hasMore: false,
+    };
+  }
   const appResults = resultFromApps.items;
 
   const resultFromFileIndex = await fileIndexStrategy.execute(ctx, strategyDeps);
@@ -250,7 +266,21 @@ export async function handleSearchFiles(
     ...recentBoostCandidates,
   ] as any[];
 
-  candidates.sort((a, b) => {
+  // 先做严格命中过滤，再去重并排序，避免重复项导致“总数/列表”不一致。
+  const strictMatchedCandidates = filterStrictResults(candidates);
+  const uniqueStrictCandidates: any[] = [];
+  const strictSeenKeys = new Set<string>();
+  for (const item of strictMatchedCandidates) {
+    const type = String(item?.type || "");
+    const pathKey = String(item?.path || "").trim().toLowerCase();
+    const nameKey = String(item?.name || "").trim().toLowerCase();
+    const key = `${type}|${pathKey || nameKey}`;
+    if (!key || strictSeenKeys.has(key)) continue;
+    strictSeenKeys.add(key);
+    uniqueStrictCandidates.push(item);
+  }
+
+  uniqueStrictCandidates.sort((a, b) => {
     const sa = typeof a.score === 'number' ? a.score : 0;
     const sb = typeof b.score === 'number' ? b.score : 0;
     if (sb !== sa) return sb - sa;
@@ -263,7 +293,7 @@ export async function handleSearchFiles(
   });
 
   const DISPLAY_LIMIT = 500;
-  const top500 = candidates.slice(0, DISPLAY_LIMIT);
+  const top500 = uniqueStrictCandidates.slice(0, DISPLAY_LIMIT);
   const initialLimit = 70;
   const firstBatch = top500.slice(0, initialLimit);
   const remainingBatch = top500.slice(initialLimit);
@@ -325,6 +355,6 @@ export async function handleSearchFiles(
     isIndexing,
     hasMore: remainingBatch.length > 0,
     searchSessionId,
-    totalCount: candidates.length,
+    totalCount: uniqueStrictCandidates.length,
   };
 }

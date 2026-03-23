@@ -12,35 +12,31 @@ export function ShortcutsSection({
   setDraft: (next: AppSettings) => void;
   setError: (msg: string) => void;
 }) {
-  // 固定快捷键说明补充更详细的使用场景，便于记忆与理解。
   const fixedShortcuts: Array<{ title: string; value: string; desc: string }> = [
-    { title: "隐藏面板", value: "Esc", desc: "关闭当前搜索面板并回到原窗口" },
-    { title: "固定面板", value: "Alt+T", desc: "固定搜索面板，失焦时仍保持显示" },
-    { title: "切换类型", value: "Tab / Shift+Tab", desc: "快速切换搜索类型筛选范围" },
-    { title: "打开/运行", value: "Enter", desc: "执行当前选中结果的默认动作" },
-    { title: "打开目录", value: "Ctrl+Enter", desc: "打开选中项所在文件夹位置" },
-    { title: "上下选择", value: "↑ / ↓", desc: "在结果列表中逐条移动选中项" },
-    { title: "跳到首尾", value: "Home / End", desc: "快速跳到首项或末项以缩短定位时间" },
-    { title: "分页选择", value: "PageUp / PageDown", desc: "按页移动选中位置以提升浏览效率" },
-    { title: "切换右侧按钮", value: "Ctrl+← / Ctrl+→", desc: "在结果项右侧操作按钮之间切换" },
+    { title: "隐藏面板", value: "Esc", desc: "关闭当前搜索面板" },
+    { title: "固定面板", value: "Alt+T", desc: "固定搜索面板（失焦不隐藏）" },
+    { title: "切换类型", value: "Tab / Shift+Tab", desc: "切换搜索类型筛选" },
+    { title: "打开/运行", value: "Enter", desc: "执行当前选中结果" },
+    { title: "打开目录", value: "Ctrl+Enter", desc: "打开选中项所在目录" },
+    { title: "上下选择", value: "↑ / ↓", desc: "在结果列表中移动" },
+    { title: "跳到首尾", value: "Home / End", desc: "快速跳到首项或末项" },
+    { title: "分页选择", value: "PageUp / PageDown", desc: "按页移动选中位置" },
+    { title: "切换右侧按钮", value: "Ctrl+← / Ctrl+→", desc: "切换结果项动作按钮" },
   ];
 
   return (
     <div className="settings-content">
       <div className="settings-group">
-        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">快捷键</div>
 
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconShortcuts size={18} variant="duotone" />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">呼出搜索面板</div>
-              {/* 说明文案补充触发范围与效果，避免用户误以为仅在应用内可用。 */}
-              <div className="setting-item-desc">全局快捷键，按下后立即呼出搜索面板，任何应用中均可用。</div>
+              <div className="setting-item-desc">全局快捷键，按下后显示搜索面板。</div>
             </div>
           </div>
           <input
@@ -61,13 +57,11 @@ export function ShortcutsSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconShortcuts size={18} variant="duotone" />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">打开设置面板</div>
-              {/* 说明文案补充入口意义，减少用户寻找设置入口的成本。 */}
-              <div className="setting-item-desc">全局快捷键，快速进入设置窗口，便于调整搜索参数。</div>
+              <div className="setting-item-desc">全局快捷键，快速进入设置窗口。</div>
             </div>
           </div>
           <input
@@ -88,13 +82,11 @@ export function ShortcutsSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconShortcuts size={18} variant="duotone" />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">写入选中项</div>
-              {/* 说明文案补充用途，强调二次筛选场景。 */}
-              <div className="setting-item-desc">将当前选中结果写入输入框，适合继续编辑或二次筛选。</div>
+              <div className="setting-item-desc">把当前选中结果写入输入框，便于继续编辑。</div>
             </div>
           </div>
           <input
@@ -114,14 +106,12 @@ export function ShortcutsSection({
       </div>
 
       <div className="settings-group">
-        {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">面板内快捷键（固定）</div>
         {fixedShortcuts.map((item) => (
           <div className="setting-item-card" key={item.title}>
             <div className="setting-item-main">
               <span className="setting-item-icon" aria-hidden="true">
-                {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-                <IconShortcuts size={18} variant="duotone" />
+                <IconShortcuts size={18} />
               </span>
               <div className="setting-item-copy">
                 <div className="setting-item-title">{item.title}</div>
