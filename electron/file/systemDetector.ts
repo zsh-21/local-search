@@ -21,6 +21,7 @@ export interface SystemInfo {
 export class SystemDetector {
   private static instance: SystemDetector;
   private info: SystemInfo | null = null;
+  private nativeSupport: boolean | null = null;
 
   private constructor() {}
 
@@ -44,7 +45,7 @@ export class SystemDetector {
     ]);
 
     // 检测原生模块支持情况 (当前版本默认为 false，需集成 node-ffi-napi 后改为检测逻辑)
-    const hasNativeSupport = this.checkNativeSupport();
+    const hasNativeSupport = this.hasNativeSupport();
 
     this.info = {
       osVersion: release(),
@@ -54,6 +55,12 @@ export class SystemDetector {
     };
 
     return this.info;
+  }
+
+  hasNativeSupport(): boolean {
+    if (typeof this.nativeSupport === 'boolean') return this.nativeSupport;
+    this.nativeSupport = this.checkNativeSupport();
+    return this.nativeSupport;
   }
 
   /**

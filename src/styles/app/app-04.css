@@ -1,0 +1,383 @@
+.pin-btn {
+  width: 27px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+  margin-right: 4px;
+}
+.pin-btn:hover {
+  color: var(--fs-text);
+  transform: translateY(-1px);
+}
+.pin-btn.active {
+  color: var(--fs-accent);
+  background: transparent;
+}
+.result-count {
+  font-size: 11px;
+  color: var(--fs-muted);
+  font-weight: 500;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.list-bottom-info {
+  padding: 12px 0 0 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-top: 1px solid var(--fs-border);
+  margin-top: 4px;
+  flex-direction: column;
+  gap: 4px;
+}
+.loading-more,
+.no-more-results {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fs-muted);
+  font-weight: 500;
+}
+.no-more-results {
+  opacity: 0.7;
+}
+.ignore-tips {
+  font-size: 10px;
+  color: var(--fs-muted);
+  opacity: 0.5;
+  font-weight: 500;
+  font-weight: bold;
+}
+/* 搜索结果列表容器：虚拟列表与空态展示的外层 */
+.results {
+  margin: 10px 0 0 0;
+  padding: 0;
+  -webkit-app-region: no-drag;
+  /* 结果列表不可拖拽，保证滚动*/
+  position: relative;
+  z-index: 1;
+  /* 保证在搜索框之下 */
+  display: flex;
+  flex-direction: column;
+}
+/* 仅在显示“正在索引/搜索中”状态行时压缩结果区顶部间距，避免状态行下方出现过大空白。 */
+.results.results-with-status {
+  margin-top: 4px;
+}
+.results-scroll-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.empty-state {
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-muted);
+  font-size: 13px;
+  font-weight: 500;
+  user-select: none;
+  background: var(--fs-surface-2);
+  border: 1px dashed var(--fs-border);
+  border-radius: 8px;
+  /* 减小圆角 */
+  margin-top: 10px;
+  gap: 4px;
+}
+.empty-state::before {
+  content: "∅";
+  font-size: 18px;
+  opacity: 0.5;
+}
+.virtual-list {
+  overflow-y: auto !important;
+  padding-right: 4px;
+  /* 增加一点右边距，防止滚动条贴边 */
+}
+/* 优雅的滚动条样式 */
+*::-webkit-scrollbar {
+  width: 5px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--fs-border);
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--fs-muted);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+/* 小尺寸 loading 动画 */
+.spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fs-text);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: -2px;
+  opacity: 0.8;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* 按钮处理中状态*/
+.small-btn.processing {
+  opacity: 0.9;
+  cursor: not-allowed;
+  padding-left: 12px;
+  padding-right: 16px;
+  background: var(--fs-surface-active);
+  color: var(--fs-text-secondary);
+}
+.result-item-wrapper {
+  padding: 2px 4px;
+  box-sizing: border-box;
+  /* 预览与真实列表统一行高，默认模式保持 52px，避免设置页预览出现高度偏差 */
+  height: 52px;
+}
+.search-container.compact .result-item-wrapper {
+  /* 紧凑模式下行高收缩到 44px，与常量 SEARCH_ITEM_HEIGHT_COMPACT 对齐 */
+  height: 44px;
+}
+.results li {
+  height: 100%;
+  padding: 0 12px;
+  color: var(--fs-text);
+  cursor: pointer;
+  border-radius: 8px;
+  /* 减小圆角 */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  box-sizing: border-box;
+  /* 列表项只保留颜色/阴影过渡，避免结果更新时触发位移类动画导致闪动。 */
+  transition:
+    background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+.search-container.compact .results li {
+  padding: 0 10px;
+  gap: 10px;
+  border-radius: 7px;
+}
+.search-container.compact .result-icon {
+  width: 22px;
+  height: 22px;
+}
+.search-container.compact .result-icon.folder-emoji {
+  width: 22px;
+  height: 22px;
+  font-size: 16px;
+}
+.search-container.compact .result-icon.image-preview {
+  width: 32px;
+  height: 32px;
+}
+.search-container.compact .app-name {
+  font-size: 13.5px;
+}
+.search-container.compact .app-path {
+  font-size: 9.5px;
+  margin-top: 1px;
+}
+.search-container.compact .action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.results li.selected {
+  background-color: var(--fs-accent-soft);
+  color: var(--fs-accent);
+  border: 1px solid var(--fs-accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"],
+    [data-theme="paper"]
+  )
+  .results
+  li.selected {
+  border: 1px solid #bae6fd;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.05);
+}
+.results li:hover:not(.selected) {
+  background-color: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+/* 受控 hover：列表在增量更新/去重时保持鼠标悬浮高亮不闪烁 */
+.results li.hovered:not(.selected) {
+  background-color: var(--fs-surface-2);
+  border-color: var(--fs-border);
+}
+.results li.selected:hover {
+  background-color: var(--fs-accent-soft);
+}
+.file-ext-badge {
+  font-family: var(--fs-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  background: var(--fs-surface-2);
+  color: var(--fs-muted);
+  border-radius: 4px;
+  border: 1px solid var(--fs-border);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.results li.selected .file-ext-badge {
+  background: var(--fs-accent-soft);
+  color: var(--fs-accent);
+  border-color: var(--fs-border);
+}
+.result-icon {
+  width: 35px;
+  height: 35px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+  transition: all 0.2s ease;
+}
+.result-icon.svg-icon {
+  filter: var(--fs-icon-filter) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+.result-icon.folder-icon {
+  color: var(--fs-muted);
+}
+.result-icon.folder-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 35px;
+  height: 35px;
+  font-size: 20px;
+  line-height: 1;
+  filter: none;
+}
+.result-icon.ext-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  filter: none;
+}
+.result-icon.ext-icon .ext-icon-text {
+  font-family: var(--fs-font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--fs-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+  transform: translateY(0.5px);
+}
+.result-icon.image-preview {
+  width: 35px;
+  height: 35px;
+  overflow: hidden;
+  border-radius: 4px;
+  object-fit: cover;
+  margin-right: -4px;
+  /* 补偿增大的宽度，保持对齐 */
+  margin-left: -4px;
+}
+.results li.selected .result-icon.image-preview {
+  border-color: var(--fs-border);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.18);
+}
+.result-icon.placeholder {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+.result-meta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+.result-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.app-name {
+  font-weight: 600;
+  color: var(--fs-search-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14.5px;
+
+  letter-spacing: -0.1px;
+}
+.match {
+  /* 高亮强化：提高背景与边框对比度，确保命中词在深浅主题下都足够醒目。 */
+  background: color-mix(in srgb, var(--fs-accent) 34%, transparent);
+  color: var(--fs-text);
+  border-radius: 5px;
+  padding: 0 3px;
+  font-weight: 700;
+}
+.results li.selected .match {
+  background: color-mix(in srgb, var(--fs-accent) 42%, transparent);
+  border-color: color-mix(in srgb, var(--fs-accent) 76%, transparent);
+}
+.app-path {
+  font-family: var(--fs-font-mono);
+  font-size: 10.5px;
+  color: var(--fs-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  transition: color 0.2s;
+  letter-spacing: -0.1px;
+  opacity: 0.85;
+}
+.results li.selected .app-path {
+  color: var(--fs-text);
+  opacity: 0.8;
+}
+.action-group {
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.results li:hover .action-group,
+.results li.hovered .action-group,
+.results li.selected .action-group {
+  opacity: 1;
+}

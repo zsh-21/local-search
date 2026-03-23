@@ -24,31 +24,23 @@ export class UsnScanner implements Scanner {
     shouldStop: () => boolean
   ): Promise<void> {
     const detector = SystemDetector.getInstance();
-    const info = await detector.detect();
-
-    // 严格检查：无原生支持时禁止运行，直接抛出异常触发降级
-    if (!info.hasNativeSupport) {
+    // 快速失败：当前未集成原生 USN 能力时，不做重型探测，直接降级递归扫描。
+    if (!detector.hasNativeSupport()) {
       throw new Error('当前环境不支持原生模块，无法使用 USN 扫描');
     }
-    
     // 按盘符分组处理
     const drives = new Set(roots.map(r => r.substring(0, 2).toUpperCase()));
     
     for (const drive of drives) {
-        if (shouldStop()) break;
-        
-        // 检查 USN 日志是否可用
-        const supported = await detector.checkUsnSupport(drive);
-        if (!supported) {
-            throw new Error(`驱动器 ${drive} 不支持或未启用 USN 日志`);
-        }
+      if (shouldStop()) break;
 
-        // TODO: 此处需通过 ffi-napi 调用 CreateFile/DeviceIoControl
-        // 目前项目未集成原生模块，因此在此处显式抛出异常，
-        // 确保流程正确回退到 RecursiveScanner (优先级 3)
-        
-        console.warn(`[UsnScanner] 尚未集成原生模块，降级到递归扫描: ${drive}`);
-        throw new Error("Native module implementation pending.");
+      // TODO: 此处需通过 ffi-napi 调用 CreateFile/DeviceIoControl
+      // 当前项目尚未实现原生扫描，保留 USN 可用性探测后统一回退。
+      const supported = await detector.checkUsnSupport(drive);
+      if (!supported) {
+        throw new Error(`驱动器 ${drive} 不支持或未启用 USN 日志`);
+      }
+      throw new Error('Native module implementation pending.');
     }
   }
 }

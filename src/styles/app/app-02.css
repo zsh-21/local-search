@@ -1,0 +1,426 @@
+html[data-theme="mac"] {
+  --fs-bg: #edf1f7;
+  --fs-surface: rgba(255, 255, 255, 0.78);
+  --fs-surface-2: rgba(249, 251, 255, 0.84);
+  --fs-surface-active: rgba(255, 255, 255, 0.92);
+  --fs-border: rgba(80, 102, 133, 0.18);
+  --fs-border-soft: rgba(80, 102, 133, 0.11);
+  --fs-text: #2d425e;
+  --fs-text-secondary: #4b6280;
+  --fs-search-text: #1a3047;
+  --fs-muted: #6d82a0;
+  --fs-accent: #3f86ff;
+  --fs-nav-active-accent: #3f86ff;
+  --fs-accent-soft: rgba(63, 134, 255, 0.16);
+  --fs-shadow: 0 16px 34px -22px rgba(35, 51, 78, 0.44);
+  --fs-dots: rgba(63, 134, 255, 0.14);
+  --fs-glow: 0 0 14px rgba(63, 134, 255, 0.14);
+  /* 珠光玻璃 2.0：双光斑反射继续保留，但强调更干净的玻璃边界。 */
+  --fs-window-bg:
+    radial-gradient(circle at 18% -20%, rgba(255, 255, 255, 0.5) 0%, transparent 58%),
+    radial-gradient(circle at 82% -14%, rgba(141, 170, 255, 0.2) 0%, transparent 54%),
+    #edf1f7;
+  --fs-window-border: rgba(87, 109, 139, 0.23);
+  --fs-panel-bg: rgba(255, 255, 255, 0.78);
+  --fs-control-bg: rgba(255, 255, 255, 0.84);
+  --fs-control-hover: rgba(255, 255, 255, 0.96);
+  --fs-menu-bg: rgba(255, 255, 255, 0.94);
+  --fs-item-hover: rgba(63, 134, 255, 0.1);
+  --fs-selected-bg: rgba(63, 134, 255, 0.15);
+  --fs-selected-border: rgba(63, 134, 255, 0.4);
+  --fs-focus-shadow: 0 0 0 3px rgba(63, 134, 255, 0.15), 0 12px 24px -18px rgba(35, 51, 78, 0.42);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 14px;
+  --fs-radius-control: 11px;
+  --fs-radius-item: 10px;
+  /* 糖霜未来：圆润+较高模糊，突出轻盈柔和的玻璃感。 */
+  --fs-theme-blur: 22px;
+  --fs-theme-saturate: 142%;
+  --fs-theme-contrast: 101%;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(0) brightness(0.9);
+  /* 非渐变识别元素：玻璃边缘高亮描边。 */
+  --fs-material-frame: inset 0 1px 0 rgba(255, 255, 255, 0.86), inset 0 0 0 1px rgba(87, 109, 139, 0.12);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(87, 109, 139, 0.1);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(63, 134, 255, 0.11) 0%, rgba(167, 190, 255, 0.08) 100%);
+  --fs-control-accent-border: rgba(63, 134, 255, 0.26);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(63, 134, 255, 0.18) 0%, rgba(167, 190, 255, 0.12) 100%);
+  --fs-type-active-border: rgba(63, 134, 255, 0.36);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(63, 134, 255, 0.18) 0%, rgba(167, 190, 255, 0.14) 100%);
+  --fs-result-selected-border: rgba(63, 134, 255, 0.4);
+}
+html[data-theme="signal"] {
+  --fs-bg: #101611;
+  --fs-surface: #182119;
+  --fs-surface-2: rgba(235, 247, 232, 0.05);
+  --fs-surface-active: #243025;
+  --fs-border: rgba(132, 166, 124, 0.24);
+  --fs-border-soft: rgba(132, 166, 124, 0.14);
+  --fs-text: #e1ead9;
+  --fs-text-secondary: #cad8c0;
+  --fs-search-text: #f2f9ec;
+  --fs-muted: #95ab8f;
+  --fs-accent: #8dad86;
+  --fs-nav-active-accent: #8dad86;
+  --fs-accent-soft: rgba(141, 173, 134, 0.22);
+  --fs-shadow: 0 30px 64px -28px rgba(5, 10, 6, 0.92);
+  --fs-dots: rgba(141, 173, 134, 0.34);
+  --fs-glow: 0 0 20px rgba(141, 173, 134, 0.16);
+  /* 森林低饱和：用苔藓绿与雾化层次营造安静、耐看的自然感。 */
+  --fs-window-bg:
+    radial-gradient(circle at 84% -16%, rgba(141, 173, 134, 0.2) 0%, transparent 54%),
+    linear-gradient(0deg, rgba(44, 62, 38, 0.28) 0%, rgba(44, 62, 38, 0) 56%),
+    #101611;
+  --fs-window-border: rgba(132, 166, 124, 0.32);
+  --fs-panel-bg: rgba(24, 34, 25, 0.82);
+  --fs-control-bg: rgba(31, 45, 33, 0.9);
+  --fs-control-hover: rgba(39, 55, 40, 0.95);
+  --fs-menu-bg: rgba(27, 38, 28, 0.97);
+  --fs-item-hover: rgba(141, 173, 134, 0.15);
+  --fs-selected-bg: rgba(141, 173, 134, 0.22);
+  --fs-selected-border: rgba(176, 205, 170, 0.52);
+  --fs-focus-shadow: 0 0 0 3px rgba(141, 173, 134, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
+  /* 森林低饱和：降低饱和度并略提对比，形成安静、克制的层次。 */
+  --fs-theme-blur: 13px;
+  --fs-theme-saturate: 90%;
+  --fs-theme-contrast: 104%;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+  /* 非渐变识别元素：采用植物纤维般的柔边描线，避免科技感过强。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(176, 205, 170, 0.14), inset 0 -1px 0 rgba(32, 45, 30, 0.52);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(176, 205, 170, 0.12);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(141, 173, 134, 0.18) 0%, rgba(90, 117, 84, 0.14) 100%);
+  --fs-control-accent-border: rgba(176, 205, 170, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(141, 173, 134, 0.24) 0%, rgba(90, 117, 84, 0.18) 100%);
+  --fs-type-active-border: rgba(176, 205, 170, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(141, 173, 134, 0.24) 0%, rgba(90, 117, 84, 0.2) 100%);
+  --fs-result-selected-border: rgba(176, 205, 170, 0.56);
+}
+html[data-theme="oxide"] {
+  --fs-bg: #120d0d;
+  --fs-surface: #1e1616;
+  --fs-surface-2: rgba(255, 238, 238, 0.05);
+  --fs-surface-active: #2b1f1f;
+  --fs-border: rgba(216, 86, 66, 0.24);
+  --fs-border-soft: rgba(216, 86, 66, 0.14);
+  --fs-text: #f2dcd7;
+  --fs-text-secondary: #e7c2ba;
+  --fs-search-text: #fff0ec;
+  --fs-muted: #c08f86;
+  --fs-accent: #d85642;
+  --fs-nav-active-accent: #d85642;
+  --fs-accent-soft: rgba(216, 86, 66, 0.22);
+  --fs-shadow: 0 30px 64px -28px rgba(11, 5, 3, 0.92);
+  --fs-dots: rgba(217, 118, 84, 0.34);
+  --fs-glow: 0 0 22px rgba(217, 118, 84, 0.18);
+  /* 赤焰极简：压低色系数量，只保留关键交互位的红色冲击。 */
+  --fs-window-bg:
+    radial-gradient(circle at 88% -18%, rgba(216, 86, 66, 0.24) 0%, transparent 54%),
+    linear-gradient(0deg, rgba(90, 31, 24, 0.24) 0%, rgba(90, 31, 24, 0) 58%),
+    #120d0d;
+  --fs-window-border: rgba(216, 109, 94, 0.34);
+  --fs-panel-bg: rgba(31, 21, 21, 0.82);
+  --fs-control-bg: rgba(39, 27, 27, 0.9);
+  --fs-control-hover: rgba(50, 34, 34, 0.95);
+  --fs-menu-bg: rgba(34, 23, 23, 0.97);
+  --fs-item-hover: rgba(216, 86, 66, 0.15);
+  --fs-selected-bg: rgba(216, 86, 66, 0.22);
+  --fs-selected-border: rgba(232, 146, 134, 0.54);
+  --fs-focus-shadow: 0 0 0 3px rgba(216, 86, 66, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
+  /* 赤焰极简：减少模糊并拉高对比，保证红色强调点有冲击力。 */
+  --fs-theme-blur: 10px;
+  --fs-theme-saturate: 112%;
+  --fs-theme-contrast: 114%;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+  /* 非渐变识别元素：用窄描边保持极简，不再叠加“铜锈纹理”噪声。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(232, 146, 134, 0.12), inset 0 -1px 0 rgba(79, 33, 27, 0.46);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(232, 146, 134, 0.12);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(216, 86, 66, 0.18) 0%, rgba(124, 47, 38, 0.14) 100%);
+  --fs-control-accent-border: rgba(232, 146, 134, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(216, 86, 66, 0.26) 0%, rgba(124, 47, 38, 0.18) 100%);
+  --fs-type-active-border: rgba(232, 146, 134, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(216, 86, 66, 0.26) 0%, rgba(124, 47, 38, 0.2) 100%);
+  --fs-result-selected-border: rgba(232, 146, 134, 0.56);
+}
+html[data-theme="vector"] {
+  --fs-bg: #081019;
+  --fs-surface: #111b29;
+  --fs-surface-2: rgba(233, 244, 255, 0.06);
+  --fs-surface-active: #1a293c;
+  --fs-border: rgba(124, 154, 196, 0.24);
+  --fs-border-soft: rgba(124, 154, 196, 0.14);
+  --fs-text: #dce8fa;
+  --fs-text-secondary: #c8d8ef;
+  --fs-search-text: #f3f8ff;
+  --fs-muted: #95accb;
+  --fs-accent: #88c0ff;
+  --fs-nav-active-accent: #88c0ff;
+  --fs-accent-soft: rgba(136, 192, 255, 0.2);
+  --fs-shadow: 0 30px 64px -28px rgba(1, 8, 14, 0.92);
+  --fs-dots: rgba(136, 192, 255, 0.34);
+  --fs-glow: 0 0 24px rgba(136, 192, 255, 0.2);
+  /* 极夜玻璃：深蓝黑基底叠加冷光，强调安静但清晰的科技感。 */
+  --fs-window-bg:
+    radial-gradient(circle at 82% -18%, rgba(136, 192, 255, 0.22) 0%, transparent 56%),
+    linear-gradient(160deg, rgba(62, 94, 140, 0.18) 0%, transparent 62%),
+    #081019;
+  --fs-window-border: rgba(136, 167, 210, 0.34);
+  --fs-panel-bg: rgba(15, 26, 39, 0.82);
+  --fs-control-bg: rgba(21, 35, 51, 0.9);
+  --fs-control-hover: rgba(30, 46, 66, 0.95);
+  --fs-menu-bg: rgba(16, 30, 46, 0.97);
+  --fs-item-hover: rgba(136, 192, 255, 0.15);
+  --fs-selected-bg: rgba(136, 192, 255, 0.2);
+  --fs-selected-border: rgba(170, 209, 255, 0.56);
+  --fs-focus-shadow: 0 0 0 3px rgba(136, 192, 255, 0.22), 0 16px 36px -18px rgba(0, 0, 0, 0.8);
+  --fs-radius-window: 8px;
+  --fs-radius-panel: 12px;
+  --fs-radius-control: 10px;
+  --fs-radius-item: 10px;
+  /* 极夜玻璃：中高模糊 + 冷色饱和，营造深色玻璃氛围。 */
+  --fs-theme-blur: 16px;
+  --fs-theme-saturate: 128%;
+  --fs-theme-contrast: 106%;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+  /* 非渐变识别元素：用冷高光细描边突出玻璃层级。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(170, 209, 255, 0.14), inset 0 0 0 2px rgba(58, 92, 132, 0.2);
+  --fs-material-panel-frame: inset 0 0 0 1px rgba(170, 209, 255, 0.12);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(136, 192, 255, 0.16) 0%, rgba(75, 118, 178, 0.14) 100%);
+  --fs-control-accent-border: rgba(170, 209, 255, 0.34);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(136, 192, 255, 0.24) 0%, rgba(75, 118, 178, 0.18) 100%);
+  --fs-type-active-border: rgba(170, 209, 255, 0.52);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(136, 192, 255, 0.24) 0%, rgba(75, 118, 178, 0.2) 100%);
+  --fs-result-selected-border: rgba(170, 209, 255, 0.56);
+}
+/* 语义 token：把“弹层”和“信息行”抽象成统一语义，避免组件各写一套颜色。 */
+html[data-theme] {
+  --fs-popup-bg: var(--fs-menu-bg, var(--fs-surface));
+  --fs-popup-border: var(--fs-border);
+  --fs-popup-shadow: var(--fs-shadow);
+  --fs-table-row-bg: var(--fs-control-bg, var(--fs-surface-2));
+  --fs-table-row-hover: var(--fs-item-hover, var(--fs-surface-2));
+  --fs-table-row-border: var(--fs-border-soft, var(--fs-border));
+}
+/* 浅色主题兼容规则：仅增强 3 个浅色主题（chrome/mac/paper）的可读性。 */
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"]
+  )
+  .search-box {
+  box-shadow: 0 8px 18px -14px color-mix(in srgb, var(--fs-accent) 20%, transparent);
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"]
+  )
+  .type-select-menu {
+  border-color: var(--fs-border-soft, var(--fs-border));
+  box-shadow:
+    0 10px 25px -16px color-mix(in srgb, var(--fs-accent) 18%, transparent),
+    var(--fs-material-panel-frame, none);
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"]
+  )
+  .type-select-item:hover {
+  background: var(--fs-item-hover, var(--fs-surface-2));
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"]
+  )
+  .type-select-item.active {
+  background: var(--fs-type-active-gradient, var(--fs-accent-soft));
+  color: var(--fs-accent);
+  border-color: var(--fs-type-active-border, var(--fs-accent));
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"]
+  )
+  input::placeholder {
+  color: var(--fs-muted);
+}
+.back-to-top-btn {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--fs-accent);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 3000;
+  /* 提升层级，确保在 list-bottom-info 之上 */
+  opacity: 0.9;
+}
+.back-to-top-btn:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+.back-to-top-btn:active {
+  transform: translateY(0);
+}
+.theme-anim {
+  transition:
+    background-color 0.24s ease,
+    color 0.24s ease,
+    border-color 0.24s ease;
+}
+.container {
+  background-color: var(--fs-bg);
+  padding: 10px;
+  box-shadow: var(--fs-shadow);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 400px;
+  overflow: visible;
+  /* 改为 hidden 以防止滚动条超出圆角 */
+  min-height: 60px;
+  box-sizing: border-box;
+  border: 1px solid var(--fs-border);
+  position: relative;
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-app-region: drag;
+  /* 默认容器可拖拽*/
+}
+/* 官网链接按钮 */
+.settings-official-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--fs-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.2s;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-left: 6px;
+  -webkit-app-region: no-drag;
+}
+.settings-official-link:hover {
+  opacity: 1;
+  color: var(--fs-accent);
+  background: var(--fs-surface-2);
+}
+.settings-logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  /* transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); */
+  /* 移除 hover 效果 */
+}
+/* .settings-logo:hover {
+  transform: rotate(15deg) scale(1.1);
+} */
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--fs-bg);
+  border: 1px solid var(--fs-border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.settings-container.maximized {
+  border-radius: 0;
+  border: none;
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"],
+    [data-theme="paper"]
+  )
+  .container.settings-container {
+  background: var(--fs-bg);
+}
+.container.search-container {
+  height: auto;
+  overflow: hidden;
+}
+.container.search-container.menu-open {
+  overflow: visible;
+}
+/* 搜索输入框区域：包含输入、类型选择、右侧按钮与拖拽手柄 */
+.search-box {
+  display: flex;
+  align-items: center;
+  background-color: var(--fs-surface);
+  border-radius: 10px;
+  /* 减小圆角 */
+  margin-top: 2px;
+  -webkit-app-region: no-drag;
+  /* 搜索过程中只过渡必要属性，避免输入时“整块抖动”的观感。 */
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--fs-border);
+  position: relative;
+  z-index: 1000;
+}
+.search-box:focus-within {
+  /* border-color: var(--fs-accent);
+  box-shadow:
+    0 0 0 3px var(--fs-accent-soft),
+    0 12px 24px -8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px); */
+}
+.shortcut-hint {
+  font-family: var(--fs-font-mono);
+  font-size: 10px;
+  padding: 2px 4px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  border-radius: 4px;
+  color: var(--fs-muted);
+  margin-left: 6px;
+  opacity: 0.8;
+}

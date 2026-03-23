@@ -1,0 +1,267 @@
+.action-btn:hover,
+.small-btn:hover,
+.text-input:hover,
+.select-input:hover,
+.shortcut-input:hover {
+  background: var(--fs-control-hover, var(--fs-surface));
+}
+/* select 输入在通用 hover 规则后恢复主题渐变，避免 background 简写把渐变层清空。 */
+.select-input,
+.select-input:hover {
+  background-image: var(--fs-control-accent-gradient, none);
+  border-color: var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border)));
+}
+.settings-group {
+  border-radius: var(--fs-radius-panel, 12px);
+  background: var(--fs-panel-bg, rgba(11, 20, 36, 0.62));
+  border-color: var(--fs-border);
+  box-shadow: var(--fs-material-panel-frame, none);
+}
+/* 设置左侧导航激活态统一无背景，避免被后置样式再次覆盖。 */
+.settings-nav-item.active,
+.settings-nav-account-card.active {
+  background: transparent;
+  border-color: transparent;
+}
+/* 统一按主题 token 应用模糊/饱和度/对比度，避免每加一套主题都要新增分支规则。 */
+html[data-theme] .container,
+html[data-theme] .settings-container {
+  backdrop-filter: blur(var(--fs-theme-blur, 16px)) saturate(var(--fs-theme-saturate, 120%))
+    contrast(var(--fs-theme-contrast, 100%));
+  -webkit-backdrop-filter: blur(var(--fs-theme-blur, 16px)) saturate(var(--fs-theme-saturate, 120%))
+    contrast(var(--fs-theme-contrast, 100%));
+}
+/* ===== 搜索置顶 + 背景图可读性增强 ===== */
+:root {
+  --fs-adaptive-text: var(--fs-text);
+  --fs-adaptive-muted: var(--fs-muted);
+  --fs-adaptive-shadow: none;
+  --fs-bg-overlay-alpha: 0.28;
+  /* 文案语义 token：统一主题下的反色/危险态文本，避免局部写死颜色。 */
+  --fs-text-inverse: #ffffff;
+  --fs-danger: #ef4444;
+  --fs-danger-emphasis: #ff4d4f;
+  --fs-tooltip-bg: color-mix(in srgb, var(--fs-surface) 94%, transparent);
+  --fs-tooltip-border: var(--fs-border);
+}
+.container,
+.settings-container,
+.search-box input,
+.settings-title,
+.settings-section-title,
+.settings-nav-item,
+.settings-nav-account-name,
+.setting-item-title,
+.app-name,
+.result-count,
+.settings-toast-text {
+  color: var(--fs-adaptive-text, var(--fs-text));
+}
+input::placeholder,
+.app-path,
+.settings-section-desc,
+.settings-nav-account-sub,
+.setting-item-desc,
+.result-count,
+.no-more-results,
+.settings-hint,
+.form-label {
+  color: var(--fs-adaptive-muted, var(--fs-muted));
+}
+html[data-bg-tone="light"] .app-name,
+html[data-bg-tone="light"] .settings-section-title,
+html[data-bg-tone="light"] .setting-item-title,
+html[data-bg-tone="dark"] .app-name,
+html[data-bg-tone="dark"] .settings-section-title,
+html[data-bg-tone="dark"] .setting-item-title {
+  text-shadow: var(--fs-adaptive-shadow, none);
+}
+/* ===== 设置页卡片行风格重构 ===== */
+.settings-container {
+  padding: 0;
+  border-radius: 14px;
+}
+.settings-header {
+  min-height: 48px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--fs-border-soft, var(--fs-border));
+}
+.settings-body {
+  gap: 18px;
+  padding: 10px 12px 12px;
+}
+.settings-nav {
+  width: 236px;
+  border-right: none;
+  border-radius: 12px;
+  background: var(--fs-panel-bg, var(--fs-surface));
+  border: 1px solid var(--fs-border);
+  /* 导航容器沿用主题面板描边，避免不同主题只剩“换色”差异。 */
+  box-shadow: var(--fs-material-panel-frame, none);
+  padding: 14px 10px;
+}
+.settings-nav-item,
+.settings-nav-account-card {
+  min-height: 44px;
+  border-radius: 10px;
+}
+.settings-main-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 2px 6px 8px;
+  gap: 12px;
+}
+.settings-main-inner > * {
+  /* 恢复内容区宽度限制：居中 + 最大宽度，避免横向铺满。 */
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 10px;
+}
+.settings-section-header {
+  height: auto;
+  padding: 8px 6px 2px;
+}
+.settings-group {
+  background: var(--fs-panel-bg, var(--fs-surface));
+  border: 1px solid var(--fs-border);
+  border-radius: 12px;
+  box-shadow: var(--fs-material-panel-frame, none);
+  padding: 10px;
+  gap: 10px;
+}
+.settings-group-title {
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--fs-adaptive-text, var(--fs-text));
+}
+.settings-group-title::after {
+  opacity: 0.2;
+}
+.setting-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  background-color: var(--fs-table-row-bg, var(--fs-control-bg, var(--fs-surface-2)));
+  background-image: var(--fs-control-accent-gradient, none);
+  border: 1px solid var(--fs-table-row-border, var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border))));
+  border-radius: 10px;
+  box-shadow: var(--fs-material-control-frame, none);
+  padding: 10px 12px;
+}
+.setting-item-card-stack {
+  align-items: flex-start;
+  flex-direction: column;
+}
+.setting-item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.setting-item-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--fs-control-hover, var(--fs-surface));
+  border: 1px solid var(--fs-border-soft, var(--fs-border));
+  color: var(--fs-accent);
+  box-shadow: var(--fs-material-control-frame, none);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.setting-item-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.setting-item-title {
+  font-size: 15px;
+  font-weight: 680;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setting-item-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 550;
+}
+.setting-item-control {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.setting-item-control input[type="checkbox"] {
+  width: 40px;
+  height: 22px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  background: var(--fs-surface-2, var(--fs-surface));
+  border: 1px solid var(--fs-border);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.setting-item-control input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 1.5px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--fs-surface, #ffffff);
+  transition: transform 0.18s ease;
+}
+.setting-item-control input[type="checkbox"]:checked {
+  background: var(--fs-selected-bg, var(--fs-accent-soft));
+  border-color: var(--fs-accent);
+}
+.setting-item-control input[type="checkbox"]:checked::before {
+  transform: translateX(17px);
+}
+.setting-item-extra {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-item-extra .form-row,
+.settings-group .form-row,
+.settings-group .shortcut-row,
+.settings-group .setting-row {
+  background: var(--fs-control-bg, var(--fs-surface-2));
+  border: 1px solid var(--fs-border-soft, var(--fs-border));
+  border-radius: 8px;
+  box-shadow: var(--fs-material-control-frame, none);
+  min-height: 44px;
+  padding: 8px 10px;
+  margin: 0;
+}
+.settings-group .setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.settings-group .setting-row > span {
+
+  color: var(--fs-adaptive-text, var(--fs-text));
+  font-size: 14px;
+  font-weight: 620;
+}
+.settings-group .shortcut-grid {
+  gap: 8px;
+}
+.settings-group .shortcut-input {
+  min-width: 180px;
+  max-width: 280px;
+}

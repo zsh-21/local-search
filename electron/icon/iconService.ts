@@ -1,12 +1,13 @@
-import { app, nativeImage } from 'electron';
+﻿import { app, nativeImage } from 'electron';
 import path from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { resolveAppId } from '../win/resolveAppId';
 import { normalizeShortcutFileSpec, readUrlIconFile, resolveLnkByPowerShell } from '../win/shortcuts';
 import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from '../win/startMenuShortcutIndex';
 import { iconDataCache, isTooSmallAppIconDataUrl, setIconCache } from './iconCache';
 import { resolveWinSystemToolIconSpec, type WinSystemToolMatchInput } from './winSystemToolIconMap';
+import { resolveUwpIconPathByAumid, clearUwpIconPathCache } from './uwpIconResolver';
+import { prewarmInstalledAppIconsCore } from './iconPrewarm';
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 const IMAGE_FALLBACK_MAX_BYTES = 2 * 1024 * 1024;
@@ -34,7 +35,7 @@ const BUNDLED_ICON_DIR = (() => {
 })();
 
 const bundledIconDataCache = new Map<string, string>();
-// 单飞队列：相同 key 的并发图标请求只执行一次，其他请求复用结果
+// 鍗曢闃熷垪锛氱浉鍚?key 鐨勫苟鍙戝浘鏍囪姹傚彧鎵ц涓€娆★紝鍏朵粬璇锋眰澶嶇敤缁撴灉
 const fileIconInFlight = new Map<string, Promise<string>>();
 const appIconInFlight = new Map<string, Promise<string>>();
 const IS_DEV_ICON_LOG = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -165,7 +166,7 @@ function buildImageDataUrl(filePath: string, ext: string) {
 }
 
 function normalizeIconFileSpec(spec: string) {
-	// 统一复用 shortcuts 层的路径规格清洗，确保图标解析与快捷方式启动规则一致
+	// 缁熶竴澶嶇敤 shortcuts 灞傜殑璺緞瑙勬牸娓呮礂锛岀‘淇濆浘鏍囪В鏋愪笌蹇嵎鏂瑰紡鍚姩瑙勫垯涓€鑷?
 	return normalizeShortcutFileSpec(spec);
 }
 
@@ -188,7 +189,7 @@ function logAppIconFallbackFailure(payload: {
 	fallbackStage: string;
 	ruleId?: string;
 }) {
-	// 仅开发环境输出，避免生产环境高频检索造成日志噪音
+	// 浠呭紑鍙戠幆澧冭緭鍑猴紝閬垮厤鐢熶骇鐜楂橀妫€绱㈤€犳垚鏃ュ織鍣煶
 	if (!IS_DEV_ICON_LOG) return;
 	// console.warn('[icon] app icon fallback used', {
 	// 	name: anonymizeForIconLog(payload.appName),
@@ -259,7 +260,7 @@ async function getFileIconDataInternal(filePath: string) {
 					if (!icon.isEmpty()) iconData = icon.toDataURL();
 				}
 				if (!iconData) {
-					// 图标提取二级兜底：IconLocation 失败后改为目标路径提取，兼容系统快捷方式
+					// 鍥炬爣鎻愬彇浜岀骇鍏滃簳锛欼conLocation 澶辫触鍚庢敼涓虹洰鏍囪矾寰勬彁鍙栵紝鍏煎绯荤粺蹇嵎鏂瑰紡
 					const targetResolved = resolveAppId(normalizeIconFileSpec(info?.targetPath || ''));
 					const sameTarget = targetResolved && targetResolved.toLowerCase() === resolveAppId(filePath).toLowerCase();
 					if (targetResolved && !sameTarget && existsSync(targetResolved)) {
@@ -276,7 +277,7 @@ async function getFileIconDataInternal(filePath: string) {
 		}
 
 		if (!iconData && ext === '.msc') {
-			// .msc 常见于系统管理工具：常规提取失败时走系统工具映射兜底
+			// .msc 甯歌浜庣郴缁熺鐞嗗伐鍏凤細甯歌鎻愬彇澶辫触鏃惰蛋绯荤粺宸ュ叿鏄犲皠鍏滃簳
 			const mapped = await tryResolveSystemToolMappedIcon({
 				appId: filePath,
 				normalizedAppId: normalizedSpecPath || filePath,
@@ -327,113 +328,6 @@ export async function getFileIconData(filePath: string) {
 	return task;
 }
 
-const uwpIconPathCache = new Map<string, string>();
-const uwpIconPathInFlight = new Map<string, Promise<string>>();
-
-function resolveUwpIconPathByAumid(aumid: string): Promise<string> {
-	const key = String(aumid || '').trim();
-	if (!key || !key.includes('!')) return Promise.resolve('');
-	const cached = uwpIconPathCache.get(key);
-	if (typeof cached === 'string' && cached) return Promise.resolve(cached);
-	const inflight = uwpIconPathInFlight.get(key);
-	if (inflight) return inflight;
-
-	const task = new Promise<string>((resolve) => {
-		try {
-			const escaped = key.replace(/'/g, "''");
-			const cmd = [
-				`$aumid='${escaped}';`,
-				`$parts=$aumid -split '!',2;`,
-				`$pfn=$parts[0];`,
-				`$appId=if($parts.Length -gt 1){$parts[1]}else{''};`,
-				`if(-not $pfn){ '' | Write-Output; exit 0 }`,
-				`$pkg=$null;`,
-				`try { $pkg=Get-AppxPackage | Where-Object { $_.PackageFamilyName -eq $pfn } | Select-Object -First 1 } catch { $pkg=$null }`,
-				`if(-not $pkg){ try { $pkg=Get-AppxPackage -PackageFamilyName $pfn | Select-Object -First 1 } catch { $pkg=$null } }`,
-				`if(-not $pkg){ try { $pkg=Get-AppxPackage -Name $pfn | Select-Object -First 1 } catch { $pkg=$null } }`,
-				`if(-not $pkg -or -not $pkg.InstallLocation){ '' | Write-Output; exit 0 }`,
-				`$root=$pkg.InstallLocation;`,
-				`$mf=Join-Path $root 'AppxManifest.xml';`,
-				`if(-not (Test-Path -LiteralPath $mf)){ '' | Write-Output; exit 0 }`,
-				`try { [xml]$x=Get-Content -LiteralPath $mf -Encoding UTF8 } catch { '' | Write-Output; exit 0 }`,
-				`$apps=@();`,
-				`try { $apps=@($x.Package.Applications.Application) } catch { $apps=@() }`,
-				`if(-not $apps -or $apps.Count -eq 0){ try { $apps=@($x.SelectNodes(\"//*[local-name()='Application']\")) } catch { $apps=@() } }`,
-				`$appNode=$null;`,
-				`if($apps){ foreach($a in $apps){`,
-				`  $id=[string]$a.Id;`,
-				`  if(-not $id){ try { $id=$a.GetAttribute('Id') } catch { $id='' } }`,
-				`  if($id -eq $appId){ $appNode=$a; break }`,
-				`} }`,
-				`if(-not $appNode -and $apps -and $apps.Count -gt 0){ $appNode=$apps[0] }`,
-				`$ve=$null;`,
-				`if($appNode){`,
-				`  foreach($c in $appNode.ChildNodes){ if($c -and $c.LocalName -eq 'VisualElements'){ $ve=$c; break } }`,
-				`  if(-not $ve){ $ve=$appNode.SelectSingleNode(\".//*[local-name()='VisualElements']\") }`,
-				`}`,
-				`$rels=@();`,
-				`if($ve){`,
-				`  foreach($n in @('Square44x44Logo','Square150x150Logo','Logo','SmallLogo')){`,
-				`    $v=$ve.GetAttribute($n); if($v){ $rels += $v }`,
-				`  }`,
-				`}`,
-				`$cands=@();`,
-				`foreach($rel in $rels){`,
-				`  $base=Join-Path $root $rel;`,
-				`  if(Test-Path -LiteralPath $base){ $cands += $base; continue }`,
-				`  $dir=Split-Path -Parent $base;`,
-				`  $bn=[System.IO.Path]::GetFileNameWithoutExtension($base);`,
-				`  $ext=[System.IO.Path]::GetExtension($base);`,
-				`  if(-not $ext){ $ext='.png' }`,
-				`  if(Test-Path -LiteralPath $dir){`,
-				`    $cands += Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -like ($bn + '*') -and $_.Extension -eq $ext } | Select-Object -ExpandProperty FullName`,
-				`  }`,
-				`}`,
-				`if(-not $cands -or $cands.Count -eq 0){`,
-				`  $assetDir=Join-Path $root 'Assets';`,
-				`  if(Test-Path -LiteralPath $assetDir){`,
-				`    $cands += Get-ChildItem -LiteralPath $assetDir -File -Recurse -ErrorAction SilentlyContinue |`,
-				`      Where-Object { $_.Extension -match '^\\.(png|jpg|jpeg|ico)$' -and $_.Name -match '(square|applist|storelogo|logo|snip|screen|capture)' } |`,
-				`      Select-Object -ExpandProperty FullName`,
-				`  }`,
-				`}`,
-				`if(-not $cands -or $cands.Count -eq 0){ '' | Write-Output; exit 0 }`,
-				`$best=$null; $bestScore=-1;`,
-				`foreach($fp in $cands){`,
-				`  $n=[System.IO.Path]::GetFileName($fp).ToLower();`,
-				`  $s=0;`,
-				`  if($n -match 'targetsize-(\\d+)'){ $s += [int]$matches[1]*50 }`,
-				`  if($n -match 'scale-(\\d+)'){ $s += [int]$matches[1] }`,
-				`  if($n -match 'square44|applist'){ $s += 2000 }`,
-				`  if($n -match 'unplated'){ $s += 80 }`,
-				`  if($s -gt $bestScore){ $bestScore=$s; $best=$fp }`,
-				`}`,
-				`if($best){ $best | Write-Output } else { '' | Write-Output }`,
-			].join('');
-
-			const ps = spawn('powershell', ['-NoProfile', '-NoLogo', '-Command', cmd], { windowsHide: true });
-			let out = '';
-			ps.stdout.setEncoding('utf8');
-			ps.stdout.on('data', (c) => (out += String(c)));
-			ps.on('close', () => resolve((out || '').trim()));
-			ps.on('error', () => resolve(''));
-		} catch {
-			resolve('');
-		}
-	})
-		.then((p) => {
-			const v = typeof p === 'string' ? p.trim() : '';
-			if (v) uwpIconPathCache.set(key, v);
-			return v;
-		})
-		.finally(() => {
-			uwpIconPathInFlight.delete(key);
-		});
-
-	uwpIconPathInFlight.set(key, task);
-	return task;
-}
-
 async function getAppIconDataInternal(appName: string, appId: string) {
 	const key = `app:${appId}`;
 	const cached = iconDataCache.get(key);
@@ -456,7 +350,7 @@ async function getAppIconDataInternal(appName: string, appId: string) {
 		const lowerResolved = normalizedResolved.toLowerCase();
 		const isShortcutPath = lowerResolved.endsWith('.lnk') || lowerResolved.endsWith('.url');
 
-		// 第一层：若来源是快捷方式，优先按 IconLocation 提取，再回退到快捷方式目标
+		// 绗竴灞傦細鑻ユ潵婧愭槸蹇嵎鏂瑰紡锛屼紭鍏堟寜 IconLocation 鎻愬彇锛屽啀鍥為€€鍒板揩鎹锋柟寮忕洰鏍?
 		if (isShortcutPath && existsSync(normalizedResolved)) {
 			if (lowerResolved.endsWith('.lnk')) {
 				const shortcutInfo = await resolveLnkByPowerShell(normalizedResolved);
@@ -478,7 +372,7 @@ async function getAppIconDataInternal(appName: string, appId: string) {
 			}
 		}
 
-		// 第二层：读取目标文件本身图标（exe/dll/ico 等）
+		// 绗簩灞傦細璇诲彇鐩爣鏂囦欢鏈韩鍥炬爣锛坋xe/dll/ico 绛夛級
 		if (!iconData && (normalizedResolved.includes('\\') || normalizedResolved.includes('/')) && existsSync(normalizedResolved)) {
 			iconData = await getFileIconData(normalizedResolved);
 			if (iconData) fallbackStage = 'resolved-path';
@@ -513,7 +407,7 @@ async function getAppIconDataInternal(appName: string, appId: string) {
 			}
 		}
 
-		// 第三层：系统工具映射兜底，覆盖 .msc 与常见管理工具别名
+		// 绗笁灞傦細绯荤粺宸ュ叿鏄犲皠鍏滃簳锛岃鐩?.msc 涓庡父瑙佺鐞嗗伐鍏峰埆鍚?
 		if (!iconData) {
 			const mapped = await tryResolveSystemToolMappedIcon({
 				appName,
@@ -564,7 +458,7 @@ async function getAppIconDataInternal(appName: string, appId: string) {
 			fallbackStage,
 			ruleId: mappedRuleId,
 		});
-		// 最后一层：保留默认图标，确保图标失败不会阻断搜索和展示
+		// 鏈€鍚庝竴灞傦細淇濈暀榛樿鍥炬爣锛岀‘淇濆浘鏍囧け璐ヤ笉浼氶樆鏂悳绱㈠拰灞曠ず
 		iconData = getBundledIconDataByName('app-window.svg') || getBundledIconDataByName('file.svg') || '';
 	}
 	if (iconData) setIconCache(key, iconData);
@@ -596,41 +490,12 @@ export async function getAppIconDataStable(appName: string, appId: string, maxAt
 	return '';
 }
 
-export async function prewarmInstalledAppIcons(
-	items: Array<{ Name: string; AppID: string }>,
-	options?: { maxCount?: number; concurrency?: number }
-) {
-	const maxCount = Math.max(0, Math.min(1200, Number(options?.maxCount) || 360));
-	const concurrency = Math.max(1, Math.min(6, Number(options?.concurrency) || 3));
-	if (!Array.isArray(items) || items.length === 0 || maxCount <= 0) return;
-	const queue = items
-		.filter((it) => typeof it?.Name === 'string' && typeof it?.AppID === 'string')
-		.slice(0, maxCount);
-	if (queue.length === 0) return;
-
-	// 启动后异步预热应用图标缓存：把首次搜索抓图标的成本前移
-	const worker = async () => {
-		while (queue.length > 0) {
-			const it = queue.shift();
-			if (!it) return;
-			const key = `app:${it.AppID}`;
-			const cached = iconDataCache.get(key) || '';
-			if (cached && !isTooSmallAppIconDataUrl(cached)) continue;
-			try {
-				await getAppIconDataStable(it.Name, it.AppID, 2);
-			} catch {}
-		}
-	};
-
-	await Promise.all(Array.from({ length: concurrency }, () => worker()));
+export async function prewarmInstalledAppIcons(items: Array<{ Name: string; AppID: string }>, options?: { maxCount?: number; concurrency?: number }) {
+	await prewarmInstalledAppIconsCore(items, options, { iconDataCache, isTooSmallAppIconDataUrl, getAppIconDataStable });
 }
 
 export async function clearIconCaches() {
-	iconDataCache.clear();
-	fileIconInFlight.clear();
-	appIconInFlight.clear();
-	uwpIconPathCache.clear();
-	uwpIconPathInFlight.clear();
+	iconDataCache.clear(); fileIconInFlight.clear(); appIconInFlight.clear(); clearUwpIconPathCache();
 }
 
 export async function getHistoryIconForPath(input: { type: string; name: string; path: string }) {
@@ -642,7 +507,7 @@ export async function getHistoryIconForPath(input: { type: string; name: string;
 		const lower = resolved.toLowerCase();
 		if (lower.endsWith('.lnk')) {
 			const info = await resolveLnkByPowerShell(resolved);
-			// 历史图标同样复用统一清洗，避免快捷方式参数格式影响图标命中
+			// 鍘嗗彶鍥炬爣鍚屾牱澶嶇敤缁熶竴娓呮礂锛岄伩鍏嶅揩鎹锋柟寮忓弬鏁版牸寮忓奖鍝嶅浘鏍囧懡涓?
 			const targetResolved = resolveAppId(normalizeIconFileSpec(info?.targetPath || ''));
 			if (targetResolved && existsSync(targetResolved)) {
 				return await getFileIconData(targetResolved);
@@ -659,3 +524,4 @@ export async function getHistoryIconForPath(input: { type: string; name: string;
 	} catch {}
 	return '';
 }
+

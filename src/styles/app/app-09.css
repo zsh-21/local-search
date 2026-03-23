@@ -1,0 +1,400 @@
+.settings-confirm {
+  background: var(--fs-accent);
+  color: white;
+  border: none;
+  padding: 0 16px;
+  /* 稍微减小内边距*/
+  height: 34px;
+  /* 减小高度 */
+  border-radius: 6px;
+  /* 减小圆角 */
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 10px 24px -18px rgba(0, 0, 0, 0.65);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.settings-confirm:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow:
+    0 14px 30px -20px rgba(0, 0, 0, 0.75),
+    0 0 0 3px var(--fs-accent-soft);
+}
+html:is(
+    [data-theme="chrome"],
+    [data-theme="mac"],
+    [data-theme="paper"]
+  )
+  .settings-confirm {
+  color: var(--fs-text-inverse, #ffffff);
+}
+.settings-cancel:disabled,
+.settings-confirm:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+.settings-cancel:disabled:hover,
+.settings-confirm:disabled:hover {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+.btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: spin 0.8s linear infinite;
+  opacity: 0.9;
+}
+.settings-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--fs-popup-border, var(--fs-border));
+  background: var(--fs-popup-bg, var(--fs-surface));
+  color: var(--fs-text);
+  /* toast 文案更轻量：避免遮挡搜索内容 */
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow:
+    var(--fs-popup-shadow, 0 6px 16px rgba(0, 0, 0, 0.18)),
+    0 3px 6px -4px rgba(0, 0, 0, 0.2);
+  max-width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-toast-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
+.settings-toast-text {
+  /* toast 文案单行展示：超出窗口宽度时省略，避免换行挤占搜索区域*/
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.settings-toast.success {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+.settings-toast.success .settings-toast-icon {
+  color: var(--fs-text-inverse, #ffffff);
+  background: #22c55e;
+}
+.settings-toast.error {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+.settings-toast.error .settings-toast-icon {
+  color: var(--fs-text-inverse, #ffffff);
+  background: #ef4444;
+}
+.settings-toast.info .settings-toast-icon {
+  color: var(--fs-text-inverse, #ffffff);
+  background: var(--fs-accent);
+}
+/* 账号登录相关样式 */
+.account-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 10px 0;
+}
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--fs-surface-2);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--fs-border);
+  position: relative;
+}
+.profile-refresh-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: auto;
+  /* 将按钮推到最右侧 */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+.profile-refresh-btn:hover {
+  transform: translateY(-1px);
+  background: var(--fs-surface);
+  border-color: var(--fs-accent);
+  color: var(--fs-accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.profile-refresh-btn:active {
+  transform: scale(0.95);
+}
+.profile-refresh-btn:disabled {
+  /* 移除禁用样式，保持可点击外观但无交互 */
+  cursor: default;
+  opacity: 1;
+  color: var(--fs-accent);
+  /* loading 时保持高亮颜色*/
+  border-color: var(--fs-accent);
+  box-shadow: none;
+  transform: none;
+}
+.avatar-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--fs-accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+/* 自定义头像图片：与 avatar-placeholder 同尺寸，使用 cover 保证裁剪自然 */
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+/* 头像自定义弹层：复用现有主题变量，保持与设置面板风格一致*/
+.avatar-menu {
+  position: absolute;
+  left: 0;
+  top: 56px;
+  background: var(--fs-popup-bg, var(--fs-surface));
+  border: 1px solid var(--fs-popup-border, var(--fs-border));
+  border-radius: 10px;
+  box-shadow: var(--fs-popup-shadow, var(--fs-shadow));
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 20;
+}
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.profile-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fs-text);
+}
+.profile-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.profile-vip-tag {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: var(--fs-text-inverse, #ffffff);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  line-height: 1.4;
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.25);
+}
+.profile-status {
+  font-size: 12px;
+  color: var(--fs-accent);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.profile-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.85);
+}
+.account-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--fs-bg);
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  padding: 14px;
+}
+.account-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account-detail-key {
+  width: 92px;
+  flex: 0 0 auto;
+  color: var(--fs-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.account-detail-val {
+  flex: 1;
+  min-width: 0;
+  color: var(--fs-text);
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.logout-btn {
+  align-self: stretch;
+  margin-top: 10px;
+  background: rgba(255, 77, 79, 0.1);
+  color: var(--fs-danger-emphasis, #ff4d4f);
+  border-color: rgba(255, 77, 79, 0.2);
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+}
+.logout-btn:hover {
+  background: rgba(255, 77, 79, 0.2);
+  border-color: var(--fs-danger-emphasis, #ff4d4f);
+  transform: translateY(-1px);
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 10px 0;
+  margin: 0;
+  width: 100%;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.login-btn {
+  width: 100%;
+  height: 40px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+/* 主题质感强化：统一提升窗口、控件、列表与设置卡片层次 */
+.container {
+  border-radius: var(--fs-radius-window, 8px);
+  border-color: var(--fs-window-border, var(--fs-border));
+  background: var(--fs-window-bg, var(--fs-bg));
+  box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
+}
+.settings-container {
+  /* border-radius: var(--fs-radius-window, 16px); */
+  border-color: var(--fs-window-border, var(--fs-border));
+  background: var(--fs-window-bg, var(--fs-bg));
+  /* 窗口框架显式使用材质描边 token，保证 11 套主题的边框语言可感知。 */
+  box-shadow: var(--fs-material-frame, none), var(--fs-shadow);
+}
+.search-box {
+  border-radius: var(--fs-radius-control, 10px);
+  background: var(--fs-control-bg, var(--fs-surface));
+  border-color: var(--fs-border);
+  box-shadow: var(--fs-material-control-frame, none);
+}
+.search-box:hover {
+  background: var(--fs-control-hover, var(--fs-surface));
+}
+.search-box:focus-within {
+  box-shadow: var(--fs-material-control-frame, none), var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
+}
+/* 类型筛选按钮/下拉输入统一使用主题渐变 token，确保各主题都有可识别的特色层次。 */
+.type-select-btn,
+.settings-type-select .type-select-btn,
+.select-input {
+  border-radius: var(--fs-radius-control, 10px);
+  background-color: var(--fs-control-bg, var(--fs-surface-2));
+  background-image: var(--fs-control-accent-gradient, none);
+  border-color: var(--fs-control-accent-border, var(--fs-border-soft, var(--fs-border)));
+  box-shadow: var(--fs-material-control-frame, none);
+}
+.type-select-menu {
+  border-radius: calc(var(--fs-radius-control, 10px) + 2px);
+  background: var(--fs-popup-bg, var(--fs-menu-bg, var(--fs-surface)));
+  border-color: var(--fs-popup-border, var(--fs-border));
+  box-shadow: var(--fs-material-panel-frame, none), var(--fs-popup-shadow, none);
+}
+.type-select-item:hover {
+  background: var(--fs-item-hover, var(--fs-surface-2));
+}
+/* 类型菜单激活项使用主题 token，避免仅 Chrome 有“高亮渐变卡片感”。 */
+.type-select-item.active {
+  background: var(--fs-type-active-gradient, var(--fs-accent-soft));
+  border-color: var(--fs-type-active-border, var(--fs-selected-border, var(--fs-accent)));
+}
+.results li {
+  border-radius: var(--fs-radius-item, 10px);
+  background: var(--fs-table-row-bg, var(--fs-surface));
+  border-color: var(--fs-table-row-border, var(--fs-border-soft, var(--fs-border)));
+}
+.results li:hover {
+  background: var(--fs-table-row-hover, var(--fs-item-hover, var(--fs-surface-2)));
+}
+.results li.selected {
+  /* 结果选中项统一使用主题渐变 token，保证每个主题都有类似 Chrome 的层次背景。 */
+  background: var(--fs-result-selected-gradient, var(--fs-selected-bg, var(--fs-accent-soft)));
+  border-color: var(--fs-result-selected-border, var(--fs-selected-border, var(--fs-accent)));
+  box-shadow: var(--fs-focus-shadow, 0 0 0 3px var(--fs-accent-soft));
+}
+.action-btn,
+.small-btn,
+.text-input,
+.select-input,
+.shortcut-input {
+  border-radius: var(--fs-radius-control, 10px);
+  background: var(--fs-control-bg, var(--fs-surface-2));
+  background-image: var(--fs-control-accent-gradient, none);
+  border-color: var(--fs-border-soft, var(--fs-border));
+  box-shadow: var(--fs-material-control-frame, none);
+}
