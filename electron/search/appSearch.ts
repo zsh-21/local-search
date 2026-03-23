@@ -1,6 +1,7 @@
-﻿export async function searchApps(input: {
+export async function searchApps(input: {
   searchTypeId: string;
   lowerQuery: string;
+  lane?: "fast" | "full";
   getInstalledApps: () => Array<{ Name: string; AppID: string }>;
   normalizeAppGroupKey: (name: string) => string;
   iconDataCache: Map<string, string>;
@@ -34,6 +35,8 @@
   } = input;
 
   const shouldCancel = () => Boolean(input.shouldCancel?.());
+  const lane = input.lane === "fast" ? "fast" : "full";
+  const laneLimit = lane === "fast" ? 20 : 50;
 
   if (searchTypeId !== "all" && searchTypeId !== "file" && searchTypeId !== "app") return [];
   if (searchTypeId === "file") return [];
@@ -45,7 +48,7 @@
   };
 
   const installedApps = getInstalledApps();
-  const actionTokens = ["卸载", "uninstall", "remove", "删除", "移除"];
+  const actionTokens = ["\u5378\u8f7d", "uninstall", "remove", "\u5220\u9664", "\u79fb\u9664"];
   const isActionQuery = actionTokens.some((t) => lowerQuery.includes(t));
 
   const matchedGroupKeys = new Set<string>();
@@ -145,8 +148,6 @@
     }
   }
 
-  if (searchTypeId !== "app") return shouldCancel() ? [] : results;
-
   const sorted = results.sort((a, b) => {
     const scoreDiff = (b.score || 0) - (a.score || 0);
     if (scoreDiff !== 0) return scoreDiff;
@@ -154,6 +155,11 @@
     if (matchDiff !== 0) return matchDiff;
     return (a.nameLen || 1_000_000) - (b.nameLen || 1_000_000);
   });
+
+  if (searchTypeId !== "app") {
+    return shouldCancel() ? [] : sorted.slice(0, laneLimit);
+  }
+
   const merged = sorted
     .slice(0, 100)
     .map(({ score, staticScore, weightedScore, matchIndex, nameLen, ...rest }) => rest);

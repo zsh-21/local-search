@@ -34,6 +34,10 @@ export type SearchContext = {
   searchTypeId: SearchTypeId;
   searchSessionId: string;
   isSessionCancelled: () => boolean;
+  lane: "fast" | "full";
+  queryLength: number;
+  fileSearchLimit: number;
+  recentLimit: number;
   driveFilter: string;
   extFilter: string;
   now: number;

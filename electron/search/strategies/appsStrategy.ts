@@ -9,6 +9,7 @@ export const appsStrategy: SearchStrategy = {
     const appResults: any[] = await searchApps({
       searchTypeId: ctx.searchTypeId,
       lowerQuery: ctx.lowerQuery,
+      lane: ctx.lane,
       getInstalledApps: deps.getInstalledApps,
       normalizeAppGroupKey: deps.normalizeAppGroupKey,
       iconDataCache: deps.iconDataCache,

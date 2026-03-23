@@ -8,15 +8,22 @@ function isShortcutPath(p: string) {
   return lower.endsWith(".lnk") || lower.endsWith(".url");
 }
 
+function isShortQueryWeakMatch(ctx: SearchContext, entry: { path: string; name: string }) {
+  if (ctx.queryLength > 2) return false;
+  const q = ctx.lowerQuery;
+  if (!q) return false;
+  const nameLower = String(entry.name || "").toLowerCase();
+  if (nameLower.startsWith(q)) return false;
+  const pathLower = String(entry.path || "").toLowerCase();
+  if (pathLower.includes(`\\${q}`)) return false;
+  if (pathLower.endsWith(q)) return false;
+  return true;
+}
+
 export const fileIndexStrategy: SearchStrategy = {
   id: "fileIndex",
   async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
-
-    const baseLimit = ctx.searchTypeId === "all" || ctx.searchTypeId === "file" ? 500 : 5000;
-    const fileSearchLimit = ctx.isIndexingHint
-      ? Math.min(baseLimit, ctx.searchTypeId === "all" || ctx.searchTypeId === "file" ? 120 : 600)
-      : baseLimit;
 
     const currentSettings = deps.loadSettings();
     const customExts = Array.isArray(currentSettings.customSearchTypes)
@@ -41,7 +48,7 @@ export const fileIndexStrategy: SearchStrategy = {
     try {
       fileSearch = await deps.fileIndex.search(
         ctx.query,
-        fileSearchLimit,
+        ctx.fileSearchLimit,
         where ? { where, sessionId: ctx.searchSessionId } : { sessionId: ctx.searchSessionId }
       );
     } catch {
@@ -50,8 +57,8 @@ export const fileIndexStrategy: SearchStrategy = {
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
 
     const rawCount = Number((fileSearch as any)?.rawCount ?? (fileSearch as any)?.totalCount ?? 0);
-    if (ctx.query && ctx.query.trim()) {
-      console.log(`[search] "${ctx.query}" matches=${rawCount}`);
+    if (ctx.query && ctx.query.trim() && ctx.lane === "fast") {
+      console.log(`[search][${ctx.lane}] "${ctx.query}" limit=${ctx.fileSearchLimit} matches=${rawCount}`);
     }
 
     const fileResultsRaw: Array<{
@@ -71,6 +78,7 @@ export const fileIndexStrategy: SearchStrategy = {
       if (ctx.extFilter && !String(r.path).toLowerCase().endsWith(ctx.extFilter)) continue;
       if (ctx.searchTypeId === "file" && String(r.path).toLowerCase().endsWith(".exe")) continue;
       if (process.platform === "win32" && !/^[a-zA-Z]:/.test(r.path) && !r.path.startsWith("\\\\")) continue;
+      if (isShortQueryWeakMatch(ctx, r)) continue;
       filteredFiles.push(r);
     }
 
@@ -80,6 +88,7 @@ export const fileIndexStrategy: SearchStrategy = {
       const type = r.isDirectory ? "folder" : "file";
       const matchTarget = ctx.isPathQuery ? r.path : r.name;
       const { weightedScore, staticScore, matchIndex, nameLen } = ctx.nameScorer.computeWeightedNameMatch(matchTarget);
+      if (staticScore <= 0) continue;
       const timeMs = typeof r.timeMs === "number" ? r.timeMs : 0;
       const score = ctx.scoreComputer.computeCombinedScore({
         staticScore,

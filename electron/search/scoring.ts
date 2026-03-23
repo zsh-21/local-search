@@ -104,11 +104,14 @@ function levenshteinDistance(a: string, b: string, maxDistance = 24) {
   return prev[lb] > maxDistance ? -1 : prev[lb];
 }
 
-export function createNameScorer(query: string) {
+export function createNameScorer(query: string, options?: { mode?: "short" | "medium" | "full" }) {
   const lowerQuery = normalizeTextForSearch(query);
   const queryParts = tokenizeForScore(lowerQuery);
   const queryKeepPathSeparators = /[\\/]/.test(lowerQuery);
   const queryCompact = toCompactKey(lowerQuery, queryKeepPathSeparators);
+  const matchMode = options?.mode || "full";
+  const allowLevenshtein = matchMode === "full";
+  const allowSubsequence = matchMode !== "short";
   const normalizeForMatchName = (name: string) => normalizeTextForSearch(String(name || '').replace(/\.(exe|lnk)$/i, ''));
   const scoreTokens = tokenizeForScore(lowerQuery);
 
@@ -210,7 +213,7 @@ export function createNameScorer(query: string) {
     }
 
     // Levenshtein 仅在高阶命中不足时参与，避免误抬升低质量模糊结果
-    if (tier < 4 && queryCompact && targetCompact) {
+    if (allowLevenshtein && tier < 4 && queryCompact && targetCompact) {
       const maxLen = Math.max(queryCompact.length, targetCompact.length);
       if (maxLen > 0 && Math.abs(queryCompact.length - targetCompact.length) <= Math.max(8, queryCompact.length)) {
         const dist = levenshteinDistance(queryCompact, targetCompact, 12);
@@ -224,7 +227,7 @@ export function createNameScorer(query: string) {
       }
     }
 
-    if (tier < 3 && queryCompact && targetCompact) {
+    if (allowSubsequence && tier < 3 && queryCompact && targetCompact) {
       const compactSubScore = compactSubsequenceScore(targetCompact, queryCompact);
       if (compactSubScore > 0) score += Math.min(30, compactSubScore * 0.9);
       const subseq = fuzzySubsequenceScore(target, lowerQuery);

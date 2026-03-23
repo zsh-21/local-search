@@ -1,5 +1,6 @@
 const activeSessionByWindow = new Map<number, string>();
 const cancelledSessions = new Map<string, number>();
+const cleanupBoundWindowIds = new Set<number>();
 const CANCELLED_SESSION_MAX = 2000;
 
 function normalizeSessionId(raw: string) {
@@ -30,6 +31,14 @@ export function beginSearchSession(input: {
   cancelSearchSession?: (sessionId: string) => void;
 }) {
   const webContentsId = input.event.sender.id;
+  if (!cleanupBoundWindowIds.has(webContentsId)) {
+    cleanupBoundWindowIds.add(webContentsId);
+    input.event.sender.once("destroyed", () => {
+      activeSessionByWindow.delete(webContentsId);
+      cleanupBoundWindowIds.delete(webContentsId);
+    });
+  }
+
   const sessionId = normalizeSessionId(input.sessionId);
   if (!sessionId) {
     return {
@@ -77,4 +86,3 @@ export function cancelSessionById(sessionId: string, cancelSearchSession?: (sess
   markCancelled(normalized);
   cancelSearchSession?.(normalized);
 }
-

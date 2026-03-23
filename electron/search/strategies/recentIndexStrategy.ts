@@ -5,6 +5,17 @@ function isShortcutPath(p: string) {
   return lower.endsWith(".lnk") || lower.endsWith(".url");
 }
 
+function passShortQueryHeatFilter(ctx: SearchContext, item: { name: string; path: string }) {
+  if (ctx.queryLength > 2) return true;
+  const q = ctx.lowerQuery;
+  if (!q) return false;
+  const nameLower = String(item.name || "").toLowerCase();
+  if (nameLower.startsWith(q)) return true;
+  const pathLower = String(item.path || "").toLowerCase();
+  if (pathLower.includes(`\\${q}`)) return true;
+  return false;
+}
+
 export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStrategy {
   return {
     id: "recentIndex",
@@ -15,6 +26,9 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
       items.sort((a, b) => (b.timeMs || 0) - (a.timeMs || 0));
 
       const out: SearchCandidate[] = [];
+      const recentLimit = Math.max(0, Math.floor(ctx.recentLimit || 0));
+      if (recentLimit <= 0) return { kind: "continue", items: out };
+
       for (const it of items) {
         if (ctx.isSessionCancelled()) break;
 
@@ -26,6 +40,7 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
         if (ctx.extFilter && !String(it.path).toLowerCase().endsWith(ctx.extFilter)) continue;
         if (ctx.searchTypeId === "file" && String(it.path).toLowerCase().endsWith(".exe")) continue;
         if (process.platform === "win32" && !/^[a-zA-Z]:/.test(it.path) && !it.path.startsWith("\\\\")) continue;
+        if (!passShortQueryHeatFilter(ctx, it)) continue;
 
         const weighted = ctx.nameScorer.computeWeightedNameMatch(it.name);
         if (weighted.staticScore <= 0) continue;
@@ -47,10 +62,12 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
           matchIndex: weighted.matchIndex,
           nameLen: weighted.nameLen,
           timeMs: it.timeMs || 0,
-        });
+          source: "recentIndex",
+          metaFlags: { recentHeat: true },
+        } as any);
 
         seenPathKeys.add(key);
-        if (out.length >= 350) break;
+        if (out.length >= recentLimit) break;
       }
 
       return { kind: "continue", items: out };
