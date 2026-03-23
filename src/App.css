@@ -1411,6 +1411,11 @@ input::placeholder {
   flex-direction: column;
 }
 
+/* 仅在显示“正在索引/搜索中”状态行时压缩结果区顶部间距，避免状态行下方出现过大空白。 */
+.results.results-with-status {
+  margin-top: 4px;
+}
+
 .results-scroll-container {
   width: 100%;
   display: flex;

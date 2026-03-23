@@ -89,6 +89,74 @@ async function sudoExec(commandLine: string): Promise<{ ok: boolean; message?: s
 
 let isAdminProcessCache: boolean | null = null;
 
+type IndexProgressRuntime = {
+  active: boolean;
+  startedAt: number;
+  startedCount: number;
+  lastCount: number;
+  lastProgress: number;
+};
+
+// 渲染层会高频轮询索引进度：这里在主进程维护一次“会话内估算”，避免前端一直看到 0%。
+const indexProgressRuntime: IndexProgressRuntime = {
+  active: false,
+  startedAt: 0,
+  startedCount: 0,
+  lastCount: 0,
+  lastProgress: 0,
+};
+
+function estimateIndexProgress(status: { isIndexing?: boolean; indexedCount?: number; progress?: number }) {
+  const isIndexing = Boolean(status?.isIndexing);
+  const directProgressRaw = Number(status?.progress);
+  const hasDirectProgress = Number.isFinite(directProgressRaw);
+  if (hasDirectProgress) {
+    const normalized = Math.max(0, Math.min(1, directProgressRaw));
+    if (!isIndexing) return { isIndexing: false, progress: 1 };
+    // 索引进行中时避免提前到达 100%，完成态再由 isIndexing=false 返回 1。
+    return { isIndexing: true, progress: Math.min(0.99, Math.max(0.01, normalized)) };
+  }
+
+  const indexedCountRaw = Number(status?.indexedCount);
+  const indexedCount = Number.isFinite(indexedCountRaw) ? Math.max(0, indexedCountRaw) : 0;
+
+  if (!isIndexing) {
+    indexProgressRuntime.active = false;
+    indexProgressRuntime.startedAt = 0;
+    indexProgressRuntime.startedCount = 0;
+    indexProgressRuntime.lastCount = indexedCount;
+    indexProgressRuntime.lastProgress = 1;
+    return { isIndexing: false, progress: 1 };
+  }
+
+  const now = Date.now();
+  const isNewSession =
+    !indexProgressRuntime.active ||
+    (indexedCount > 0 && indexProgressRuntime.lastCount - indexedCount > 500);
+  if (isNewSession) {
+    indexProgressRuntime.active = true;
+    indexProgressRuntime.startedAt = now;
+    indexProgressRuntime.startedCount = indexedCount;
+    indexProgressRuntime.lastCount = indexedCount;
+    indexProgressRuntime.lastProgress = 0.01;
+  }
+
+  const growth = Math.max(0, indexedCount - indexProgressRuntime.startedCount);
+  const elapsedMs = Math.max(0, now - indexProgressRuntime.startedAt);
+  // 文件量增长用于体现“真实推进”，按对数压缩避免后期增长过快导致跳变。
+  const countProgress = Math.min(0.92, Math.log10(growth + 1) / 6.0);
+  // 时间下限用于兜底“已在索引但短期无可见计数变化”的阶段，避免进度长时间停在 0%。
+  const timeProgress = Math.min(0.9, (elapsedMs / 1000 / 180) * 0.9);
+  const nextProgress = Math.min(
+    0.99,
+    Math.max(indexProgressRuntime.lastProgress, countProgress, timeProgress, 0.01),
+  );
+
+  indexProgressRuntime.lastCount = indexedCount;
+  indexProgressRuntime.lastProgress = nextProgress;
+  return { isIndexing: true, progress: nextProgress };
+}
+
 async function isCurrentProcessAdminOnWindows(): Promise<boolean> {
   if (process.platform !== 'win32') return false;
   if (typeof isAdminProcessCache === 'boolean') return isAdminProcessCache;
@@ -283,6 +351,21 @@ export function registerIpcHandlers() {
       settings: snapshot.settings,
       history: snapshot.history,
     };
+  });
+
+  ipcMain.handle('get-index-progress', async () => {
+    // 索引进度对 UI 可感知性影响很大：这里返回单调递增的估算值，避免索引期长期显示 0%。
+    try {
+      const status = await fileIndex.getStatus();
+      return estimateIndexProgress(status ?? {});
+    } catch {
+      // 异常兜底复用启动快照，保证调用方始终拿到结构一致的返回值。
+      const snapshot = getBootstrapState();
+      return estimateIndexProgress({
+        isIndexing: snapshot.indexStatus?.isIndexing,
+        indexedCount: 0,
+      });
+    }
   });
 
   ipcMain.handle('select-background-image', async () => {

@@ -243,9 +243,22 @@ export const fileIndex = {
   
   getStatus: async () => {
     const statuses = await Promise.all(shards.map((_, i) => callShard<any>(i, 'getStatus')));
+    const isIndexing = statuses.some((s) => Boolean(s?.isIndexing));
+    const activeStatuses = statuses.filter((s) => Boolean(s?.isIndexing));
+    const progressSource = activeStatuses.length > 0 ? activeStatuses : statuses;
+    const progress =
+      progressSource.length > 0
+        ? progressSource.reduce((sum, s) => {
+            const raw = Number(s?.progress);
+            const normalized = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+            return sum + normalized;
+          }, 0) / progressSource.length
+        : 1;
     return {
-      isIndexing: statuses.some(s => s.isIndexing),
-      indexedCount: statuses.reduce((sum, s) => sum + (s.indexedCount || 0), 0)
+      isIndexing,
+      indexedCount: statuses.reduce((sum, s) => sum + (s.indexedCount || 0), 0),
+      // 多分片索引时返回“进行中分片”的平均进度，避免已完成分片把整体进度抬高。
+      progress: isIndexing ? Math.min(0.99, Math.max(0.01, progress)) : 1,
     };
   },
 

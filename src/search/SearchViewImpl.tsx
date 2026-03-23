@@ -690,7 +690,8 @@ export function SearchViewImpl() {
       )}
 
       {(c.visibleResults.length > 0 || c.showEmptyState || c.showInputHint) && (
-        <div className="results">
+        // 索引状态行出现时收紧结果区顶边距，避免“正在索引”与列表之间留白过大。
+        <div className={`results ${statusText ? "results-with-status" : ""}`}>
           {c.showInputHint ? (
             <div className="empty-state">
               继续输入以开始搜索（至少 2 个字符）

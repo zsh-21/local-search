@@ -29,6 +29,7 @@ export interface FileIndexSearchResult extends FileIndexEntry {
 export interface FileIndexStatus {
 	isIndexing: boolean;
 	indexedCount: number;
+	progress: number;
 }
 
 interface FlexSearchDoc {
@@ -47,12 +48,45 @@ interface FlexSearchDoc {
 }
 
 const tokenizeCache = new Map<string, string[]>();
+const TOKENIZE_CACHE_MAX = 4000;
+const TOKENIZE_CACHE_KEY_MAX_LENGTH = 96;
+// 搜索窗口隐藏后进入空闲内存压缩模式的延迟时间：避免频繁开关窗口导致重复释放/重建。
+const IDLE_COMPACT_DELAY_MS = 45_000;
+
+function getTokenizeCacheEntry(key: string) {
+	const cached = tokenizeCache.get(key);
+	if (!cached) return null;
+	// 命中后移动到末尾：在常驻进程中用近似 LRU 防止低频历史 key 长期占用内存。
+	tokenizeCache.delete(key);
+	tokenizeCache.set(key, cached);
+	return cached.slice();
+}
+
+function setTokenizeCacheEntry(key: string, tokens: string[]) {
+	if (!key || tokens.length === 0) return;
+	const snapshot = tokens.slice();
+	if (tokenizeCache.has(key)) tokenizeCache.delete(key);
+	tokenizeCache.set(key, snapshot);
+	if (tokenizeCache.size <= TOKENIZE_CACHE_MAX) return;
+	// 缓存超上限时按插入顺序淘汰最旧项，避免分词缓存无界增长。
+	const overflow = tokenizeCache.size - TOKENIZE_CACHE_MAX;
+	for (let i = 0; i < overflow; i++) {
+		const oldestKey = tokenizeCache.keys().next().value;
+		if (!oldestKey) break;
+		tokenizeCache.delete(String(oldestKey));
+	}
+}
+
 const flexsearchEncode = (raw: string) => {
 	// 先做 NFKC 归一化：统一全角/半角及兼容字符，提升中英文与特殊字符混输的一致性
 	const s = (raw || '').normalize('NFKC').toLowerCase();
 	if (!s) return [];
-	const cached = tokenizeCache.get(s);
-	if (cached) return cached.slice();
+	// 仅缓存短文本分词：路径类长文本命中率低，缓存反而会放大内存占用。
+	const shouldUseCache = s.length <= TOKENIZE_CACHE_KEY_MAX_LENGTH;
+	if (shouldUseCache) {
+		const cached = getTokenizeCacheEntry(s);
+		if (cached) return cached;
+	}
 
 	const out: string[] = [];
 	// token 上限：过低会导致“路径组合检索”丢关键 token（如 26-3 中的 3、扩展名 doc 等）
@@ -115,7 +149,7 @@ const flexsearchEncode = (raw: string) => {
 		for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
 	}
 
-	tokenizeCache.set(s, out.slice());
+	if (shouldUseCache) setTokenizeCacheEntry(s, out);
 	return out;
 };
 export interface RebuildRoot {
@@ -134,10 +168,22 @@ export class FileIndex {
   private pauseUntil = 0;
   private lowPriority = true;
   private rebuildStartedAt = 0;
+  // 索引进度使用“会话内已处理数量 + 时间下限”估算，保证 UI 百分比持续前进。
+  private indexingProgressStartedAt = 0;
+  private indexingProgressCount = 0;
+  private indexingProgress = 0;
   private partialPublished = false;
   private lastYieldAt = 0;
   private ignoredPrefixes: Array<{ prefix: string; prefixWithSep: string }> = [];
   private ignoredAnyDirNames = new Set<string>();
+  // 记录搜索窗口是否可见：仅在窗口隐藏且空闲时才执行内存压缩。
+  private searchWindowVisible = false;
+  // 压缩态表示“索引已落盘但不常驻内存”，再次检索时会自动恢复。
+  private isCompacted = false;
+  // 压缩后保留条目数快照，避免状态面板在空闲期显示为 0。
+  private indexedCountHint = 0;
+  private compactTimer: ReturnType<typeof setTimeout> | null = null;
+  private restoreFromCacheTask: Promise<void> | null = null;
 	// 常用扩展名集合：用于索引构建时“优先处理这些文件”，只影响构建顺序不影响覆盖范围
 	private preferredFileExts = new Set<string>();
   // 增量落盘：watcher ingest/remove 会追加写入 cache，保证跨重启持久化
@@ -155,7 +201,18 @@ export class FileIndex {
     this.index = null;
     this.pathToId.clear();
     this.driveCounts.clear();
+    this.searchWindowVisible = false;
+    this.indexedCountHint = 0;
+    this.isCompacted = false;
+    this.restoreFromCacheTask = null;
+    if (this.compactTimer) {
+      clearTimeout(this.compactTimer);
+      this.compactTimer = null;
+    }
+	// 重建/清缓存场景主动释放分词缓存，避免历史查询词长驻内存。
+	tokenizeCache.clear();
     this.isIndexing = false;
+    this.resetIndexingProgress();
     this.abortRequested = false;
     this.pauseUntil = 0;
     this.rebuildStartedAt = 0;
@@ -181,8 +238,42 @@ export class FileIndex {
 	async getStatus(): Promise<FileIndexStatus> {
 		return {
 			isIndexing: this.isIndexing,
-			indexedCount: this.pathToId.size,
+			// 空闲压缩态下返回快照计数，避免 UI 误判“索引已清空”。
+			indexedCount: this.isCompacted ? this.indexedCountHint : this.pathToId.size,
+			// 非索引态统一返回 1，索引态返回会话内单调递增进度。
+			progress: this.isIndexing ? Math.max(0.01, Math.min(0.99, this.indexingProgress)) : 1,
 		};
+	}
+
+	private resetIndexingProgress() {
+		this.indexingProgressStartedAt = 0;
+		this.indexingProgressCount = 0;
+		this.indexingProgress = 0;
+	}
+
+	private startIndexingProgress() {
+		this.indexingProgressStartedAt = Date.now();
+		this.indexingProgressCount = 0;
+		this.indexingProgress = 0.01;
+	}
+
+	private bumpIndexingProgress(step = 1) {
+		if (!this.isIndexing) return;
+		const delta = Number.isFinite(step) ? Math.max(0, Math.floor(step)) : 0;
+		if (delta > 0) this.indexingProgressCount += delta;
+		const elapsedSec = Math.max(0, (Date.now() - this.indexingProgressStartedAt) / 1000);
+		// 处理计数用于表达真实推进，对数压缩可避免后期进度突跳。
+		const countProgress = Math.min(0.96, Math.log10(this.indexingProgressCount + 1) / 5.3);
+		// 时间下限用于兜底慢盘/权限受限场景，避免进度长时间停住。
+		const timeProgress = Math.min(0.9, (elapsedSec / 120) * 0.9);
+		this.indexingProgress = Math.min(
+			0.99,
+			Math.max(this.indexingProgress, countProgress, timeProgress, 0.01),
+		);
+	}
+
+	private finishIndexingProgress() {
+		this.indexingProgress = 1;
 	}
 
 	private getDriveKeyFromPath(entryPath: string) {
@@ -205,12 +296,20 @@ export class FileIndex {
 				count,
 			}))
 			.sort((a, b) => a.drive.localeCompare(b.drive));
-		return { totalCount: this.pathToId.size, drives };
+		const totalCount = this.isCompacted ? this.indexedCountHint : this.pathToId.size;
+		return { totalCount, drives };
 	}
 
 	setSearchWindowVisible(visible: boolean) {
+		// 同步窗口可见态，用于判断是否允许触发空闲压缩。
+		this.searchWindowVisible = visible;
 		this.lowPriority = visible;
-		if (visible) this.pauseUntil = 0;
+		if (visible) {
+			this.pauseUntil = 0;
+			this.clearIdleCompactTimer();
+			return;
+		}
+		this.scheduleIdleCompactIfNeeded();
 	}
 
 	setIgnoredPaths(paths: string[]) {
@@ -330,10 +429,63 @@ export class FileIndex {
 	}
 
 	private async ensureIndex() {
+		// 压缩态首次搜索时按需恢复：用磁盘快照换取空闲期更低内存。
+		if (!this.index && this.isCompacted) {
+			await this.restoreFromCompactedState();
+		}
 		if (!this.index) {
 			this.index = this.createIndex();
 		}
 		return this.index;
+	}
+
+	private clearIdleCompactTimer() {
+		if (!this.compactTimer) return;
+		clearTimeout(this.compactTimer);
+		this.compactTimer = null;
+	}
+
+	private scheduleIdleCompactIfNeeded() {
+		if (this.searchWindowVisible) return;
+		if (this.isIndexing) return;
+		if (this.isCompacted) return;
+		if (this.compactTimer) return;
+		this.compactTimer = setTimeout(() => {
+			this.compactTimer = null;
+			void this.compactForIdle();
+		}, IDLE_COMPACT_DELAY_MS);
+	}
+
+	private async compactForIdle() {
+		if (this.searchWindowVisible) return;
+		if (this.isIndexing) return;
+		if (this.isCompacted) return;
+		// 压缩前先冲刷增量写入，保证恢复时能看到最新 watcher 变更。
+		await this.flushCacheAppendQueue();
+		try {
+			this.cacheAppendWs?.end();
+		} catch {}
+		this.cacheAppendWs = null;
+		this.indexedCountHint = this.pathToId.size;
+		// 核心释放点：回收大对象（倒排索引 + 路径映射），保留轻量统计信息。
+		this.index = null;
+		this.pathToId.clear();
+		tokenizeCache.clear();
+		this.isCompacted = true;
+	}
+
+	private async restoreFromCompactedState() {
+		if (!this.isCompacted) return;
+		if (!this.restoreFromCacheTask) {
+			this.restoreFromCacheTask = (async () => {
+				// 标记离开压缩态，后续流程按常规索引生命周期执行。
+				this.isCompacted = false;
+				await this.loadCache();
+			})().finally(() => {
+				this.restoreFromCacheTask = null;
+			});
+		}
+		await this.restoreFromCacheTask;
 	}
 
   private ensureCacheAppendStream() {
@@ -462,29 +614,34 @@ export class FileIndex {
 
 	async ingestPath(entryPath: string, isDirectory: boolean, timeMs?: number) {
 		if (!entryPath) return;
-		//  ingest Ҫޣлͣյ Worker OOM
-		if (this.pathToId.size >= this.maxEntries) return;
+		const currentCount = this.isCompacted ? this.indexedCountHint : this.pathToId.size;
+		// 以快照计数做上限保护：压缩态下也要避免无限增长导致后续恢复 OOM。
+		if (currentCount >= this.maxEntries) return;
 		if (process.platform === 'win32') {
 			if (!/^[a-zA-Z]:/.test(entryPath) && !entryPath.startsWith('\\')) return;
 		} else {
 			if (!entryPath.startsWith('/')) return;
 		}
-
-		const index = await this.ensureIndex();
-		const key = entryPath.toLowerCase();
-		if (this.pathToId.has(key)) return;
 		if (this.isIgnoredPath(entryPath)) return;
 
+		const key = entryPath.toLowerCase();
 		const name = path.basename(entryPath);
 		const ext = path.extname(name).toLowerCase();
 		if (!shouldIndexFile(isDirectory, ext)) return;
+		const normalizedTimeMs = Number.isFinite(timeMs) ? Math.max(0, Number(timeMs)) : 0;
+		// 压缩态下仅记录增量到磁盘，不重建内存索引，保证空闲内存稳定。
+		if (this.isCompacted && !this.index) {
+			this.enqueueCacheDelta(JSON.stringify({ op: 'i', p: entryPath, d: isDirectory ? 1 : 0, t: normalizedTimeMs }));
+			return;
+		}
+		const index = await this.ensureIndex();
+		if (this.pathToId.has(key)) return;
 		const kind = classifyKind(isDirectory, ext);
 		const drive = normalizeDrive(entryPath);
 		const driveKey = drive || 'other';
 		const pinyinFull = toPinyinFull(name);
 		const initials = toPinyinInitials(name);
 		const pathText = this.buildPathText(entryPath);
-		const normalizedTimeMs = Number.isFinite(timeMs) ? Math.max(0, Number(timeMs)) : 0;
 
 		const doc: FlexSearchDoc = {
 			id: key,
@@ -502,13 +659,19 @@ export class FileIndex {
 		index.add(doc);
 		this.pathToId.set(key, key);
 		this.bumpDriveCount(driveKey, 1);
+		this.indexedCountHint = this.pathToId.size;
 
-		// ̣insert ׷д뻺棬֤Կɿ loadCache
+		// 保留增量日志，保证下次从缓存恢复时能看到最新变更。
 		this.enqueueCacheDelta(JSON.stringify({ op: 'i', p: entryPath, d: isDirectory ? 1 : 0, t: normalizedTimeMs }));
 	}
 
 	async removePath(entryPath: string) {
 		if (!entryPath) return;
+		// 压缩态下无法可靠判断是否存在，先落盘删除增量，恢复时再统一回放。
+		if (this.isCompacted && !this.index) {
+			this.enqueueCacheDelta(JSON.stringify({ op: 'r', p: entryPath }));
+			return;
+		}
 		const key = entryPath.toLowerCase();
 		const id = this.pathToId.get(key);
 		if (!id) return;
@@ -518,15 +681,19 @@ export class FileIndex {
 		} catch {}
 		this.pathToId.delete(key);
 		this.bumpDriveCount(this.getDriveKeyFromPath(entryPath), -1);
+		this.indexedCountHint = this.pathToId.size;
 
-		// ̣remove ׷д뻺棨loadCache ʱطŲɾ
+		// 保留删除增量，恢复时可与插入日志一起重放并消除脏数据。
 		this.enqueueCacheDelta(JSON.stringify({ op: 'r', p: entryPath }));
 	}
 
 	async loadCache(): Promise<boolean> {
 		if (!existsSync(this.cachePath)) return false;
+		this.clearIdleCompactTimer();
+		this.isCompacted = false;
 
 		this.isIndexing = true;
+		this.startIndexingProgress();
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
 		this.lastYieldAt = Date.now();
@@ -626,6 +793,7 @@ export class FileIndex {
 
 				batch.push({ path: p, isDirectory, timeMs });
 				count++;
+				this.bumpIndexingProgress(1);
 
 				if (batch.length >= BATCH_SIZE) {
 					await processBatch();
@@ -635,20 +803,25 @@ export class FileIndex {
 			await processBatch();
 			await this.cooperativeYield(() => {});
 
+			this.indexedCountHint = this.pathToId.size;
 			return count > 0;
 		} catch {
 			if (!this.index) this.index = this.createIndex();
+			this.indexedCountHint = this.pathToId.size;
 			return false;
 		} finally {
+			this.finishIndexingProgress();
 			this.isIndexing = false;
 			this.pauseUntil = 0;
-			// loadCache ɺˢһ̶Уδ flush
+			// loadCache 完成后刷新增量写队列，避免缓存与内存状态脱节。
 			void this.flushCacheAppendQueue();
+			this.scheduleIdleCompactIfNeeded();
 		}
 	}
 
 	async buildIfEmpty() {
-		if (this.pathToId.size > 0) return;
+		// 压缩态下 indexedCountHint > 0 说明磁盘缓存可用，无需重建全盘索引。
+		if (this.pathToId.size > 0 || (this.isCompacted && this.indexedCountHint > 0)) return;
 		await this.rebuild();
 	}
 
@@ -666,7 +839,10 @@ export class FileIndex {
 	 */
 	async rebuild(explicitRoots?: (string | RebuildRoot)[]) {
 		if (this.isIndexing) return;
+		this.clearIdleCompactTimer();
+		this.isCompacted = false;
 		this.isIndexing = true;
+		this.startIndexingProgress();
 		this.abortRequested = false;
 		this.rebuildStartedAt = Date.now();
 		this.partialPublished = false;
@@ -767,6 +943,7 @@ export class FileIndex {
 			
 			batch.push({ ...entry, timeMs: Number.isFinite(entry.timeMs) ? Math.max(0, Number(entry.timeMs)) : 0 });
 			entryCount++;
+			this.bumpIndexingProgress(1);
 		};
 
         const shouldStop = () => this.abortRequested || entryCount >= this.maxEntries;
@@ -838,12 +1015,15 @@ export class FileIndex {
 			this.index = nextIndex;
 			this.pathToId = nextPathToId;
 			this.driveCounts = nextDriveCounts;
+			this.indexedCountHint = this.pathToId.size;
 		} finally {
 			try {
 				cacheWs.end();
 			} catch {}
+			this.finishIndexingProgress();
 			this.isIndexing = false;
 			this.pauseUntil = 0;
+			this.scheduleIdleCompactIfNeeded();
 		}
 	}
 
@@ -852,9 +1032,14 @@ export class FileIndex {
 		limit = 100,
 		options?: { where?: any }
 	): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number; rawCount: number }> {
+		// 搜索请求视作活跃期，先取消空闲压缩倒计时，防止检索过程中被释放。
+		this.clearIdleCompactTimer();
 		const index = await this.ensureIndex();
 		const queryLower = query.trim().normalize('NFKC').toLowerCase();
-		if (!queryLower) return { results: [], isIndexing: this.isIndexing, totalCount: 0, rawCount: 0 };
+		if (!queryLower) {
+			this.scheduleIdleCompactIfNeeded();
+			return { results: [], isIndexing: this.isIndexing, totalCount: 0, rawCount: 0 };
+		}
 
 		const matchesWhere = (doc: FlexSearchDoc, where?: any) => {
 			if (!where) return true;
@@ -982,7 +1167,10 @@ export class FileIndex {
 		}
 
 		const totalCount = results.length;
-		return { results, isIndexing: this.isIndexing, totalCount, rawCount };
+		const output = { results, isIndexing: this.isIndexing, totalCount, rawCount };
+		// 查询结束后恢复空闲压缩调度，确保“隐藏且无交互”时回落到低内存。
+		this.scheduleIdleCompactIfNeeded();
+		return output;
 
 	}
 }

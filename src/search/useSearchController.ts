@@ -319,6 +319,8 @@ export function useSearchController() {
   const searchSessionIdRef = useRef("");
   const pendingAppendRef = useRef<AppItem[]>([]);
   const flushAppendTimerRef = useRef<number | null>(null);
+  // 右方向键按“分词”补齐时，短暂保留当前幽灵候选，避免被 query 联动 effect 立即清空。
+  const preserveGhostSuggestionRef = useRef(false);
   const calcItemRef = useRef<AppItem | null>(null);
   const calcHistoryItemsRef = useRef<AppItem[]>([]);
   // Tab/Shift+Tab 鍒囨崲绫诲瀷鏃朵笉璧?120ms 闃叉姈锛屼繚璇佸垏鎹㈠悗绔嬪嵆鐪嬪埌鏂扮被鍨嬬粨鏋?
@@ -472,6 +474,8 @@ export function useSearchController() {
   );
 
   const setQueryAndInputValue = (next: string) => {
+    // 普通输入变更走默认路径：不保留旧幽灵候选，避免提示与真实查询漂移。
+    preserveGhostSuggestionRef.current = false;
     setQuery(next);
     setInputValue(next);
     setGhostInputValue("");
@@ -479,6 +483,7 @@ export function useSearchController() {
   };
 
   const clearGhostInputValue = useCallback(() => {
+    preserveGhostSuggestionRef.current = false;
     setGhostInputValue("");
   }, []);
 
@@ -511,6 +516,7 @@ export function useSearchController() {
     Math.round(maxWindowHeight) - SEARCH_WINDOW_TOP_BAR_HEIGHT - SEARCH_WINDOW_BOTTOM_BAR_HEIGHT,
   );
   const DISPLAY_LIMIT = settings.searchDisplayLimit;
+  const MAX_PENDING_APPEND_ITEMS = Math.max(DISPLAY_LIMIT, 200);
   const lastVisibleStartIndexRef = useRef(0);
 
   useEffect(() => {
@@ -679,6 +685,7 @@ export function useSearchController() {
 
   useEffect(() => {
     // 鐪熷疄鏌ヨ鍙樺寲鎴栧垏鎹㈢被鍨嬪悗锛屾竻绌衡€滃菇鐏垫彁绀衡€濋伩鍏嶈瀵?
+    if (preserveGhostSuggestionRef.current) return;
     setGhostInputValue("");
   }, [query, searchTypeId]);
 
@@ -689,6 +696,13 @@ export function useSearchController() {
 
   useEffect(() => {
     // 输入联想优先展示“当前首条结果”的后缀，保持输入时有稳定的幽灵提示。
+    if (preserveGhostSuggestionRef.current) {
+      const inputLower = inputValue.toLocaleLowerCase();
+      const ghostLower = ghostInputValue.toLocaleLowerCase();
+      // 仅在保留候选仍是当前输入的合法后缀时继续保留，避免长期悬挂旧提示。
+      if (ghostLower.startsWith(inputLower) && ghostInputValue.length > inputValue.length) return;
+      preserveGhostSuggestionRef.current = false;
+    }
     if (!inputValue || results.length === 0) {
       setGhostInputValue("");
       return;
@@ -994,7 +1008,12 @@ export function useSearchController() {
       const filteredMore = filterItemsBySearchType(payload.results, currentTypeId);
       if (filteredMore.length <= 0) return;
       const hadPending = pendingAppendRef.current.length > 0;
-      pendingAppendRef.current = [...pendingAppendRef.current, ...filteredMore];
+      // 增量结果改为原地追加：避免每批结果都新建大数组导致短时内存抖动。
+      pendingAppendRef.current.push(...filteredMore);
+      // 队列长度限制到可展示上限附近，防止高频 IPC 批量推送时积压过多临时对象。
+      if (pendingAppendRef.current.length > MAX_PENDING_APPEND_ITEMS) {
+        pendingAppendRef.current.length = MAX_PENDING_APPEND_ITEMS;
+      }
       if (!hadPending) {
         flushPendingAppends();
         return;
@@ -1561,6 +1580,40 @@ export function useSearchController() {
   }, [setQueryAndInputValue]);
 
   const handleKeyDownCapture = (e: React.KeyboardEvent) => {
+    const acceptGhostSuggestionByToken = () => {
+      if (!inputValue || !ghostInputValue) return false;
+      if (ghostInputValue.length <= inputValue.length) return false;
+      const inputEl = inputRef.current;
+      if (
+        inputEl &&
+        inputEl.selectionStart != null &&
+        inputEl.selectionEnd != null &&
+        (inputEl.selectionStart !== inputValue.length || inputEl.selectionEnd !== inputValue.length)
+      ) {
+        return false;
+      }
+      const inputLower = inputValue.toLocaleLowerCase();
+      const ghostLower = ghostInputValue.toLocaleLowerCase();
+      if (!ghostLower.startsWith(inputLower)) return false;
+
+      // 采用“边界符 + 词段”分段补齐：b -> bugs，bugs -> bugs.txt。
+      const isBoundary = (ch: string) => /[\s._\-\\/]/.test(ch);
+      let cursor = inputValue.length;
+      if (isBoundary(ghostInputValue[cursor])) {
+        while (cursor < ghostInputValue.length && isBoundary(ghostInputValue[cursor])) cursor += 1;
+      }
+      while (cursor < ghostInputValue.length && !isBoundary(ghostInputValue[cursor])) cursor += 1;
+      if (cursor <= inputValue.length) return false;
+
+      const nextValue = ghostInputValue.slice(0, cursor);
+      // 标记一次“保留幽灵候选”，确保本次分词补齐后还能继续显示剩余后缀。
+      preserveGhostSuggestionRef.current = true;
+      setQuery(nextValue);
+      setInputValue(nextValue);
+      setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
+      return true;
+    };
+
     const lowerKey = e.key.toLowerCase();
 
     // Ctrl+L：清空搜索内容并保留焦点；Ctrl+K：仅聚焦输入框，保持原语义不变。
@@ -1606,6 +1659,15 @@ export function useSearchController() {
       if (next) setSearchTypeId(next.id);
       setTypeMenuOpen(false);
       return;
+    }
+
+    // 右方向键优先执行“幽灵提示分词补齐”，不影响 Ctrl+方向键的右侧动作导航。
+    if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && e.key === "ArrowRight") {
+      if (acceptGhostSuggestionByToken()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
     }
 
     if (results.length === 0) return;
