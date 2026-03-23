@@ -126,7 +126,6 @@ export function useSearchControllerSearchEffects(params: any) {
           const merged = dedupeResults(strictMatched);
           params.setResults(merged);
           params.setTotalCount(merged.length);
-          params.setIsIndexing(Boolean(resp?.isIndexing));
           params.setHasMore(Boolean(resp?.hasMore));
         });
       } finally {
@@ -184,7 +183,6 @@ export function useSearchControllerSearchEffects(params: any) {
             params.setTotalCount(merged.length);
             return merged;
           });
-          params.setIsIndexing(Boolean(resp?.isIndexing));
           params.setHasMore((v: boolean) => v || Boolean(resp?.hasMore));
         });
       } catch {}

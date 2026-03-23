@@ -66,15 +66,19 @@ function startIndexStatsWriter() {
     void (async () => {
       try {
         const [stats, status] = await Promise.all([fileIndex.getDriveStats(), fileIndex.getStatus()]);
+        const progressRaw = Number(status?.progress);
+        const progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(1, progressRaw)) : 0;
         const signature = JSON.stringify({
           totalCount: stats.totalCount,
           drives: stats.drives,
           isIndexing: status.isIndexing,
+          progress,
         });
         if (signature !== lastIndexStatsSignature) {
           const payload = {
             updatedAt: new Date().toISOString(),
             isIndexing: status.isIndexing,
+            progress,
             totalCount: stats.totalCount,
             drives: stats.drives,
           };

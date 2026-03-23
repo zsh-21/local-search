@@ -68,17 +68,35 @@ export function useSearchControllerLifecycleEffects(params: any) {
 
   useEffect(() => {
     let cancelled = false;
-    void window.ipcRenderer
-      ?.invoke("get-index-progress")
-      .then((resp: any) => {
+    let timerId: number | null = null;
+    const poll = async () => {
+      if (cancelled) return;
+      if (!window.ipcRenderer) return;
+      try {
+        const resp = (await window.ipcRenderer.invoke("get-index-progress")) as
+          | {
+              isIndexing?: boolean;
+              progress?: number;
+            }
+          | undefined;
         if (cancelled) return;
-        params.setIsIndexing(Boolean(resp?.isIndexing));
+
+        const isIndexing = Boolean(resp?.isIndexing);
         const raw = Number(resp?.progress);
-        if (Number.isFinite(raw)) params.setIndexProgress(Math.max(0, Math.min(1, raw)));
-      })
-      .catch(() => {});
+        const normalized = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+        params.setIsIndexing(isIndexing);
+        params.setIndexProgress(isIndexing ? normalized : 0);
+      } catch {}
+
+      if (cancelled) return;
+      timerId = window.setTimeout(() => {
+        void poll();
+      }, 500);
+    };
+    void poll();
     return () => {
       cancelled = true;
+      if (timerId != null) window.clearTimeout(timerId);
     };
   }, []);
 
@@ -103,50 +121,6 @@ export function useSearchControllerLifecycleEffects(params: any) {
       }
     };
   }, [params.isSearching]);
-
-  useEffect(() => {
-    if (!params.isIndexing) {
-      params.setIndexProgress(0);
-      return;
-    }
-
-    let cancelled = false;
-    let timerId: number | null = null;
-    const poll = async () => {
-      if (cancelled) return;
-      if (!window.ipcRenderer) return;
-      try {
-        const resp = (await window.ipcRenderer.invoke("get-index-progress")) as
-          | {
-              isIndexing?: boolean;
-              progress?: number;
-            }
-          | undefined;
-
-        if (cancelled) return;
-        const raw = Number(resp?.progress);
-        const normalized = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
-        params.setIndexProgress(normalized);
-
-        if (resp?.isIndexing === false) {
-          params.setIndexProgress(1);
-          params.setIsIndexing(false);
-          return;
-        }
-      } catch {}
-
-      if (cancelled) return;
-      timerId = window.setTimeout(() => {
-        void poll();
-      }, 500);
-    };
-
-    void poll();
-    return () => {
-      cancelled = true;
-      if (timerId != null) window.clearTimeout(timerId);
-    };
-  }, [params.isIndexing]);
 
   useEffect(() => {
     params.queryRef.current = params.query;

@@ -15,11 +15,12 @@ export function SearchViewImpl() {
 
   const isHistoryMode = c.query.trim().length === 0;
   const isCalcMode = c.isCalcMode;
+  const indexPercent = Math.max(1, Math.min(100, Math.round((c.indexProgress || 0) * 100)));
   const statusText =
     c.searchActivity === "searching"
       ? "搜索中..."
       : c.searchActivity === "indexing"
-        ? `正在索引 ${Math.round(c.indexProgress || 0)}%`
+        ? `正在索引 ${indexPercent}%`
         : "";
 
   const [actionTooltip, setActionTooltip] = useState<null | {

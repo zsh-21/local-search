@@ -312,13 +312,9 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
             style={{ maxHeight: c.MAX_LIST_HEIGHT, overflowY: "auto" }}
             onWheel={() => {
               c.clearActionSelection();
-              c.clearGhostInputValue();
-              c.setLastSelectedBy("mouse");
             }}
             onMouseDown={() => {
               c.clearActionSelection();
-              c.clearGhostInputValue();
-              c.setLastSelectedBy("mouse");
             }}
             onMouseLeave={() => c.setHoveredKey("")}
           >
