@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, screen, shell } from 'electron';
+﻿import { ipcMain, BrowserWindow, dialog, screen, shell } from 'electron';
 import { getDeviceId } from '../config/deviceId';
 import {
   setSearchAllowBlurHide,
@@ -42,10 +42,10 @@ import { resolveAppId } from '../win/resolveAppId';
 import { openResolvedTarget } from '../utils/open';
 import { readUrlShortcut, openLnkShortcut } from '../win/shortcuts';
 import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from '../win/startMenuShortcutIndex';
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { getBootstrapState, refreshBootstrapHistory, setBootstrapSettings } from '../app/bootstrapState';
+import { registerSearchOpenIpcHandlers } from './searchOpenHandlers';
 
 let sudoPromptModule: any | null = null;
 
@@ -75,19 +75,17 @@ async function sudoExec(commandLine: string): Promise<{ ok: boolean; message?: s
           }
           const msg = typeof error?.message === 'string' ? error.message.trim() : '';
           if (msg.toLowerCase().includes('user did not grant permission')) {
-            resolve({ ok: false, message: '已取消或启动失败（可能是 UAC 被拒绝）' });
+            resolve({ ok: false, message: '宸插彇娑堟垨鍚姩澶辫触锛堝彲鑳芥槸 UAC 琚嫆缁濓級' });
             return;
           }
-          resolve({ ok: false, message: msg || '已取消或启动失败（可能是 UAC 被拒绝）' });
+          resolve({ ok: false, message: msg || '宸插彇娑堟垨鍚姩澶辫触锛堝彲鑳芥槸 UAC 琚嫆缁濓級' });
         },
       );
     });
   } catch {
-    return { ok: false, message: '已取消或启动失败（可能是 UAC 被拒绝）' };
+    return { ok: false, message: '宸插彇娑堟垨鍚姩澶辫触锛堝彲鑳芥槸 UAC 琚嫆缁濓級' };
   }
 }
-
-let isAdminProcessCache: boolean | null = null;
 
 type IndexProgressRuntime = {
   active: boolean;
@@ -97,7 +95,6 @@ type IndexProgressRuntime = {
   lastProgress: number;
 };
 
-// 渲染层会高频轮询索引进度：这里在主进程维护一次“会话内估算”，避免前端一直看到 0%。
 const indexProgressRuntime: IndexProgressRuntime = {
   active: false,
   startedAt: 0,
@@ -121,7 +118,6 @@ const lastKnownIndexProgress: LastKnownIndexProgress = {
 
 function rememberLastKnownIndexProgress(next: { isIndexing: boolean; progress: number }) {
   const progressRaw = Number(next?.progress);
-  // 记录最近一次成功进度：当 fileIndex.getStatus 抛错时可直接回退，避免 UI 长期卡在 1%。
   lastKnownIndexProgress.hasValue = true;
   lastKnownIndexProgress.isIndexing = Boolean(next?.isIndexing);
   lastKnownIndexProgress.progress = Number.isFinite(progressRaw) ? Math.max(0, Math.min(1, progressRaw)) : 1;
@@ -131,7 +127,6 @@ function rememberLastKnownIndexProgress(next: { isIndexing: boolean; progress: n
 function getLastKnownIndexProgressFallback() {
   if (!lastKnownIndexProgress.hasValue) return null;
   const now = Date.now();
-  // 兜底状态过旧时强制回到“非索引中”，避免异常分支长期卡在索引态。
   if (
     lastKnownIndexProgress.isIndexing &&
     now - lastKnownIndexProgress.updatedAt > INDEX_PROGRESS_FALLBACK_STALE_MS
@@ -151,7 +146,7 @@ function estimateIndexProgress(status: { isIndexing?: boolean; indexedCount?: nu
   if (hasDirectProgress) {
     const normalized = Math.max(0, Math.min(1, directProgressRaw));
     if (!isIndexing) return { isIndexing: false, progress: 1 };
-    // 索引进行中时避免提前到达 100%，完成态再由 isIndexing=false 返回 1。
+    // 绱㈠紩杩涜涓椂閬垮厤鎻愬墠鍒拌揪 100%锛屽畬鎴愭€佸啀鐢?isIndexing=false 杩斿洖 1銆?
     return { isIndexing: true, progress: Math.min(0.99, Math.max(0.01, normalized)) };
   }
 
@@ -181,9 +176,9 @@ function estimateIndexProgress(status: { isIndexing?: boolean; indexedCount?: nu
 
   const growth = Math.max(0, indexedCount - indexProgressRuntime.startedCount);
   const elapsedMs = Math.max(0, now - indexProgressRuntime.startedAt);
-  // 文件量增长用于体现“真实推进”，按对数压缩避免后期增长过快导致跳变。
+  // 鏂囦欢閲忓闀跨敤浜庝綋鐜扳€滅湡瀹炴帹杩涒€濓紝鎸夊鏁板帇缂╅伩鍏嶅悗鏈熷闀胯繃蹇鑷磋烦鍙樸€?
   const countProgress = Math.min(0.92, Math.log10(growth + 1) / 6.0);
-  // 时间下限用于兜底“已在索引但短期无可见计数变化”的阶段，避免进度长时间停在 0%。
+  // 鏃堕棿涓嬮檺鐢ㄤ簬鍏滃簳鈥滃凡鍦ㄧ储寮曚絾鐭湡鏃犲彲瑙佽鏁板彉鍖栤€濈殑闃舵锛岄伩鍏嶈繘搴﹂暱鏃堕棿鍋滃湪 0%銆?
   const timeProgress = Math.min(0.9, (elapsedMs / 1000 / 180) * 0.9);
   const nextProgress = Math.min(
     0.99,
@@ -195,39 +190,7 @@ function estimateIndexProgress(status: { isIndexing?: boolean; indexedCount?: nu
   return { isIndexing: true, progress: nextProgress };
 }
 
-async function isCurrentProcessAdminOnWindows(): Promise<boolean> {
-  if (process.platform !== 'win32') return false;
-  if (typeof isAdminProcessCache === 'boolean') return isAdminProcessCache;
-
-  const ok = await new Promise<boolean>((resolve) => {
-    try {
-      const ps = spawn(
-        'powershell',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-Command',
-          '([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
-        ],
-        { windowsHide: true },
-      );
-      let out = '';
-      ps.stdout?.on('data', (d) => (out += String(d)));
-      ps.on('close', () => {
-        resolve(out.trim().toLowerCase() === 'true');
-      });
-      ps.on('error', () => resolve(false));
-    } catch {
-      resolve(false);
-    }
-  });
-
-  isAdminProcessCache = ok;
-  return ok;
-}
-
-// 历史广播统一走启动快照缓存：这样搜索页和设置页都能拿到同一份已预热结果。
+// 鍘嗗彶骞挎挱缁熶竴璧板惎鍔ㄥ揩鐓х紦瀛橈細杩欐牱鎼滅储椤靛拰璁剧疆椤甸兘鑳芥嬁鍒板悓涓€浠藉凡棰勭儹缁撴灉銆?
 async function broadcastHistoryUpdated() {
   const results = await refreshBootstrapHistory();
   try {
@@ -239,7 +202,7 @@ async function broadcastHistoryUpdated() {
   return { results };
 }
 
-// 计算历史广播与文件历史拆分，避免两类数据互相污染。
+// 璁＄畻鍘嗗彶骞挎挱涓庢枃浠跺巻鍙叉媶鍒嗭紝閬垮厤涓ょ被鏁版嵁浜掔浉姹℃煋銆?
 function broadcastCalcHistoryUpdated() {
   const results = loadCalcHistory();
   try {
@@ -257,15 +220,15 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('search-view-ready', (_event, payload?: { allowBlurHide?: boolean }) => {
-    // 搜索页握手时同步当前置顶策略：置顶时关闭失焦自动隐藏，取消置顶后恢复。
+    // 鎼滅储椤垫彙鎵嬫椂鍚屾褰撳墠缃《绛栫暐锛氱疆椤舵椂鍏抽棴澶辩劍鑷姩闅愯棌锛屽彇娑堢疆椤跺悗鎭㈠銆?
     setSearchAllowBlurHide(payload?.allowBlurHide !== false);
-    // 渲染就绪握手：主进程收到后才允许显示搜索窗，避免首屏白屏。
+    // 娓叉煋灏辩华鎻℃墜锛氫富杩涚▼鏀跺埌鍚庢墠鍏佽鏄剧ず鎼滅储绐楋紝閬垮厤棣栧睆鐧藉睆銆?
     setSearchViewReady(true);
     return { ok: true };
   });
 
   ipcMain.handle('set-search-blur-hide-enabled', (_event, allow: boolean) => {
-    // 渲染层动态切换失焦隐藏能力：固定面板期间关闭，解除固定后恢复。
+    // 娓叉煋灞傚姩鎬佸垏鎹㈠け鐒﹂殣钘忚兘鍔涳細鍥哄畾闈㈡澘鏈熼棿鍏抽棴锛岃В闄ゅ浐瀹氬悗鎭㈠銆?
     setSearchAllowBlurHide(Boolean(allow));
     return { ok: true };
   });
@@ -352,7 +315,7 @@ export function registerIpcHandlers() {
         200,
         Math.round(Math.min(Math.round(maxH), displayMaxH ?? Math.round(maxH))),
       );
-      // 高度上下限由渲染层实时提供，主进程统一兜底 clamp，确保原生拖拽也受内容边界约束。
+      // 楂樺害涓婁笅闄愮敱娓叉煋灞傚疄鏃舵彁渚涳紝涓昏繘绋嬬粺涓€鍏滃簳 clamp锛岀‘淇濆師鐢熸嫋鎷戒篃鍙楀唴瀹硅竟鐣岀害鏉熴€?
       const requestedMaxHeight =
         typeof limits?.maxHeight === 'number' ? Math.round(limits.maxHeight) : upper;
       const boundedMaxHeight = clamp(requestedMaxHeight, 76, upper);
@@ -382,7 +345,7 @@ export function registerIpcHandlers() {
     return getBootstrapState().settings;
   });
 
-  // 启动快照一次返回设置与历史：renderer 启动阶段只需打一趟 IPC。
+  // 鍚姩蹇収涓€娆¤繑鍥炶缃笌鍘嗗彶锛歳enderer 鍚姩闃舵鍙渶鎵撲竴瓒?IPC銆?
   ipcMain.handle('get-app-bootstrap-state', () => {
     const snapshot = getBootstrapState();
     return {
@@ -392,7 +355,6 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle('get-index-progress', async () => {
-    // 索引进度对 UI 观感影响很大：优先返回单调递增估算，并维护成功快照做异常兜底。
     try {
       const status = await fileIndex.getStatus();
       const estimated = estimateIndexProgress(status ?? {});
@@ -401,7 +363,6 @@ export function registerIpcHandlers() {
     } catch {
       const fallback = getLastKnownIndexProgressFallback();
       if (fallback) return fallback;
-      // 再兜底回退到启动快照，保证调用方始终拿到结构一致的返回值。
       const snapshot = getBootstrapState();
       const estimated = estimateIndexProgress({
         isIndexing: snapshot.indexStatus?.isIndexing,
@@ -415,33 +376,33 @@ export function registerIpcHandlers() {
   ipcMain.handle('select-background-image', async () => {
     try {
       const result = await dialog.showOpenDialog({
-        title: '选择背景图片',
-        buttonLabel: '选择',
+        title: '閫夋嫨鑳屾櫙鍥剧墖',
+        buttonLabel: '閫夋嫨',
         properties: ['openFile'],
-        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+        filters: [{ name: '鍥剧墖', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
       });
       if (result.canceled) return { ok: true, path: '' };
       const targetPath = result.filePaths?.[0] || '';
       return { ok: true, path: targetPath };
     } catch (e: any) {
-      return { ok: false, message: e?.message || '选择图片失败', path: '' };
+      return { ok: false, message: e?.message || '閫夋嫨鍥剧墖澶辫触', path: '' };
     }
   });
 
   ipcMain.handle('select-avatar-image', async () => {
     try {
-      // 头像选择：仅返回本地图片路径，渲染侧通过 get-image-data-url 转为可用的 dataUrl 展示
+      // 澶村儚閫夋嫨锛氫粎杩斿洖鏈湴鍥剧墖璺緞锛屾覆鏌撲晶閫氳繃 get-image-data-url 杞负鍙敤鐨?dataUrl 灞曠ず
       const result = await dialog.showOpenDialog({
-        title: '选择头像图片',
-        buttonLabel: '选择',
+        title: '閫夋嫨澶村儚鍥剧墖',
+        buttonLabel: '閫夋嫨',
         properties: ['openFile'],
-        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
+        filters: [{ name: '鍥剧墖', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }],
       });
       if (result.canceled) return { ok: true, path: '' };
       const targetPath = result.filePaths?.[0] || '';
       return { ok: true, path: targetPath };
     } catch (e: any) {
-      return { ok: false, message: e?.message || '选择图片失败', path: '' };
+      return { ok: false, message: e?.message || '閫夋嫨鍥剧墖澶辫触', path: '' };
     }
   });
 
@@ -492,7 +453,7 @@ export function registerIpcHandlers() {
     await fileIndex.setIgnoredPaths(next.ignoredPaths, next.preferredFileExtensions);
     
     // Re-register shortcuts
-    // 重新注册快捷键：使用静态 import，避免打包后运行期 require 路径失效
+    // 閲嶆柊娉ㄥ唽蹇嵎閿細浣跨敤闈欐€?import锛岄伩鍏嶆墦鍖呭悗杩愯鏈?require 璺緞澶辨晥
     registerShortcutsForSettings({ searchShortcut: next.searchShortcut, settingsShortcut: next.settingsShortcut });
     
     // Notify windows
@@ -505,11 +466,11 @@ export function registerIpcHandlers() {
         settingsWin?.webContents.send('settings-updated', next);
     } catch {}
 
-    // 历史受 enableHistory/historyLimit 影响：保存设置后同步刷新快照，避免空输入列表仍沿用旧限制。
+    // 鍘嗗彶鍙?enableHistory/historyLimit 褰卞搷锛氫繚瀛樿缃悗鍚屾鍒锋柊蹇収锛岄伩鍏嶇┖杈撳叆鍒楄〃浠嶆部鐢ㄦ棫闄愬埗銆?
     await broadcastHistoryUpdated();
 
     // Rebuild index if ignored paths changed
-    // 忽略路径对比：仅当“集合内容”变化时才触发重建，避免因为顺序变化导致误重建
+    // 蹇界暐璺緞瀵规瘮锛氫粎褰撯€滈泦鍚堝唴瀹光€濆彉鍖栨椂鎵嶈Е鍙戦噸寤猴紝閬垮厤鍥犱负椤哄簭鍙樺寲瀵艰嚧璇噸寤?
     const normalizeIgnoredPathsForCompare = (list: string[]) => {
       const arr = Array.isArray(list) ? list : [];
       return arr
@@ -521,7 +482,7 @@ export function registerIpcHandlers() {
     };
     const prevKey = normalizeIgnoredPathsForCompare(prevIgnoredPaths).join('|');
     const nextKey = normalizeIgnoredPathsForCompare(next.ignoredPaths).join('|');
-    // 不再触发“全盘重建索引”：忽略规则会立即生效于 watcher 过滤与后续增量 ingest。
+    // 涓嶅啀瑙﹀彂鈥滃叏鐩橀噸寤虹储寮曗€濓細蹇界暐瑙勫垯浼氱珛鍗崇敓鏁堜簬 watcher 杩囨护涓庡悗缁閲?ingest銆?
     return { ok: true };
   });
 
@@ -561,249 +522,6 @@ export function registerIpcHandlers() {
     return broadcastCalcHistoryUpdated();
   });
 
-  ipcMain.handle('clear-cache', async () => {
-    await clearLocalCacheAll();
-    return { ok: true };
-  });
-
-  ipcMain.handle('open-item', async (event, item: { name: string; path: string; type?: string }) => {
-    try {
-      if (item?.type === 'command' && typeof item?.path === 'string') {
-        const cmd = item.path.trim().toLowerCase();
-        if (cmd === 'clear:cache') {
-          await clearLocalCacheAll();
-          return true;
-        }
-        if (cmd === 'system:shutdown' || cmd === 'system:restart') {
-          if (process.platform !== 'win32') return false;
-          const args = cmd === 'system:shutdown' ? ['/s', '/t', '0'] : ['/r', '/t', '0'];
-          try {
-            const child = spawn('shutdown', args, { windowsHide: true, detached: true, stdio: 'ignore' });
-            child.unref();
-            return true;
-          } catch {
-            return false;
-          }
-        }
-      }
-      if (item?.type === 'settings' && typeof item?.path === 'string' && item.path.startsWith('ms-settings:')) {
-        await shell.openExternal(item.path);
-        if (item?.name && item?.path) {
-          recordHistoryItem(item);
-          await broadcastHistoryUpdated();
-        }
-        BrowserWindow.fromWebContents(event.sender)?.hide();
-        return true;
-      }
-      const resolved = resolveAppId(item?.path);
-      let ok = await openResolvedTarget(resolved);
-      if (!ok) {
-        const lower = resolved.toLowerCase();
-        if (lower.endsWith('.url')) {
-          const url = readUrlShortcut(resolved);
-          if (url) {
-            await shell.openExternal(url);
-            ok = true;
-          }
-        } else if (lower.endsWith('.lnk')) {
-          ok = await openLnkShortcut(resolved);
-        }
-      }
-      if (ok) {
-        if (item?.name && item?.path) {
-          recordHistoryItem(item);
-          await broadcastHistoryUpdated();
-        }
-        BrowserWindow.fromWebContents(event.sender)?.hide();
-      }
-      return ok;
-    } catch {
-      return false;
-    }
-  });
-
-  ipcMain.handle('open-app', async (event, target: string) => {
-    try {
-      const resolved = resolveAppId(target);
-      const ok = await openResolvedTarget(resolved);
-      if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-      return ok;
-    } catch {
-      return false;
-    }
-  });
-
-  ipcMain.handle('open-folder', async (event, input: any) => {
-    try {
-      const p = typeof input === 'string' ? input : typeof input?.path === 'string' ? input.path : '';
-      const t = typeof input?.type === 'string' ? input.type : '';
-      const n = typeof input?.name === 'string' ? input.name : '';
-      const resolved = resolveAppId(p);
-
-      if (resolved.includes('\\') || resolved.includes('/')) {
-        try {
-          const st = statSync(resolved);
-          if (st.isDirectory()) {
-            await shell.openPath(resolved);
-          } else {
-            shell.showItemInFolder(resolved);
-          }
-        } catch {
-          shell.showItemInFolder(resolved);
-        }
-      } else {
-        await ensureStartMenuShortcutIndex();
-        const shortcut = n ? findStartMenuShortcutByName(n) : '';
-        if (shortcut && existsSync(shortcut)) {
-          shell.showItemInFolder(shortcut);
-        } else if (t === 'app' && p) {
-          await shell.openExternal(`shell:AppsFolder`);
-        } else {
-          await shell.openExternal(`shell:AppsFolder`);
-        }
-      }
-      BrowserWindow.fromWebContents(event.sender)?.hide();
-      return true;
-    } catch {
-      return false;
-    }
-  });
-
-  ipcMain.handle('run-as-admin', async (event, input: any) => {
-    try {
-      const p = typeof input === 'string' ? input : typeof input?.path === 'string' ? input.path : '';
-      const t = typeof input?.type === 'string' ? input.type : '';
-      const n = typeof input?.name === 'string' ? input.name : '';
-      if (!p) return { ok: false, message: '路径为空，无法以管理员身份运行' };
-
-      const resolved = resolveAppId(p);
-
-      if (process.platform === 'win32') {
-        // 允许在非管理员模式下直接触发 UAC 弹窗：由 sudo-prompt 负责权限提升
-      } else {
-        const ok = await openResolvedTarget(resolved);
-        if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-        return { ok: Boolean(ok) };
-      }
-
-      const looksLikePath = /^[a-zA-Z]:\\/.test(resolved) || resolved.startsWith('\\\\');
-
-      let targetToRun = resolved;
-      let shouldValidateFilePath = looksLikePath;
-
-      if (!looksLikePath && t === 'app') {
-        await ensureStartMenuShortcutIndex();
-        const shortcut = n ? findStartMenuShortcutByName(n) : '';
-        if (shortcut && existsSync(shortcut)) {
-          targetToRun = shortcut;
-          shouldValidateFilePath = true;
-        } else {
-          targetToRun = `shell:AppsFolder\\${resolved}`;
-          shouldValidateFilePath = false;
-        }
-      }
-
-      if (shouldValidateFilePath) {
-        try {
-          const st = statSync(targetToRun);
-          if (st.isDirectory()) {
-            return { ok: false, message: '文件夹不支持以管理员身份打开' };
-          }
-        } catch {
-          return { ok: false, message: '目标不存在或不可访问' };
-        }
-
-        const ext = path.extname(targetToRun).toLowerCase();
-        const allowedExts = new Set(['.exe', '.bat', '.cmd', '.com', '.msi', '.lnk']);
-        if (!allowedExts.has(ext)) {
-          return { ok: false, message: '仅支持可执行文件（.exe/.bat/.cmd/.com/.msi）' };
-        }
-      }
-
-      const commandLine = `cmd.exe /c start "" ${quoteCmdArg(targetToRun)}`;
-      const resp = await sudoExec(commandLine);
-      if (resp.ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-      return false;
-    } catch {
-      return { ok: false, message: '以管理员身份运行失败' };
-    }
-  });
-
-  ipcMain.handle('open-external', async (_event, url: string) => {
-    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-      await shell.openExternal(url);
-    }
-  });
-
-  ipcMain.handle('get-result-icon', async (_event, item: { type: string; path?: string; name?: string }) => {
-    try {
-      const t = typeof item?.type === 'string' ? item.type : '';
-      const p = typeof item?.path === 'string' ? item.path : '';
-      const n = typeof item?.name === 'string' ? item.name : '';
-      if (!t) return '';
-
-      // 计算项图标与应用搜索走同一链路：优先命中已安装应用里的“计算器”候选。
-      if (t === 'calc') {
-        const apps = getInstalledAppsCache();
-        const calcKeywords = ['计算器', 'calculator', 'windowscalculator'];
-        const candidate = apps.find((app) => {
-          const appName = String(app?.Name || '').toLowerCase();
-          const appId = String(app?.AppID || '').toLowerCase();
-          return calcKeywords.some((k) => appName.includes(k.toLowerCase()) || appId.includes(k.toLowerCase()));
-        });
-        if (candidate?.AppID) {
-          const icon = await getAppIconDataStable(candidate.Name || '计算器', candidate.AppID, 3);
-          if (icon) return icon;
-        }
-
-        // 未命中缓存候选时回退到固定 AUMID。
-        const calcAumid = 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App';
-        const aumidIcon = await getAppIconDataStable('计算器', calcAumid, 3);
-        if (aumidIcon) return aumidIcon;
-
-        // 再回退到 calc.exe 文件图标，确保系统缺少 AUMID 时也可展示。
-        const calcExePath = resolveAppId('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\calc.exe');
-        if (calcExePath && existsSync(calcExePath)) {
-          const fileIcon = await getFileIconData(calcExePath);
-          if (fileIcon) return fileIcon;
-        }
-        return '';
-      }
-
-      if (!p) return '';
-      if (t === 'app') {
-        await ensureStartMenuShortcutIndex();
-        return await getAppIconDataStable(n, p, 3);
-      }
-      if (t === 'file' || t === 'folder') {
-        return await getFileIconData(p);
-      }
-      return '';
-    } catch {
-      return '';
-    }
-  });
-
-  ipcMain.handle(
-    'search-files',
-    async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
-      return await handleSearchFiles(event, query, options, {
-        fileIndex,
-        reconcileRecentIndex: () => void reconcileRecentIndex(),
-        loadSettings,
-        loadHistoryStats,
-        normalizeHistoryKey,
-        normalizeExtKey,
-        getInstalledApps: () => getInstalledAppsCache(),
-        normalizeAppGroupKey,
-        iconDataCache,
-        isTooSmallAppIconDataUrl,
-        getAppIconDataStable,
-        getFileIconData,
-        isIgnoredPathByCache,
-        normalizeRecentKey,
-        recentIndex,
-      });
-    }
-  );
+  registerSearchOpenIpcHandlers({ broadcastHistoryUpdated, quoteCmdArg, sudoExec });
 }
+

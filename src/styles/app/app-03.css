@@ -1,0 +1,394 @@
+.results li.selected .shortcut-hint {
+  background: var(--fs-accent);
+  color: var(--fs-text-inverse, #ffffff);
+  border-color: var(--fs-accent);
+  opacity: 1;
+}
+.search-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 14px;
+  color: var(--fs-muted);
+  transition: color 0.2s;
+}
+.search-box:focus-within .search-icon-wrapper {
+  color: var(--fs-accent);
+}
+.search-icon-svg {
+  filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0));
+  transition: filter 0.3s;
+}
+.search-box:focus-within .search-icon-svg {
+  filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0.4));
+}
+.app-logo-main {
+  width: 24px;
+  height: 24px;
+  margin-left: 12px;
+  margin-right: 2px;
+  /* 图标滤镜跟随主题：浅色弱化、深色保留发光，避免不同主题下图标质感雷同。 */
+  filter: var(--fs-icon-filter, none) drop-shadow(0 0 5px color-mix(in srgb, var(--fs-accent) 36%, transparent));
+  pointer-events: none;
+}
+.settings-logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  /* 设置页左上角 logo 通过切换黑/白资源适配亮暗主题，因此这里不再使用反色滤镜。 */
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fs-accent) 30%, transparent));
+}
+.settings-btn {
+  width: 27px;
+  /* 稍微减小尺寸 */
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 6px;
+  -webkit-app-region: no-drag;
+  transition: all 0.2s;
+}
+.settings-btn:hover {
+  /* background: var(--fs-surface-2); */
+  color: var(--fs-accent);
+  /* border-color: var(--fs-border); */
+}
+.type-select {
+  position: relative;
+  margin-right: 4px;
+  -webkit-app-region: no-drag;
+}
+/* 类型下拉移除后，用纯文本承载当前类型，保持对齐并沿用主题色。 */
+.type-select-text {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fs-text);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type-select-btn {
+  height: 28px;
+  /* 减小高度 */
+  max-width: 140px;
+  /* 减小最大宽度*/
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--fs-surface-2);
+  border: 1px solid var(--fs-border);
+  color: var(--fs-text);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.type-select-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.type-select-btn:disabled:hover {
+  background: var(--fs-surface-2);
+  border-color: var(--fs-border);
+  color: var(--fs-text);
+  transform: none;
+  box-shadow: none;
+}
+.settings-type-select {
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
+}
+.settings-type-select .type-select-btn {
+  height: 38px;
+  width: 100%;
+  max-width: none;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 13px;
+  background: var(--fs-bg);
+}
+.settings-type-select .type-select-btn:hover:not(:disabled) {
+  background: var(--fs-surface);
+  transform: none;
+  box-shadow: none;
+}
+.settings-type-select .type-select-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+}
+.settings-type-select .type-select-label {
+  max-width: none;
+}
+.settings-type-select .type-select-menu {
+  left: 0;
+  right: auto;
+  min-width: 100%;
+}
+.type-select-btn:hover {
+  background: var(--fs-accent-soft);
+  border-color: var(--fs-accent);
+  color: var(--fs-accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.type-select-btn:active {
+  transform: translateY(0);
+}
+.type-select-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.type-select-label {
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.type-select-caret {
+  color: var(--fs-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+.type-select-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 160px;
+  background: var(--fs-surface);
+  border: 1px solid var(--fs-border);
+  border-radius: 8px;
+  padding: 2px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--fs-border);
+  z-index: 99999;
+  /* 极大值确保最顶层 */
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  animation: menuAppear 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-app-region: no-drag;
+  /* 显式禁用拖拽 */
+  pointer-events: auto;
+  /* 显式启用点击 */
+}
+.type-select-menu-inner {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 210px;
+  padding-right: 2px;
+  -webkit-app-region: no-drag;
+}
+.type-select-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fs-text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+.type-select-item:focus-visible {
+  outline: none;
+}
+.type-select-item-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.type-item-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fs-muted);
+  flex-shrink: 0;
+}
+.type-icon-text {
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--fs-surface-2);
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: var(--fs-accent);
+}
+.type-select-item:hover {
+  background: var(--fs-surface-2);
+  /* border-color: var(--fs-border-soft); */
+}
+.type-select-item.kbd-active:not(.active) {
+  background: var(--fs-surface-2);
+  /* border-color: var(--fs-border-soft); */
+}
+.type-select-item:hover .type-item-icon {
+  color: var(--fs-accent);
+}
+.type-select-item.active .type-item-icon {
+  color: var(--fs-accent);
+}
+.check-mark {
+  font-size: 12px;
+  color: var(--fs-accent);
+  margin-left: 4px;
+}
+.type-select-item.active {
+  background: var(--fs-accent-soft);
+  color: var(--fs-accent);
+  border-color: var(--fs-accent-soft);
+  font-weight: 600;
+}
+/* 移除之前的 ::after 勾选，改用显式 span */
+.type-select-item.active::after {
+  content: none;
+}
+.drag-icon {
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
+  cursor: grab;
+  -webkit-app-region: drag;
+  /* 使用更强的点阵颜色，提升可见性（避免拖拽点太淡） */
+  background-image: radial-gradient(var(--fs-dots) 1.5px, transparent 0);
+  background-size: 6px 6px;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+.drag-icon:hover {
+  opacity: 0.8;
+}
+.drag-icon:active {
+  cursor: grabbing;
+}
+.search-box input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fs-text);
+  padding: 12px 10px;
+  font-size: 15px;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+}
+/* 防止 input 撑开容器 */
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.search-input-wrap .search-ghost-value {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  pointer-events: none;
+  /* 幽灵提示与真实输入保持同一排版参数，避免切换时出现样式跳变 */
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-input-wrap .search-ghost-prefix {
+  visibility: hidden;
+}
+.search-input-wrap .search-ghost-suffix {
+  color: var(--fs-muted);
+  opacity: 0.78;
+}
+input::placeholder {
+  color: var(--fs-muted);
+}
+.status {
+  margin-top: 8px;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fs-muted);
+  font-size: 11px;
+  font-weight: 500;
+  -webkit-app-region: drag;
+  /* 状态栏也可作为拖拽区域 */
+  user-select: none;
+  padding: 0 4px;
+}
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--fs-accent-soft);
+  border-top-color: var(--fs-accent);
+  animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.search-box-right {
+  gap: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* 防止右侧区域被压缩*/
+  position: relative;
+  /* 为下拉菜单提供定位基准*/
+}
+.clear-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--fs-border);
+  background: var(--fs-surface-2);
+  color: var(--fs-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.clear-btn:hover {
+  color: var(--fs-text);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+.clear-btn:active {
+  transform: translateY(0);
+}
