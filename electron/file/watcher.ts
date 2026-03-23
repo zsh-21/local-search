@@ -1,16 +1,14 @@
-import { app } from 'electron';
-import path from 'node:path';
-import { existsSync, watch } from 'node:fs';
-import fs from 'node:fs/promises';
-import { spawn } from 'node:child_process';
-import { fileIndex, isIgnoredPathByCache } from './indexService';
-import { shouldSkipHiddenOrSystemPath } from './utils';
-
-// 运行期可能插拔U盘，watcher 需要按 root 动态增�?
+﻿import { app } from "electron";
+import path from "node:path";
+import { existsSync, watch } from "node:fs";
+import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { fileIndex, isIgnoredPathByCache } from "./indexService";
+import { shouldSkipHiddenOrSystemPath } from "./utils";
+import { createWatcherEventReducer } from "./watcherEventReducer";
+import { WatcherActionQueue } from "./watcherActionQueue";
 const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
-// Windows 盘符根目录列表缓存：用于文件监听与索引重建，避免重复拉取 PowerShell 结果
 let windowsFileSystemRootsCache: string[] = [];
-// Windows 盘符缓存的最后刷新时间：降低 PowerShell 调用频率，减少后台常驻资源消�?
 let windowsFileSystemRootsLastAt = 0;
 let windowsRootsRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let rootsWatcherBootstrapped = false;
@@ -20,27 +18,33 @@ type DriveWarmupTask = {
   promise: Promise<void>;
 };
 const driveWarmupTasks = new Map<string, DriveWarmupTask>();
-
-// 盘符刷新间隔：U 盘插拔属于低频事件，没必要每 12 秒拉一�?PowerShell
 const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 12 * 1000;
 const DRIVE_WARMUP_YIELD_INTERVAL = 120;
 const DRIVE_WARMUP_YIELD_SLEEP_MS = 8;
-
-const WATCH_EVENT_DEBOUNCE_MS = 260;
+const WATCH_REDUCE_WINDOW_MS = 250;
+const WATCH_PARENT_STORM_THRESHOLD = 40;
 const WATCH_MAX_IN_FLIGHT = 6;
-const watchDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const watchBacklog: string[] = [];
-const watchBacklogSet = new Set<string>();
-let watchInFlight = 0;
-
-// 最近变更索引：用于弥补 fs.watch 丢事�?全量索引未覆盖导致的“新建文件搜不到�?
+const WATCH_BACKLOG_RECONCILE_THRESHOLD = 300;
+let watchReduceTimer: ReturnType<typeof setTimeout> | null = null;
+const watchReducer = createWatcherEventReducer({
+  windowMs: WATCH_REDUCE_WINDOW_MS,
+  parentStormThreshold: WATCH_PARENT_STORM_THRESHOLD,
+});
 const RECENT_INDEX_MAX = 30_000;
 export const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
 let recentReconcileInFlight = false;
 let recentReconcileLastAt = 0;
 
 export function normalizeRecentKey(rawPath: string) {
-  return typeof rawPath === 'string' ? rawPath.trim().toLowerCase() : '';
+  return typeof rawPath === "string" ? rawPath.trim().toLowerCase() : "";
+}
+
+async function handleWatchRemovePath(fullPath: string) {
+  recentIndex.delete(normalizeRecentKey(fullPath));
+  try {
+    await fileIndex.removePath(fullPath);
+  } catch {
+  }
 }
 
 async function handleWatchPath(fullPath: string) {
@@ -51,67 +55,98 @@ async function handleWatchPath(fullPath: string) {
     upsertRecentIndex(fullPath, isDir, timeMs);
     await fileIndex.ingestPath(fullPath, isDir, timeMs);
   } catch {
-    recentIndex.delete(normalizeRecentKey(fullPath));
+    await handleWatchRemovePath(fullPath);
+  }
+}
+
+async function rescanParentPath(parentPath: string) {
+  if (!parentPath) return;
+  const normalized = parentPath.replace(/\//g, "\\");
+  if (!existsSync(normalized)) {
+    await handleWatchRemovePath(normalized);
+    return;
+  }
+  if (shouldSkipWatchPath(normalized)) return;
+
+  let dh: any = null;
+  try {
+    dh = await fs.opendir(normalized);
+  } catch {
+    return;
+  }
+
+  const MAX_RESCAN_ITEMS = 2000;
+  let scanned = 0;
+  try {
+    for await (const ent of dh) {
+      if (!ent?.name) continue;
+      const fullPath = path.join(normalized, String(ent.name));
+      if (shouldSkipWatchPath(fullPath)) continue;
+      await handleWatchPath(fullPath);
+      scanned += 1;
+      if (scanned >= MAX_RESCAN_ITEMS) break;
+    }
+  } finally {
     try {
-      await fileIndex.removePath(fullPath);
-    } catch {}
+      await dh.close();
+    } catch {
+    }
   }
 }
 
-function drainWatchBacklog() {
-  while (watchInFlight < WATCH_MAX_IN_FLIGHT && watchBacklog.length > 0) {
-    const fullPath = watchBacklog.shift();
-    if (!fullPath) break;
-    const key = normalizeRecentKey(fullPath);
-    watchBacklogSet.delete(key);
-    watchInFlight += 1;
-    void (async () => {
-      try {
-        await handleWatchPath(fullPath);
-      } finally {
-        watchInFlight -= 1;
-        drainWatchBacklog();
-      }
-    })();
+const watchActionQueue = new WatcherActionQueue(WATCH_MAX_IN_FLIGHT, {
+  ingestPath: handleWatchPath,
+  removePath: handleWatchRemovePath,
+  rescanParent: rescanParentPath,
+});
+
+function maybeScheduleReconcileFromBacklog() {
+  if (watchActionQueue.getBacklogSize() < WATCH_BACKLOG_RECONCILE_THRESHOLD) return;
+  void reconcileRecentIndex(700).catch(() => {});
+}
+
+function flushReducedActions() {
+  const reduced = watchReducer.flush();
+  if (reduced.reducedActionCount > 0) {
+    watchActionQueue.enqueueMany(reduced.actions);
+    maybeScheduleReconcileFromBacklog();
+  }
+  if (reduced.rawEventCount > reduced.reducedActionCount && reduced.rawEventCount >= 20) {
+    console.log(`[watcher] reduce raw=${reduced.rawEventCount} actions=${reduced.reducedActionCount}`);
   }
 }
 
-function scheduleWatchWork(fullPath: string) {
-  const key = normalizeRecentKey(fullPath);
-  if (!key) return;
-  const prev = watchDebounceTimers.get(key);
-  if (prev) clearTimeout(prev);
-  const timer = setTimeout(() => {
-    watchDebounceTimers.delete(key);
-    if (watchBacklogSet.has(key)) return;
-    watchBacklogSet.add(key);
-    watchBacklog.push(fullPath);
-    drainWatchBacklog();
-  }, WATCH_EVENT_DEBOUNCE_MS);
-  watchDebounceTimers.set(key, timer);
+function enqueueFsEvent(eventType: string, fullPath: string) {
+  watchReducer.enqueue(eventType, fullPath);
+  if (watchReduceTimer) return;
+  watchReduceTimer = setTimeout(() => {
+    watchReduceTimer = null;
+    flushReducedActions();
+  }, watchReducer.windowMs);
 }
 
 export function upsertRecentIndex(fullPath: string, isDirectory: boolean, timeMs: number) {
-  // 最近变更索引：只保存必要字段，优先保证“新�?刚改动”的内容可被搜索�?
   const key = normalizeRecentKey(fullPath);
   if (!key) return;
   const name = path.basename(fullPath);
   if (!name) return;
+
   recentIndex.set(key, { path: fullPath, name, isDirectory, timeMs });
-  if (recentIndex.size > RECENT_INDEX_MAX) {
-    const keys = Array.from(recentIndex.keys());
-    keys.sort((a, b) => (recentIndex.get(b)?.timeMs || 0) - (recentIndex.get(a)?.timeMs || 0));
-    const keep = new Set(keys.slice(0, Math.floor(RECENT_INDEX_MAX * 0.85)));
-    for (const k of keys) {
-      if (keep.has(k)) continue;
-      recentIndex.delete(k);
-    }
+  if (recentIndex.size <= RECENT_INDEX_MAX) return;
+
+  const keys = Array.from(recentIndex.keys());
+  keys.sort((a, b) => (recentIndex.get(b)?.timeMs || 0) - (recentIndex.get(a)?.timeMs || 0));
+  const keep = new Set(keys.slice(0, Math.floor(RECENT_INDEX_MAX * 0.85)));
+  for (const k of keys) {
+    if (keep.has(k)) continue;
+    recentIndex.delete(k);
   }
 }
 
 export function trimRecentIndex(maxKeep: number) {
   const limit = Math.max(1000, Math.floor(Number(maxKeep) || 0));
   if (recentIndex.size <= limit) return;
+
   const keys = Array.from(recentIndex.keys());
   keys.sort((a, b) => (recentIndex.get(b)?.timeMs || 0) - (recentIndex.get(a)?.timeMs || 0));
   const keep = new Set(keys.slice(0, limit));
@@ -124,41 +159,39 @@ export function trimRecentIndex(maxKeep: number) {
 async function getWindowsFileSystemRoots(): Promise<string[]> {
   return new Promise((resolve) => {
     try {
-      const ps = spawn('powershell', [
-        '-NoLogo',
-        '-NoProfile',
-        '-Command',
-        'Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root',
-      ], { windowsHide: true });
-      let out = '';
-      ps.stdout.on('data', (d) => (out += d.toString()));
-      ps.on('close', () => {
+      const ps = spawn(
+        "powershell",
+        ["-NoLogo", "-NoProfile", "-Command", "Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root"],
+        { windowsHide: true }
+      );
+      let out = "";
+      ps.stdout.on("data", (d) => (out += d.toString()));
+      ps.on("close", () => {
         const roots = out
           .split(/\r?\n/g)
           .map((s) => s.trim())
           .filter(Boolean)
-          .map((s) => (s.endsWith('\\') ? s : `${s}\\`));
+          .map((s) => (s.endsWith("\\") ? s : `${s}\\`));
         resolve(Array.from(new Set(roots)));
       });
-      ps.on('error', () => resolve(['C:\\']));
+      ps.on("error", () => resolve(["C:\\"]));
     } catch {
-      resolve(['C:\\']);
+      resolve(["C:\\"]);
     }
   });
 }
 
 export function shouldSkipWatchPath(fullPath: string) {
-  // watcher 的过滤必须快速：这里用主进程缓存�?ignore 规则避免跨线程往�?
   if (isIgnoredPathByCache(fullPath)) return true;
   if (shouldSkipHiddenOrSystemPath(fullPath)) return true;
   const lower = fullPath.toLowerCase();
   return (
-    lower.includes('\\node_modules\\') ||
-    lower.includes('\\.git\\') ||
-    lower.includes('\\.svn\\') ||
-    lower.includes('\\.idea\\') ||
-    lower.includes('\\$recycle.bin\\') ||
-    lower.includes('\\system volume information\\')
+    lower.includes("\\node_modules\\") ||
+    lower.includes("\\.git\\") ||
+    lower.includes("\\.svn\\") ||
+    lower.includes("\\.idea\\") ||
+    lower.includes("\\$recycle.bin\\") ||
+    lower.includes("\\system volume information\\")
   );
 }
 
@@ -174,18 +207,17 @@ function cancelDriveWarmupByKey(rootKey: string) {
 }
 
 function startDriveWarmup(root: string) {
-  if (process.platform !== 'win32') return;
-  const normalizedRoot = typeof root === 'string' ? root.replace(/\//g, '\\').trim() : '';
+  if (process.platform !== "win32") return;
+  const normalizedRoot = typeof root === "string" ? root.replace(/\//g, "\\").trim() : "";
   if (!isWindowsDriveRoot(normalizedRoot)) return;
+
   const key = normalizedRoot.toLowerCase();
   if (driveWarmupTasks.has(key)) return;
   if (!existsSync(normalizedRoot)) return;
 
   const task: DriveWarmupTask = { cancelled: false, promise: Promise.resolve() };
   task.promise = (async () => {
-    // ?????????? DFS ??????????????????????
     const stack: string[] = [normalizedRoot];
-    // ?????????????/??????????????
     const visitedDirs = new Set<string>();
     let visited = 0;
 
@@ -194,6 +226,7 @@ function startDriveWarmup(root: string) {
       if (!dir) continue;
       if (!existsSync(dir)) continue;
       if (shouldSkipWatchPath(dir)) continue;
+
       const dirKey = normalizeRecentKey(dir);
       if (!dirKey || visitedDirs.has(dirKey)) continue;
       visitedDirs.add(dirKey);
@@ -222,12 +255,12 @@ function startDriveWarmup(root: string) {
           }
 
           const isDir = st.isDirectory();
-          // ???????????????????????????????
           const isSymlink = typeof (ent as any)?.isSymbolicLink === "function" && (ent as any).isSymbolicLink();
           const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
           try {
             await fileIndex.ingestPath(fullPath, isDir, timeMs);
-          } catch {}
+          } catch {
+          }
 
           if (isDir && !isSymlink) stack.push(fullPath);
 
@@ -239,80 +272,83 @@ function startDriveWarmup(root: string) {
       } finally {
         try {
           await dh.close();
-        } catch {}
+        } catch {
+        }
       }
     }
   })().finally(() => {
-    const cur = driveWarmupTasks.get(key);
-    if (cur === task) driveWarmupTasks.delete(key);
+    const current = driveWarmupTasks.get(key);
+    if (current === task) driveWarmupTasks.delete(key);
   });
 
   driveWarmupTasks.set(key, task);
 }
 
 export async function startUserDirectoryWatchers() {
-  const normalizeWatchRoot = (p: string) => {
-    const raw = typeof p === 'string' ? p.trim() : '';
-    if (!raw) return '';
-    const s = raw.replace(/\//g, '\\');
-    return s.endsWith('\\') ? s : `${s}\\`;
+  const normalizeWatchRoot = (input: string) => {
+    const raw = typeof input === "string" ? input.trim() : "";
+    if (!raw) return "";
+    const normalized = raw.replace(/\//g, "\\");
+    return normalized.endsWith("\\") ? normalized : `${normalized}\\`;
   };
 
   const ensureWatchRoot = (root: string) => {
     const normalized = normalizeWatchRoot(root);
     if (!normalized) return;
+
     const key = normalized.toLowerCase();
     if (userDirWatchers.has(key)) return;
     if (!existsSync(normalized)) return;
+
     try {
-      const w = watch(normalized, { recursive: true }, (_eventType, filename) => {
+      const watcher = watch(normalized, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
-        const raw = filename.toString().replace(/\//g, '\\');
-        // Windows �?fs.watch 可能返回以单反斜杠开头的路径（例�?\Users\...\a.txt）：
-        // - path.isAbsolute('\\Users\\...') === true，但它缺少盘符，无法用于打开/索引
-        // - 这里�?watcher 根目录的盘符进行补齐，确�?recentIndex 与索引写入始终是“可用的绝对路径�?
+
+        const raw = filename.toString().replace(/\//g, "\\");
         const fullPath = (() => {
-          if (process.platform !== 'win32') return path.isAbsolute(raw) ? raw : path.join(normalized, raw);
-          const isWinFullAbs = /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\');
+          if (process.platform !== "win32") return path.isAbsolute(raw) ? raw : path.join(normalized, raw);
+
+          const isWinFullAbs = /^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith("\\\\");
           if (isWinFullAbs) return raw;
-          if (raw.startsWith('\\')) {
+          if (raw.startsWith("\\")) {
             const drive = normalized.slice(0, 2);
             if (/^[a-zA-Z]:$/.test(drive)) return `${drive}${raw}`;
-            // 非盘符根（例�?UNC 根）时，去掉开头的反斜杠再拼接，避�?path.join 被“绝对段”覆�?
-            return path.join(normalized, raw.replace(/^\\+/, ''));
+            return path.join(normalized, raw.replace(/^\\+/, ""));
           }
           return path.join(normalized, raw);
         })();
+
         if (shouldSkipWatchPath(fullPath)) return;
-        scheduleWatchWork(fullPath);
+        enqueueFsEvent(eventType, fullPath);
       });
-      userDirWatchers.set(key, w);
-    } catch {}
+      userDirWatchers.set(key, watcher);
+    } catch {
+    }
   };
 
   const refreshRootsAndWatch = async () => {
-    // Windows 盘符可能运行期变化（U�?移动硬盘），这里定时刷新并增�?watcher
-    if (process.platform === 'win32') {
+    if (process.platform === "win32") {
       try {
         const now = Date.now();
-        // 降低 PowerShell 调用频率：在刷新间隔内直接复用缓存结�?
         if (now - windowsFileSystemRootsLastAt > WINDOWS_ROOTS_REFRESH_INTERVAL_MS || windowsFileSystemRootsCache.length === 0) {
           windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
           windowsFileSystemRootsLastAt = now;
         }
-      } catch {}
+      } catch {
+      }
     }
+
     const roots = (() => {
-      if (process.platform === 'win32') {
-        const home = app.getPath('home');
-        const desktop = app.getPath('desktop');
-        const documents = app.getPath('documents');
-        const downloads = app.getPath('downloads');
+      if (process.platform === "win32") {
+        const home = app.getPath("home");
+        const desktop = app.getPath("desktop");
+        const documents = app.getPath("documents");
+        const downloads = app.getPath("downloads");
         return [...windowsFileSystemRootsCache, home, desktop, documents, downloads].filter(
-          (p): p is string => typeof p === 'string' && Boolean(p.trim())
+          (p): p is string => typeof p === "string" && Boolean(p.trim())
         );
       }
-      return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+      return [app.getPath("home")].filter((p): p is string => typeof p === "string" && Boolean(p.trim()));
     })();
 
     const uniqueRoots = Array.from(new Set(roots.map(normalizeWatchRoot).filter(Boolean)));
@@ -322,24 +358,26 @@ export async function startUserDirectoryWatchers() {
 
     for (const root of uniqueRoots) ensureWatchRoot(root);
 
-    for (const [k, w] of userDirWatchers.entries()) {
-      if (keep.has(k)) continue;
+    for (const [key, watcher] of userDirWatchers.entries()) {
+      if (keep.has(key)) continue;
       try {
-        w.close();
-      } catch {}
-      userDirWatchers.delete(k);
-      cancelDriveWarmupByKey(k);
+        watcher.close();
+      } catch {
+      }
+      userDirWatchers.delete(key);
+      cancelDriveWarmupByKey(key);
     }
 
-    // ????????????????????????
     if (rootsWatcherBootstrapped) {
-      for (const root of addedRoots) startDriveWarmup(root);
+      for (const root of addedRoots) {
+        startDriveWarmup(root);
+      }
     }
     rootsWatcherBootstrapped = true;
   };
 
   await refreshRootsAndWatch();
-  if (process.platform === 'win32') {
+  if (process.platform === "win32") {
     if (windowsRootsRefreshTimer) {
       clearInterval(windowsRootsRefreshTimer);
       windowsRootsRefreshTimer = null;
@@ -351,40 +389,40 @@ export async function startUserDirectoryWatchers() {
 }
 
 export async function reconcileRecentIndex(budgetMs = 1200) {
-  // 兜底扫描：当 fs.watch 丢事件或全量索引未覆盖时，尽量把“最近新�?改动”的文件补进 recentIndex
   if (recentReconcileInFlight) return;
+
   const now = Date.now();
   if (now - recentReconcileLastAt < 2000) return;
+
   recentReconcileInFlight = true;
   recentReconcileLastAt = now;
 
   try {
     const roots = (() => {
-      if (process.platform === 'win32') {
-        const home = app.getPath('home');
-        const desktop = app.getPath('desktop');
-        const documents = app.getPath('documents');
-        const downloads = app.getPath('downloads');
-        return [home, desktop, documents, downloads].filter(
-          (p): p is string => typeof p === 'string' && Boolean(p.trim())
-        );
+      if (process.platform === "win32") {
+        const home = app.getPath("home");
+        const desktop = app.getPath("desktop");
+        const documents = app.getPath("documents");
+        const downloads = app.getPath("downloads");
+        return [home, desktop, documents, downloads].filter((p): p is string => typeof p === "string" && Boolean(p.trim()));
       }
-      return [app.getPath('home')].filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
+      return [app.getPath("home")].filter((p): p is string => typeof p === "string" && Boolean(p.trim()));
     })();
 
     const startAt = Date.now();
     const MAX_DEPTH = 5;
     const MAX_VISIT = 14_000;
     let visited = 0;
-    const queue: Array<{ dir: string; depth: number }> = roots.map((d) => ({ dir: d, depth: 0 }));
+    const queue: Array<{ dir: string; depth: number }> = roots.map((dir) => ({ dir, depth: 0 }));
 
     while (queue.length > 0) {
       if (Date.now() - startAt > Math.max(50, budgetMs)) break;
       if (visited >= MAX_VISIT) break;
-      const it = queue.shift();
-      if (!it) break;
-      const dir = it.dir;
-      const depth = it.depth;
+
+      const item = queue.shift();
+      if (!item) break;
+      const dir = item.dir;
+      const depth = item.depth;
       if (!dir) continue;
       if (!existsSync(dir)) continue;
       if (shouldSkipWatchPath(dir)) continue;
@@ -404,21 +442,24 @@ export async function reconcileRecentIndex(budgetMs = 1200) {
           }
           if (Date.now() - startAt > Math.max(50, budgetMs)) break;
           if (!ent?.name) continue;
+
           const fullPath = path.join(dir, ent.name);
           if (shouldSkipWatchPath(fullPath)) continue;
+
           try {
-            // 兜底扫描属于后台任务：使用异�?stat，避免阻塞主进程
             const st = await fs.stat(fullPath);
             const isDir = st.isDirectory();
             const timeMs = Math.max((st as any).mtimeMs || 0, (st as any).birthtimeMs || 0);
             upsertRecentIndex(fullPath, isDir, timeMs);
             if (isDir && depth < MAX_DEPTH) queue.push({ dir: fullPath, depth: depth + 1 });
-          } catch {}
+          } catch {
+          }
         }
       } finally {
         try {
           await dh.close();
-        } catch {}
+        } catch {
+        }
       }
     }
   } finally {
@@ -431,24 +472,27 @@ export function closeAllWatchers() {
     clearInterval(windowsRootsRefreshTimer);
     windowsRootsRefreshTimer = null;
   }
-  for (const t of watchDebounceTimers.values()) {
-    clearTimeout(t);
+
+  if (watchReduceTimer) {
+    clearTimeout(watchReduceTimer);
+    watchReduceTimer = null;
   }
-  watchDebounceTimers.clear();
-  watchBacklog.length = 0;
-  watchBacklogSet.clear();
-  for (const w of userDirWatchers.values()) {
+  flushReducedActions();
+  watchActionQueue.clear();
+
+  for (const watcher of userDirWatchers.values()) {
     try {
-      w.close();
-    } catch {}
+      watcher.close();
+    } catch {
+    }
   }
   userDirWatchers.clear();
+
   for (const key of driveWarmupTasks.keys()) {
     cancelDriveWarmupByKey(key);
   }
+
   rootsWatcherBootstrapped = false;
 }
 
 export { getWindowsFileSystemRoots };
-
-

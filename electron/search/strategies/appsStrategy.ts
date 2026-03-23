@@ -1,9 +1,11 @@
-import { searchApps } from "../appSearch";
+﻿import { searchApps } from "../appSearch";
 import type { SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
 
 export const appsStrategy: SearchStrategy = {
   id: "apps",
   async execute(ctx, deps: SearchStrategyDeps): Promise<SearchExecResult> {
+    if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
+
     const appResults: any[] = await searchApps({
       searchTypeId: ctx.searchTypeId,
       lowerQuery: ctx.lowerQuery,
@@ -20,7 +22,10 @@ export const appsStrategy: SearchStrategy = {
       searchSessionId: ctx.searchSessionId,
       iconPrefetchToken: deps.currentIconPrefetchToken,
       getCurrentIconPrefetchToken: deps.getCurrentIconPrefetchToken,
+      shouldCancel: ctx.isSessionCancelled,
     });
+
+    if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
 
     if (ctx.searchTypeId === "app") {
       const isIndexing = (await deps.fileIndex.getStatus()).isIndexing;
@@ -39,4 +44,3 @@ export const appsStrategy: SearchStrategy = {
     return { kind: "continue", items: appResults };
   },
 };
-

@@ -33,6 +33,7 @@ export type SearchContext = {
   isPathQuery: boolean;
   searchTypeId: SearchTypeId;
   searchSessionId: string;
+  isSessionCancelled: () => boolean;
   driveFilter: string;
   extFilter: string;
   now: number;
@@ -56,8 +57,9 @@ export type SearchStrategyDeps = {
   fileIndex: {
     getStatus: () => Promise<{ isIndexing: boolean }>;
     pauseIndexingFor: (ms: number) => void | Promise<void>;
-    search: (query: string, limit: number, options?: { where?: any }) => Promise<any>;
+    search: (query: string, limit: number, options?: { where?: any; sessionId?: string }) => Promise<any>;
     buildIfEmpty: () => Promise<void>;
+    cancelSearchSession?: (sessionId: string) => void | Promise<void>;
   };
   reconcileRecentIndex: () => void | Promise<void>;
   loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[]; searchRanking?: any };

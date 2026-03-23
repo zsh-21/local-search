@@ -1,4 +1,4 @@
-import type { FileIndexSearchResult } from "../fileIndex";
+﻿import type { FileIndexSearchResult } from "../fileIndex";
 
 interface SearchHitDoc {
   id: string;
@@ -14,14 +14,27 @@ export async function fileIndexSearch(
   ctx: any,
   query: string,
   limit = 100,
-  options?: { where?: any },
+  options?: { where?: any; sessionId?: string },
 ): Promise<{ results: FileIndexSearchResult[]; isIndexing: boolean; totalCount: number; rawCount: number }> {
   ctx.clearIdleCompactTimer();
+
+  const sessionId = typeof options?.sessionId === "string" ? options.sessionId.trim() : "";
+  if (sessionId && typeof ctx.clearCancelledSearchSession === "function") {
+    ctx.clearCancelledSearchSession(sessionId);
+  }
+  const isCancelled = () => Boolean(sessionId && typeof ctx.isSearchSessionCancelled === "function" && ctx.isSearchSessionCancelled(sessionId));
+
+  const emptyResult = () => ({ results: [], isIndexing: ctx.isIndexing, totalCount: 0, rawCount: 0 });
+  if (isCancelled()) {
+    ctx.scheduleIdleCompactIfNeeded();
+    return emptyResult();
+  }
+
   const index = await ctx.ensureIndex();
   const queryLower = query.trim().normalize("NFKC").toLowerCase();
   if (!queryLower) {
     ctx.scheduleIdleCompactIfNeeded();
-    return { results: [], isIndexing: ctx.isIndexing, totalCount: 0, rawCount: 0 };
+    return emptyResult();
   }
 
   const matchesWhere = (doc: SearchHitDoc, where?: any) => {
@@ -91,16 +104,30 @@ export async function fileIndexSearch(
     return normalizeResults(raw);
   };
 
+  if (isCancelled()) {
+    ctx.scheduleIdleCompactIfNeeded();
+    return emptyResult();
+  }
+
   const tokens = ctx.extractSearchTokens(queryLower);
   const normalizedTerm = tokens.length > 0 ? tokens.join(" ") : queryLower;
   let mergedHits = doSearch(normalizedTerm, limit * 3);
+
+  if (isCancelled()) {
+    ctx.scheduleIdleCompactIfNeeded();
+    return emptyResult();
+  }
 
   if (mergedHits.length === 0 && tokens.length >= 2) {
     const merged = new Map<string, { doc: SearchHitDoc | null; scoreSum: number; hitCount: number }>();
     const tokenList = tokens.slice(0, 6);
     for (const t of tokenList) {
+      if (isCancelled()) break;
+
       const hits = doSearch(t, Math.max(limit, 120));
       for (const hit of hits) {
+        if (isCancelled()) break;
+
         const doc = hit.doc || (index.get(hit.id) as any);
         if (!doc?.path) continue;
         const key = String(hit.id);
@@ -113,7 +140,9 @@ export async function fileIndexSearch(
           merged.set(key, { doc, scoreSum: score, hitCount: 1 });
         }
       }
+      if (isCancelled()) break;
     }
+
     mergedHits = Array.from(merged.values())
       .map((x) => ({
         id: x.doc?.path ? x.doc.path.toLowerCase() : "",
@@ -126,7 +155,11 @@ export async function fileIndexSearch(
 
   const rawCount = Array.isArray(mergedHits) ? mergedHits.length : 0;
   const results: FileIndexSearchResult[] = [];
-  for (const hit of mergedHits || []) {
+  for (let i = 0; i < (mergedHits || []).length; i++) {
+    if (i > 0 && i % 32 === 0 && isCancelled()) break;
+
+    const hit = mergedHits[i];
+    if (!hit) continue;
     const doc = (hit.doc || (index.get(hit.id) as any)) as SearchHitDoc | null;
     const p = doc?.path as string;
     if (!p || ctx.isIgnoredPath(p)) continue;
@@ -137,6 +170,7 @@ export async function fileIndexSearch(
     if (nameLower === queryLower) score += 5000;
     else if (nameLower.startsWith(queryLower)) score += 2000;
     else if (nameLower.includes(queryLower)) score += 600;
+
     const pathLower = String(doc.path || "").toLowerCase();
     if (pathLower.includes(queryLower)) score += 200;
 
@@ -153,5 +187,5 @@ export async function fileIndexSearch(
   const totalCount = results.length;
   const output = { results, isIndexing: ctx.isIndexing, totalCount, rawCount };
   ctx.scheduleIdleCompactIfNeeded();
-  return output;
+  return isCancelled() ? emptyResult() : output;
 }

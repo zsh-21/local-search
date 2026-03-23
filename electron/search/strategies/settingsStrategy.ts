@@ -1,9 +1,11 @@
-import { getWindowsSettingsItems, searchSettingsItems } from "../settingsSearch";
+﻿import { getWindowsSettingsItems, searchSettingsItems } from "../settingsSearch";
 import type { SearchExecResult, SearchStrategy } from "./types";
 
 export const settingsStrategy: SearchStrategy = {
   id: "settings",
   async execute(ctx): Promise<SearchExecResult> {
+    if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
+
     const settingsItems = getWindowsSettingsItems();
     const { settingsResults, settingsOnly } = searchSettingsItems({
       searchTypeId: ctx.searchTypeId,
@@ -11,6 +13,8 @@ export const settingsStrategy: SearchStrategy = {
       computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
       computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
     });
+
+    if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
 
     if (settingsOnly) {
       return {

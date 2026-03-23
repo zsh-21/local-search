@@ -42,6 +42,7 @@ type FileIndexWorkerOp =
   | 'abortRebuild'
   | 'ingestPath'
   | 'removePath'
+  | 'cancelSearchSession'
   | 'search';
 
 // 主进程的“忽略路径”判断做本地缓存：避?watcher 事件里频繁跨线程调用
@@ -386,7 +387,15 @@ export const fileIndex = {
     await Promise.all(shards.map((_, i) => callShard(i, 'removePath', { path: p })));
   },
 
-  search: async (query: string, limit: number, options?: { where?: any }) => {
+  cancelSearchSession: async (sessionId: string) => {
+    const normalized = typeof sessionId === 'string' ? sessionId.trim() : '';
+    if (!normalized) return;
+    await Promise.all(
+      shards.map((shard, i) => (shard.worker ? callShard(i, 'cancelSearchSession', { sessionId: normalized }) : Promise.resolve()))
+    );
+  },
+
+  search: async (query: string, limit: number, options?: { where?: any; sessionId?: string }) => {
     const driveEq = (() => {
       const w = options?.where;
       if (!w) return null;

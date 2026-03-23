@@ -90,6 +90,11 @@ parentPort?.on('message', async (msg: any) => {
 			reply({ id: req.id, ok: true });
 			return;
 		}
+		if (req.op === 'cancelSearchSession') {
+			fileIndex.cancelSearchSession(req.payload?.sessionId);
+			reply({ id: req.id, ok: true });
+			return;
+		}
 		if (req.op === 'search') {
 			reply({
 				id: req.id,

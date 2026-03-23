@@ -1,4 +1,4 @@
-export async function searchApps(input: {
+﻿export async function searchApps(input: {
   searchTypeId: string;
   lowerQuery: string;
   getInstalledApps: () => Array<{ Name: string; AppID: string }>;
@@ -14,6 +14,7 @@ export async function searchApps(input: {
   searchSessionId: string;
   iconPrefetchToken: number;
   getCurrentIconPrefetchToken: () => number;
+  shouldCancel?: () => boolean;
 }) {
   const {
     searchTypeId,
@@ -32,18 +33,19 @@ export async function searchApps(input: {
     getCurrentIconPrefetchToken,
   } = input;
 
-  if (searchTypeId !== 'all' && searchTypeId !== 'file' && searchTypeId !== 'app') return [];
-  // “文件(file)”类型不混入应用结果：应用仅在“全部/应用”中展示
-  if (searchTypeId === 'file') return [];
+  const shouldCancel = () => Boolean(input.shouldCancel?.());
 
-  // 过滤快捷方式：.lnk/.url 往往只指向目标应用，会导致重复展示
+  if (searchTypeId !== "all" && searchTypeId !== "file" && searchTypeId !== "app") return [];
+  if (searchTypeId === "file") return [];
+  if (shouldCancel()) return [];
+
   const isShortcutAppId = (appId: string) => {
-    const lower = String(appId || '').toLowerCase();
-    return lower.endsWith('.lnk') || lower.endsWith('.url');
+    const lower = String(appId || "").toLowerCase();
+    return lower.endsWith(".lnk") || lower.endsWith(".url");
   };
 
   const installedApps = getInstalledApps();
-  const actionTokens = ['卸载', 'uninstall', 'remove', '删除', '移除'];
+  const actionTokens = ["卸载", "uninstall", "remove", "删除", "移除"];
   const isActionQuery = actionTokens.some((t) => lowerQuery.includes(t));
 
   const matchedGroupKeys = new Set<string>();
@@ -61,20 +63,22 @@ export async function searchApps(input: {
   }> = [];
 
   for (const appItem of installedApps) {
+    if (shouldCancel()) return [];
     if (isShortcutAppId(appItem.AppID)) continue;
+
     const weighted = computeWeightedNameMatch(appItem.Name);
     if (weighted.staticScore <= 0) continue;
 
     const cacheKey = `app:${appItem.AppID}`;
-    const iconData = iconDataCache.get(cacheKey) || '';
+    const iconData = iconDataCache.get(cacheKey) || "";
 
     const groupKey = normalizeAppGroupKey(appItem.Name);
     if (groupKey) matchedGroupKeys.add(groupKey);
-    matchedAppIds.add(String(appItem.AppID || '').toLowerCase());
+    matchedAppIds.add(String(appItem.AppID || "").toLowerCase());
 
     const score = computeCombinedScore({
       staticScore: weighted.staticScore,
-      type: 'app',
+      type: "app",
       rawPath: appItem.AppID,
       timeMs: input.getLastUsedMs(appItem.AppID),
     });
@@ -82,8 +86,8 @@ export async function searchApps(input: {
     results.push({
       name: appItem.Name,
       path: appItem.AppID,
-      type: 'app',
-      icon: iconData && !isTooSmallAppIconDataUrl(iconData) ? iconData : '',
+      type: "app",
+      icon: iconData && !isTooSmallAppIconDataUrl(iconData) ? iconData : "",
       score,
       staticScore: weighted.staticScore,
       weightedScore: weighted.weightedScore,
@@ -98,9 +102,11 @@ export async function searchApps(input: {
     let added = 0;
     const MAX_RELATED = 80;
     for (const appItem of installedApps) {
+      if (shouldCancel()) return [];
       if (isShortcutAppId(appItem.AppID)) continue;
       if (added >= MAX_RELATED) break;
-      const appIdLower = String(appItem.AppID || '').toLowerCase();
+
+      const appIdLower = String(appItem.AppID || "").toLowerCase();
       if (!appIdLower) continue;
       if (matchedAppIds.has(appIdLower)) continue;
 
@@ -111,14 +117,13 @@ export async function searchApps(input: {
       if (isActionQuery && !actionTokens.some((t) => nameLower.includes(t))) continue;
 
       const cacheKey = `app:${appItem.AppID}`;
-      const iconData = iconDataCache.get(cacheKey) || '';
+      const iconData = iconDataCache.get(cacheKey) || "";
       const weighted = computeWeightedNameMatch(appItem.Name);
 
-      // 关联召回时允许低静态分兜底，避免同组应用完全缺席
       const fallbackStatic = weighted.staticScore > 0 ? weighted.staticScore : 0.22;
       const score = computeCombinedScore({
         staticScore: fallbackStatic,
-        type: 'app',
+        type: "app",
         rawPath: appItem.AppID,
         timeMs: input.getLastUsedMs(appItem.AppID),
       });
@@ -126,8 +131,8 @@ export async function searchApps(input: {
       results.push({
         name: appItem.Name,
         path: appItem.AppID,
-        type: 'app',
-        icon: iconData && !isTooSmallAppIconDataUrl(iconData) ? iconData : '',
+        type: "app",
+        icon: iconData && !isTooSmallAppIconDataUrl(iconData) ? iconData : "",
         score,
         staticScore: fallbackStatic,
         weightedScore: weighted.weightedScore,
@@ -140,9 +145,8 @@ export async function searchApps(input: {
     }
   }
 
-  if (searchTypeId !== 'app') return results;
+  if (searchTypeId !== "app") return shouldCancel() ? [] : results;
 
-  // 同分时继续按匹配位置与名称长度打破平局，保证应用页结果稳定
   const sorted = results.sort((a, b) => {
     const scoreDiff = (b.score || 0) - (a.score || 0);
     if (scoreDiff !== 0) return scoreDiff;
@@ -150,30 +154,36 @@ export async function searchApps(input: {
     if (matchDiff !== 0) return matchDiff;
     return (a.nameLen || 1_000_000) - (b.nameLen || 1_000_000);
   });
-  // 应用分类首屏优先“立刻返回结果”，缺失图标交给后续异步回填
   const merged = sorted
     .slice(0, 100)
     .map(({ score, staticScore, weightedScore, matchIndex, nameLen, ...rest }) => rest);
+
   (async () => {
     const batchSize = 20;
     for (let i = 0; i < merged.length; i += batchSize) {
+      if (shouldCancel()) return;
       if (iconPrefetchToken !== getCurrentIconPrefetchToken()) return;
+
       const batch = merged.slice(i, i + batchSize);
       const updates: Array<{ name: string; path: string; type: string; icon: string }> = [];
       for (const it of batch) {
+        if (shouldCancel()) return;
         if (iconPrefetchToken !== getCurrentIconPrefetchToken()) return;
-        if (!it?.path || it.type !== 'app') continue;
-        if (typeof (it as any).icon === 'string' && (it as any).icon) continue;
-        const cached = iconDataCache.get(`app:${it.path}`) || '';
+        if (!it?.path || it.type !== "app") continue;
+        if (typeof (it as any).icon === "string" && (it as any).icon) continue;
+
+        const cached = iconDataCache.get(`app:${it.path}`) || "";
         if (cached) {
           updates.push({ ...it, icon: cached });
           continue;
         }
+
         const icon = await getAppIconDataStable(it.name, it.path, 3);
         if (icon) updates.push({ ...it, icon });
       }
-      if (updates.length > 0) {
-        event.sender.send('more-results', {
+
+      if (!shouldCancel() && updates.length > 0) {
+        event.sender.send("more-results", {
           query,
           searchTypeId,
           searchSessionId,
@@ -184,5 +194,5 @@ export async function searchApps(input: {
     }
   })();
 
-  return merged as any;
+  return shouldCancel() ? [] : (merged as any);
 }

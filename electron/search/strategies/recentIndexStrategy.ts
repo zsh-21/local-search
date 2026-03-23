@@ -1,4 +1,4 @@
-import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
+﻿import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
 
 function isShortcutPath(p: string) {
   const lower = String(p || "").toLowerCase();
@@ -9,11 +9,15 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
   return {
     id: "recentIndex",
     async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
+      if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
+
       const items = Array.from(deps.recentIndex.values());
       items.sort((a, b) => (b.timeMs || 0) - (a.timeMs || 0));
 
       const out: SearchCandidate[] = [];
       for (const it of items) {
+        if (ctx.isSessionCancelled()) break;
+
         const key = deps.normalizeRecentKey(it.path);
         if (!key || seenPathKeys.has(key)) continue;
         if (isShortcutPath(it.path)) continue;
