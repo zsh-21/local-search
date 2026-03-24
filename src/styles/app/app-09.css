@@ -115,6 +115,11 @@ html:is(
   background: var(--fs-accent);
 }
 /* 账号登录相关样式 */
+.settings-group.settings-group-account {
+  /* 账号分区整体收窄到约 600px（含卡片内边距），避免看起来过宽 */
+  max-width: 550px;
+  width: 100%;
+}
 .account-profile {
   display: flex;
   flex-direction: column;
@@ -304,6 +309,10 @@ html:is(
   padding: 10px 0;
   margin: 0;
   width: 100%;
+  /* 缩窄登录区域，避免满宽导致阅读压力 */
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 .form-actions {
   display: flex;

@@ -69,6 +69,9 @@ export function useSearchControllerLifecycleEffects(params: any) {
   useEffect(() => {
     let cancelled = false;
     let timerId: number | null = null;
+    let stableIsIndexing = false;
+    let falseStreak = 0;
+    const FALSE_STREAK_THRESHOLD = 3;
     const poll = async () => {
       if (cancelled) return;
       if (!window.ipcRenderer) return;
@@ -84,8 +87,27 @@ export function useSearchControllerLifecycleEffects(params: any) {
         const isIndexing = Boolean(resp?.isIndexing);
         const raw = Number(resp?.progress);
         const normalized = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
-        params.setIsIndexing(isIndexing);
-        params.setIndexProgress(isIndexing ? normalized : 0);
+        if (isIndexing) {
+          falseStreak = 0;
+          if (!stableIsIndexing) {
+            stableIsIndexing = true;
+            params.setIsIndexing(true);
+          }
+          params.setIndexProgress((prev: number) => (prev === normalized ? prev : normalized));
+        } else {
+          if (!stableIsIndexing) {
+            params.setIsIndexing(false);
+            params.setIndexProgress((prev: number) => (prev === 0 ? prev : 0));
+          } else {
+            falseStreak += 1;
+            if (falseStreak >= FALSE_STREAK_THRESHOLD) {
+              stableIsIndexing = false;
+              falseStreak = 0;
+              params.setIsIndexing(false);
+              params.setIndexProgress(0);
+            }
+          }
+        }
       } catch {}
 
       if (cancelled) return;

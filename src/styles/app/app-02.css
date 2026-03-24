@@ -408,10 +408,10 @@ html:is(
 }
 html[data-theme="dark-win"] .search-box {
   border-radius: 999px;
-  background: rgba(56, 53, 72, 0.9);
-  border-color: rgba(245, 238, 255, 0.08);
+  background: rgba(39, 35, 58, 0.9);
+  border-color: rgba(215, 207, 242, 0.12);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 12px 24px -22px rgba(0, 0, 0, 0.42);
 }
 .search-box:focus-within {

@@ -6,16 +6,41 @@ export function normalizeResultKey(x: AppItem) {
   return `${t}|${p}`;
 }
 
+function isResultItemRenderEqual(a: AppItem, b: AppItem) {
+  return (
+    (a?.type || "") === (b?.type || "") &&
+    (a?.path || "") === (b?.path || "") &&
+    (a?.name || "") === (b?.name || "") &&
+    (a?.description || "") === (b?.description || "") &&
+    (a?.icon || "") === (b?.icon || "") &&
+    (a?.iconKey || "") === (b?.iconKey || "")
+  );
+}
+
+function mergeResultItemWithFallback(prev: AppItem, next: AppItem) {
+  const merged: AppItem = {
+    ...prev,
+    ...next,
+    icon: typeof next.icon === "string" && next.icon ? next.icon : prev.icon,
+    iconKey: typeof next.iconKey === "string" && next.iconKey ? next.iconKey : prev.iconKey,
+  };
+  return isResultItemRenderEqual(prev, merged) ? prev : merged;
+}
+
 export function dedupeResults(items: AppItem[]) {
   const seen = new Set<string>();
   const out: AppItem[] = [];
+  let changed = false;
   for (const it of items) {
     const key = normalizeResultKey(it);
-    if (!key || seen.has(key)) continue;
+    if (!key || seen.has(key)) {
+      changed = true;
+      continue;
+    }
     seen.add(key);
     out.push(it);
   }
-  return out;
+  return changed ? out : items;
 }
 
 export function limitResults(items: AppItem[], limit: number) {
@@ -33,17 +58,18 @@ export function mergeResultsStable(prev: AppItem[], next: AppItem[]) {
 
   const seen = new Set<string>();
   const merged: AppItem[] = [];
+  let changed = false;
   for (const it of prev) {
     const k = normalizeResultKey(it);
-    if (!k || seen.has(k)) continue;
+    if (!k || seen.has(k)) {
+      changed = true;
+      continue;
+    }
     const newer = nextByKey.get(k);
     if (newer) {
-      merged.push({
-        ...it,
-        ...newer,
-        icon: typeof newer.icon === "string" && newer.icon ? newer.icon : it.icon,
-        iconKey: typeof newer.iconKey === "string" && newer.iconKey ? newer.iconKey : it.iconKey,
-      });
+      const mergedItem = mergeResultItemWithFallback(it, newer);
+      merged.push(mergedItem);
+      if (mergedItem !== it) changed = true;
     } else {
       merged.push(it);
     }
@@ -55,8 +81,10 @@ export function mergeResultsStable(prev: AppItem[], next: AppItem[]) {
     if (!k || seen.has(k)) continue;
     merged.push(it);
     seen.add(k);
+    changed = true;
   }
 
+  if (!changed && merged.length === prev.length) return prev;
   return merged;
 }
 
@@ -71,22 +99,25 @@ export function mergeByServerOrder(prev: AppItem[], serverOrdered: AppItem[], li
   const seen = new Set<string>();
   const out: AppItem[] = [];
   const max = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0;
+  let changed = false;
 
   for (const it of serverOrdered) {
     const k = normalizeResultKey(it);
     if (!k || seen.has(k)) continue;
     const p = prevByKey.get(k);
     if (p) {
-      out.push({
-        ...it,
-        icon: typeof it.icon === "string" && it.icon ? it.icon : p.icon,
-        iconKey: typeof it.iconKey === "string" && it.iconKey ? it.iconKey : p.iconKey,
-      });
+      const mergedItem = mergeResultItemWithFallback(p, it);
+      out.push(mergedItem);
+      if (mergedItem !== p) changed = true;
     } else {
       out.push(it);
+      changed = true;
     }
     seen.add(k);
-    if (max > 0 && out.length >= max) return out;
+    if (max > 0 && out.length >= max) {
+      if (!changed && out.length === prev.length && out.every((item, idx) => item === prev[idx])) return prev;
+      return out;
+    }
   }
 
   for (const it of prev) {
@@ -94,10 +125,13 @@ export function mergeByServerOrder(prev: AppItem[], serverOrdered: AppItem[], li
     if (!k || seen.has(k)) continue;
     out.push(it);
     seen.add(k);
+    changed = true;
     if (max > 0 && out.length >= max) break;
   }
 
-  return max > 0 ? out.slice(0, max) : [];
+  const result = max > 0 ? out.slice(0, max) : [];
+  if (!changed && result.length === prev.length && result.every((item, idx) => item === prev[idx])) return prev;
+  return result;
 }
 
 export function filterItemsBySearchType(items: AppItem[], typeId: string, customSearchTypes: string[]) {

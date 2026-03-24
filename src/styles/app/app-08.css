@@ -90,8 +90,8 @@
 }
 .theme-card.theme-dark-win .theme-preview {
   background:
-    radial-gradient(circle at 20% -16%, rgba(112, 102, 188, 0.26) 0%, transparent 44%),
-    linear-gradient(180deg, rgba(39, 35, 58, 0.98) 0%, rgba(35, 32, 55, 1) 100%);
+    radial-gradient(circle at 20% -16%, rgba(118, 98, 178, 0.28) 0%, transparent 44%),
+    linear-gradient(180deg, rgba(29, 26, 43, 0.99) 0%, rgba(24, 21, 37, 1) 100%);
 }
 .theme-card.theme-dark-win .theme-preview::before {
   content: "";
@@ -100,9 +100,9 @@
   left: 14%;
   width: 72%;
   height: 12px;
-  background: rgba(56, 53, 72, 0.92);
+  background: rgba(39, 35, 58, 0.92);
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(245, 238, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(215, 207, 242, 0.12);
 }
 .theme-card.theme-dark-win .theme-preview::after {
   content: "";
@@ -111,9 +111,9 @@
   left: 10%;
   width: 82%;
   height: 38%;
-  background: rgba(47, 44, 72, 0.84);
+  background: rgba(33, 30, 51, 0.84);
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px rgba(245, 238, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px rgba(215, 207, 242, 0.08);
 }
 .theme-card.theme-alloy .theme-preview {
   background:

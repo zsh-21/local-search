@@ -317,8 +317,8 @@
 }
 html[data-theme="dark-win"] .settings-nav-account-card.active,
 html[data-theme="dark-win"] .settings-nav-item.active {
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(245, 238, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(215, 207, 242, 0.08);
 }
 html:is(
     [data-theme="chrome"],

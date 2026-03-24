@@ -5,6 +5,7 @@ import {
   setSearchViewReady,
   setSettingsReadyToShow,
   clearSettingsShowFallbackTimer,
+  ensureSettingsWindowCenteredOnFirstShow,
   showSettingsWindow,
   openSearchWindow,
   getSettingsWindow,
@@ -241,7 +242,10 @@ export function registerIpcHandlers() {
       if (settingsWin && w.id !== settingsWin.id) return { ok: false };
       clearSettingsShowFallbackTimer();
       setSettingsReadyToShow(true);
-      if (!w.isVisible()) w.show();
+      if (!w.isVisible()) {
+        ensureSettingsWindowCenteredOnFirstShow();
+        w.show();
+      }
       w.focus();
       w.webContents.send('settings-window-opened');
       return { ok: true };

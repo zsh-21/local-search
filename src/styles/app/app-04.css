@@ -283,8 +283,8 @@ html:is(
   border-color: var(--fs-border);
 }
 .result-icon {
-  width: 40px;
-  height: 40px;
+  width: 33px;
+  height: 33px;
   object-fit: contain;
   flex: 0 0 auto;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
@@ -362,11 +362,11 @@ html:is(
   transform: translateY(6px);
 }
 .result-icon.image-preview {
-  width: 40px;
-  height: 40px;
+  width: 33px;
+  height: 33px;
   overflow: hidden;
   border-radius: 4px;
-  object-fit: cover;
+   object-fit: contain;
   margin-right: -4px;
   /* 补偿增大的宽度，保持对齐 */
   margin-left: -4px;

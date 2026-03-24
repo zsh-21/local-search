@@ -1,5 +1,5 @@
 import { startTransition, useEffect } from "react";
-import { dedupeResults, mergeResultsStable } from "./searchResultUtils";
+import { dedupeResults, mergeByServerOrder, mergeResultsStable } from "./searchResultUtils";
 
 export function useSearchControllerSearchEffects(params: any) {
   const mergeIconMap = (next: Record<string, string>) => {
@@ -189,12 +189,16 @@ export function useSearchControllerSearchEffects(params: any) {
         if (params.searchTypeIdRef.current !== params.searchTypeId) return;
         const nextResults = params.filterItemsBySearchType(resp?.results ?? [], params.searchTypeId);
         const strictMatched = params.applyStrictSearchResults(nextResults, trimmed);
+        const serverOrdered = dedupeResults(strictMatched);
         params.setSelectedIndex(0);
         startTransition(() => {
-          const merged = dedupeResults(strictMatched);
-          params.setResults(merged);
-          params.setTotalCount(merged.length);
-          params.setHasMore(Boolean(resp?.hasMore));
+          params.setResults((prev: any[]) => {
+            const replaced = mergeByServerOrder(prev, serverOrdered, serverOrdered.length);
+            params.setTotalCount((count: number) => (count === replaced.length ? count : replaced.length));
+            return replaced;
+          });
+          const nextHasMore = Boolean(resp?.hasMore);
+          params.setHasMore((v: boolean) => (v === nextHasMore ? v : nextHasMore));
         });
       } finally {
         if (params.searchRequestIdRef.current === requestId) params.setIsSearching(false);
@@ -248,7 +252,7 @@ export function useSearchControllerSearchEffects(params: any) {
         startTransition(() => {
           params.setResults((prev: any[]) => {
             const merged = mergeResultsStable(prev, serverOrdered);
-            params.setTotalCount(merged.length);
+            params.setTotalCount((count: number) => (count === merged.length ? count : merged.length));
             return merged;
           });
           params.setHasMore((v: boolean) => v || Boolean(resp?.hasMore));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AppItem, AppSettings } from "../appTypes";
+import { AppItem } from "../appTypes";
 import { getBootstrapHistoryCache, getSearchTypeOptions, useSettings } from "../settingsStore";
 import {
   DEFAULT_SETTINGS,
@@ -18,11 +18,9 @@ import { isStrictSearchMatch, parseSearchMatchIntent, pickSearchMatchTargetText 
 import { buildCalcItem, mapCalcHistoryToItems, normalizeCalcHistoryPayload, parseCalcMode } from "./searchCalcUtils";
 import { parseDrivePrefix, resolveGhostCandidateByInput } from "./searchInputUtils";
 import { resizeSearchWindowToContent } from "./searchWindowResize";
-import {
-  createHandleKeyDownCapture,
-  createHandleKeyDownCore,
-  isShortcutPressed,
-} from "./searchKeyboardHandlers";
+import { applyCalcResultsCore, applyHistoryResultsCore } from "./searchResultAppliers";
+import { useSearchActionVisibility } from "./useSearchActionVisibility";
+import { useSearchKeyHandlers } from "./useSearchKeyHandlers";
 import {
   copyCalcResultAction,
   copyPathAction,
@@ -103,6 +101,7 @@ export function useSearchController() {
   const typeSwitchRequestedRef = useRef(false);
   const historyItemsRef = useRef<AppItem[]>(getBootstrapHistoryCache());
   const bootstrapTypeSyncedRef = useRef(false);
+  const pendingScrollTopRef = useRef(false);
 
   const resizeWindowToContent = useCallback(
     (opts?: { includeTypeMenu?: boolean }) => {
@@ -181,22 +180,18 @@ export function useSearchController() {
     });
   }, []);
   const applyCalcResults = useCallback((currentCalcItem: AppItem | null, preservePath?: string) => {
-    const history = calcHistoryItemsRef.current;
-    const merged = currentCalcItem
-      ? [currentCalcItem, ...history.filter((it) => it.path !== currentCalcItem.path)]
-      : history.slice();
-    const deduped = dedupeResults(merged);
-    setResults(deduped);
-    setTotalCount(deduped.length);
-    if (preservePath) {
-      const idx = deduped.findIndex((x) => x.path === preservePath);
-      setSelectedIndex(idx >= 0 ? idx : 0);
-    } else {
-      setSelectedIndex(0);
-    }
-    setIsSearching(false);
-    setIsIndexing(false);
-    setHasMore(false);
+    applyCalcResultsCore({
+      currentCalcItem,
+      historyItems: calcHistoryItemsRef.current,
+      preservePath,
+      setResults,
+      setTotalCount,
+      setSelectedIndex,
+      setIsSearching,
+      setIsIndexing,
+      setHasMore,
+      dedupeResults,
+    });
   }, []);
 
   const searchTypeOptions = useMemo(
@@ -228,22 +223,26 @@ export function useSearchController() {
     return "搜索所有文件与文件夹...";
   }, [searchTypeId]);
 
-  const applyHistoryResults = (historyItems: AppItem[], opts?: RefreshHistoryOpts) => {
-    const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
-    const filtered = filterItemsBySearchType(historyItems, typeId);
-    const deduped = limitHistoryResults(dedupeResults(filtered));
-    setResults(deduped);
-    setTotalCount(deduped.length);
-    const preservePath = typeof opts?.preserveSelectedPath === "string" ? opts.preserveSelectedPath : "";
-    if (preservePath) {
-      const idx = deduped.findIndex((x) => x.path === preservePath);
-      setSelectedIndex(idx >= 0 ? idx : 0);
-    } else {
-      setSelectedIndex(0);
-    }
-    setIsSearching(false);
-    setIsIndexing(false);
-  };
+  const applyHistoryResults = useCallback(
+    (historyItems: AppItem[], opts?: RefreshHistoryOpts) => {
+      const typeId = typeof opts?.typeId === "string" ? opts.typeId : searchTypeId;
+      const preservePath = typeof opts?.preserveSelectedPath === "string" ? opts.preserveSelectedPath : "";
+      applyHistoryResultsCore({
+        historyItems,
+        typeId,
+        preservePath,
+        setResults,
+        setTotalCount,
+        setSelectedIndex,
+        setIsSearching,
+        setIsIndexing,
+        filterItemsBySearchType,
+        limitHistoryResults,
+        dedupeResults,
+      });
+    },
+    [searchTypeId, filterItemsBySearchType, limitHistoryResults],
+  );
 
   const refreshHistory = async (opts?: RefreshHistoryOpts) => {
     applyHistoryResults(historyItemsRef.current, opts);
@@ -285,6 +284,20 @@ export function useSearchController() {
     iconByKeyRef.current = iconByKey;
   }, [iconByKey]);
 
+  useEffect(() => {
+    const trimmed = parseDrivePrefix(query).term.trim();
+    if (!trimmed) {
+      pendingScrollTopRef.current = false;
+      return;
+    }
+    if (parseCalcMode(trimmed).isCalcMode) {
+      pendingScrollTopRef.current = false;
+      return;
+    }
+    // 新搜索开始后等待结果完成再回到顶部，避免搜索中途跳动
+    pendingScrollTopRef.current = true;
+  }, [query, searchTypeId]);
+
   const hideWindow = () => {
     setTypeMenuOpen(false);
     window.ipcRenderer?.invoke("hide-window");
@@ -323,35 +336,14 @@ export function useSearchController() {
   const isCalcMode = parseCalcMode(query).isCalcMode;
   const isHistoryMode = !isCalcMode && query.trim().length === 0;
 
-  const getVisibleActionIdsForItem = useCallback(
-    (item: AppItem | undefined) => {
-      if (!item) return [] as AppSettings["resultActionButtons"];
-      if (item.type === "calc") {
-        return isCalcMode ? (["deleteHistory"] as AppSettings["resultActionButtons"]) : ([] as AppSettings["resultActionButtons"]);
-      }
-      const raw = Array.isArray(settings.resultActionButtons) ? settings.resultActionButtons : [];
-      const out: AppSettings["resultActionButtons"][number][] = [];
-      for (const id of raw) {
-        if (id === "deleteHistory" && !isHistoryMode) continue;
-        if (id === "runAsAdmin" && item.type !== "app") continue;
-        if (!(["openFolder", "copyPath", "deleteHistory", "runAsAdmin"] as const).includes(id as any)) continue;
-        if (out.includes(id)) continue;
-        out.push(id);
-        if (out.length >= 3) break;
-      }
-      return out;
-    },
-    [settings.resultActionButtons, isHistoryMode, isCalcMode],
-  );
-
-  const selectedActionIds = useMemo(() => {
-    return getVisibleActionIdsForItem(results[selectedIndex]);
-  }, [getVisibleActionIdsForItem, results, selectedIndex]);
-
-  const selectedActionId =
-    selectedActionIndex >= 0 && selectedActionIndex < selectedActionIds.length
-      ? selectedActionIds[selectedActionIndex]
-      : "";
+  const { getVisibleActionIdsForItem, selectedActionIds, selectedActionId } = useSearchActionVisibility({
+    settings,
+    isHistoryMode,
+    isCalcMode,
+    results,
+    selectedIndex,
+    selectedActionIndex,
+  });
 
   const clearActionSelection = useCallback(() => {
     setSelectedActionIndex((prev) => (prev >= 0 ? -1 : prev));
@@ -379,7 +371,7 @@ export function useSearchController() {
     inputRef.current?.focus();
   }, [setQueryAndInputValue]);
 
-  const handleKeyDownCapture = createHandleKeyDownCapture({
+  const { handleKeyDownCapture: handleReactKeyDownCapture, handleWindowKeyDownCapture } = useSearchKeyHandlers({
     inputValue,
     ghostInputValue,
     inputRef,
@@ -398,7 +390,6 @@ export function useSearchController() {
     setTypeMenuOpen,
     results,
     settings,
-    isShortcutPressed,
     acceptSelectedResultToInput,
     setLastSelectedBy,
     setSelectedIndex,
@@ -407,51 +398,12 @@ export function useSearchController() {
     copyCalcResult,
     openFolder,
     launchApp,
+    selectedActionIndex,
+    getVisibleActionIdsForItem,
+    copyPath,
+    runAsAdmin,
+    deleteResultItem,
   });
-
-  const handleKeyDownCore = useMemo(
-    () =>
-      createHandleKeyDownCore({
-        selectedActionIndex,
-        setSelectedActionIndex,
-        results,
-        selectedIndex,
-        getVisibleActionIdsForItem,
-        setLastSelectedBy,
-        openFolder,
-        copyPath,
-        runAsAdmin,
-        deleteResultItem,
-        togglePanelPinned,
-        handleKeyDownCapture,
-      }),
-    [
-      selectedActionIndex,
-      results,
-      selectedIndex,
-      getVisibleActionIdsForItem,
-      openFolder,
-      copyPath,
-      runAsAdmin,
-      deleteResultItem,
-      togglePanelPinned,
-      handleKeyDownCapture,
-    ],
-  );
-
-  const handleWindowKeyDownCapture = useCallback(
-    (e: KeyboardEvent) => {
-      handleKeyDownCore(e as any);
-    },
-    [handleKeyDownCore],
-  );
-
-  const handleReactKeyDownCapture = useCallback(
-    (e: React.KeyboardEvent) => {
-      handleKeyDownCore(e as any);
-    },
-    [handleKeyDownCore],
-  );
   const visibleResults = results;
   const currentTypeLabel = useMemo(
     () => enabledSearchTypeOptions.find((t) => t.id === searchTypeId)?.label || "所有类型",
@@ -497,11 +449,26 @@ export function useSearchController() {
 
   const scrollToTop = () => {
     if (scrollContainerRef.current && listRef.current) {
-      listRef.current.scrollToRow({ index: 0, align: "auto", behavior: "smooth" });
+      listRef.current.scrollToRow({ index: 0, align: "auto",  });
       setSelectedIndex(0);
       setShowBackToTop(false);
     }
   };
+
+  useEffect(() => {
+    if (isSearching) return;
+    if (!pendingScrollTopRef.current) return;
+    const trimmed = parseDrivePrefix(queryRef.current).term.trim();
+    if (!trimmed) {
+      pendingScrollTopRef.current = false;
+      return;
+    }
+    // 搜索结果完成后再回到顶部
+    pendingScrollTopRef.current = false;
+    requestAnimationFrame(() => {
+      scrollToTop();
+    });
+  }, [isSearching, results.length, scrollToTop]);
 
   const onItemsRendered = (visibleRows: { startIndex: number; stopIndex: number }) => {
     const startIndex = typeof visibleRows?.startIndex === "number" ? visibleRows.startIndex : 0;

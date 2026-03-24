@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { List } from "react-window";
 import type { AppItem } from "../appTypes";
 import {
@@ -25,8 +25,8 @@ type SearchResultsPanelProps = {
   statusText: string;
 };
 
-export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }: SearchResultsPanelProps) {
-  const getVisibleActionIdsForItem = (item: AppItem) => {
+function SearchResultsPanelImpl({ c, isHistoryMode, isCalcMode, statusText }: SearchResultsPanelProps) {
+  const getVisibleActionIdsForItem = useCallback((item: AppItem) => {
     if (item.type === "calc") return isCalcMode ? ["deleteHistory"] : [];
     const raw = Array.isArray(c.settings.resultActionButtons) ? c.settings.resultActionButtons : [];
     const out: string[] = [];
@@ -39,13 +39,13 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
       if (out.length >= 3) break;
     }
     return out;
-  };
+  }, [c.settings.resultActionButtons, isCalcMode, isHistoryMode]);
 
   const highlightIntent = useMemo(() => parseSearchMatchIntent(c.trimmedQuery), [c.trimmedQuery]);
   const highlightPathMode = highlightIntent.matchTarget === "path" && highlightIntent.tokens.length > 0;
   const highlightNameMode = highlightIntent.matchTarget === "name" && highlightIntent.tokens.length > 0;
 
-  const renderHighlightedText = (text: string, ranges: SearchHighlightRange[]) => {
+  const renderHighlightedText = useCallback((text: string, ranges: SearchHighlightRange[]) => {
     if (!ranges || ranges.length === 0) return text;
     const nodes: React.ReactNode[] = [];
     let cursor = 0;
@@ -61,28 +61,28 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
     }
     if (cursor < text.length) nodes.push(text.slice(cursor));
     return <>{nodes}</>;
-  };
+  }, []);
 
-  const buildIconClassName = (icon: string | undefined, extra?: string) => {
+  const buildIconClassName = useCallback((icon: string | undefined, extra?: string) => {
     const classes = ["result-icon"];
     if (extra) classes.push(extra);
     if (icon && icon.startsWith("data:image/svg+xml")) classes.push("svg-icon");
     return classes.join(" ");
-  };
+  }, []);
 
-  const isImageFile = (targetPath: string) => {
+  const isImageFile = useCallback((targetPath: string) => {
     const ext = (targetPath.split(".").pop() || "").toLowerCase();
     return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
-  };
+  }, []);
 
-  const isCalcLikeItem = (item: AppItem) => {
+  const isCalcLikeItem = useCallback((item: AppItem) => {
     if (item.type === "calc") return true;
     if (!isCalcMode) return false;
     const candidates = [item.description, item.path, item.name];
     return candidates.some((text) => typeof text === "string" && text.trim().startsWith("="));
-  };
+  }, [isCalcMode]);
 
-  const renderResultIcon = (item: AppItem, isImg: boolean) => {
+  const renderResultIcon = useCallback((item: AppItem, isImg: boolean) => {
     const iconData =
       (typeof item.iconKey === "string" && item.iconKey ? c.iconByKey[item.iconKey.toLowerCase()] : "") ||
       item.icon ||
@@ -109,9 +109,9 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
       return <IconFile size={40} className="result-icon" />;
     }
     return <span className="result-icon placeholder fallback-icon fallback-generic-icon" aria-hidden="true" />;
-  };
+  }, [buildIconClassName, c.calculatorIconDataUrl, c.iconByKey, isCalcLikeItem]);
 
-  const Row = ({
+  const Row = useCallback(({
     index,
     style,
     ariaAttributes,
@@ -259,7 +259,30 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
         </li>
       </div>
     );
-  };
+  }, [
+    c.calculatorIconDataUrl,
+    c.copyPath,
+    c.deleteResultItem,
+    c.hoveredKey,
+    c.iconByKey,
+    c.launchApp,
+    c.openFolder,
+    c.runAsAdmin,
+    c.selectedActionId,
+    c.selectedIndex,
+    c.setHoveredKey,
+    c.settings.showResultPath,
+    c.visibleResults,
+    getVisibleActionIdsForItem,
+    highlightIntent,
+    highlightNameMode,
+    highlightPathMode,
+    isImageFile,
+    renderHighlightedText,
+    renderResultIcon,
+  ]);
+
+  const stableRowProps = useMemo(() => ({}), []);
 
   const BottomInfo = () => {
     if (c.results.length === 0) return null;
@@ -321,7 +344,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
               rowHeight={c.ITEM_HEIGHT}
               className="virtual-list"
               rowComponent={Row}
-              rowProps={{}}
+              rowProps={stableRowProps}
               onRowsRendered={(visibleRows: any) => c.onItemsRendered(visibleRows)}
             />
           </div>
@@ -336,3 +359,32 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
     </div>
   );
 }
+
+function areSearchResultsPanelPropsEqual(prev: SearchResultsPanelProps, next: SearchResultsPanelProps) {
+  if (prev.isHistoryMode !== next.isHistoryMode) return false;
+  if (prev.isCalcMode !== next.isCalcMode) return false;
+  if (Boolean(prev.statusText) !== Boolean(next.statusText)) return false;
+
+  const pc = prev.c;
+  const nc = next.c;
+  return (
+    pc.visibleResults === nc.visibleResults &&
+    pc.results === nc.results &&
+    pc.selectedIndex === nc.selectedIndex &&
+    pc.hoveredKey === nc.hoveredKey &&
+    pc.selectedActionId === nc.selectedActionId &&
+    pc.showBackToTop === nc.showBackToTop &&
+    pc.hasMore === nc.hasMore &&
+    pc.trimmedQuery === nc.trimmedQuery &&
+    pc.showEmptyState === nc.showEmptyState &&
+    pc.showInputHint === nc.showInputHint &&
+    pc.listHeight === nc.listHeight &&
+    pc.MAX_LIST_HEIGHT === nc.MAX_LIST_HEIGHT &&
+    pc.ITEM_HEIGHT === nc.ITEM_HEIGHT &&
+    pc.settings === nc.settings &&
+    pc.iconByKey === nc.iconByKey &&
+    pc.calculatorIconDataUrl === nc.calculatorIconDataUrl
+  );
+}
+
+export const SearchResultsPanel = memo(SearchResultsPanelImpl, areSearchResultsPanelPropsEqual);

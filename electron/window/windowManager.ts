@@ -38,6 +38,8 @@ let settingsReadyToShow = false;
 let settingsShowFallbackTimer: NodeJS.Timeout | null = null;
 let searchAllowBlurHide = false;
 let searchVisibleAt = 0;
+let searchFirstShowCentered = false;
+let settingsFirstShowCentered = false;
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const SEARCH_SHOW_FALLBACK_TIMEOUT_MS = 1200;
@@ -70,6 +72,24 @@ function clearSearchShowFallbackTimer() {
   }
 }
 
+function ensureSearchWindowCenteredOnFirstShow() {
+  if (searchFirstShowCentered) return;
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.center();
+  } catch {}
+  searchFirstShowCentered = true;
+}
+
+export function ensureSettingsWindowCenteredOnFirstShow() {
+  if (settingsFirstShowCentered) return;
+  if (!settingsWin || settingsWin.isDestroyed()) return;
+  try {
+    settingsWin.center();
+  } catch {}
+  settingsFirstShowCentered = true;
+}
+
 function showSearchWindowIfReady() {
   if (!pendingSearchShow) return;
   // 首次显示必须满足“主框架已完成加载”，避免先 show 再渲染导致白屏。
@@ -81,6 +101,7 @@ function showSearchWindowIfReady() {
 
 function showSearchWindowImmediately() {
   if (!win || win.isDestroyed()) return;
+  ensureSearchWindowCenteredOnFirstShow();
   pendingSearchShow = false;
   searchFallbackReady = false;
   clearSearchShowFallbackTimer();
@@ -167,6 +188,19 @@ export function createWindow() {
 
   win.on('moved', () => {
     if (win) saveConfig(win.getBounds());
+  });
+  win.on('will-resize', (event, newBounds) => {
+    if (!win || win.isDestroyed()) return;
+    const current = win.getBounds();
+    if (newBounds.height === current.height) return;
+    // 禁止用户拖拽调整搜索面板高度，仅允许宽度变化
+    event.preventDefault();
+    win.setBounds({
+      x: newBounds.x,
+      y: newBounds.y,
+      width: newBounds.width,
+      height: current.height,
+    });
   });
   win.on('closed', () => {
     clearSearchShowFallbackTimer();
@@ -292,6 +326,7 @@ export function createSettingsWindow() {
       if (!settingsWin || settingsWin.isDestroyed()) return;
       if (settingsReadyToShow) return;
       settingsReadyToShow = true;
+      ensureSettingsWindowCenteredOnFirstShow();
       settingsWin.show();
       settingsWin.focus();
       settingsWin.webContents.send('settings-window-opened');
@@ -426,7 +461,10 @@ export function showSettingsWindow() {
   hideSearchWindow();
   if (settingsWin && !settingsWin.isDestroyed()) {
     if (!settingsWin.isVisible()) {
-      if (settingsReadyToShow) settingsWin.show();
+      if (settingsReadyToShow) {
+        ensureSettingsWindowCenteredOnFirstShow();
+        settingsWin.show();
+      }
       else return;
     }
     settingsWin.focus();

@@ -40,12 +40,17 @@ let indexStatsTimer: ReturnType<typeof setInterval> | null = null;
 let indexStatsInFlight = false;
 let lastIndexStatsSignature = '';
 let lastIndexingState = false;
+let lastIndexCompleteSignature = '';
+let lastIndexCompleteAt = 0;
+let startupIndexBootstrapInFlight = false;
+let startupIndexBootstrapFinished = false;
 // 启动索引初始化任务只允许执行一次，避免重复触发导致多次重建。
 let startupIndexBootstrapPromise: Promise<void> | null = null;
 const TRAY_WARMUP_TIMEOUT_MS = 3000;
 const ICON_FIRST_ROUND_TIMEOUT_MS = 1200;
 const ICON_FIRST_ROUND_MAX_COUNT = 180;
 const ICON_FIRST_ROUND_CONCURRENCY = 2;
+const INDEX_COMPLETE_DEDUP_WINDOW_MS = 60_000;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -87,7 +92,20 @@ function startIndexStatsWriter() {
           const driveSummary = Array.isArray(stats.drives)
             ? stats.drives.map((d) => `${d.drive}=${d.count}`).join(', ')
             : '';
-          console.log(`[index] complete total=${stats.totalCount} drives=${driveSummary}`);
+          const completionSignature = `${stats.totalCount}|${driveSummary}`;
+          const now = Date.now();
+          const deduped =
+            completionSignature === lastIndexCompleteSignature &&
+            now - lastIndexCompleteAt < INDEX_COMPLETE_DEDUP_WINDOW_MS;
+          if (!deduped) {
+            const phase =
+              startupIndexBootstrapInFlight || !startupIndexBootstrapFinished
+                ? 'startup-bootstrap'
+                : 'runtime';
+            console.log(`[index] complete phase=${phase} total=${stats.totalCount} drives=${driveSummary}`);
+            lastIndexCompleteSignature = completionSignature;
+            lastIndexCompleteAt = now;
+          }
         }
         lastIndexingState = status.isIndexing;
       } catch {
@@ -199,6 +217,7 @@ if (!gotTheLock) {
       // 启动索引流程使用 single-flight 守卫：同一启动周期内最多触发一次完整初始化链路。
       if (startupIndexBootstrapPromise) return startupIndexBootstrapPromise;
       startupIndexBootstrapPromise = (async () => {
+        startupIndexBootstrapInFlight = true;
         try {
           // 复用启动阶段缓存加载任务，保证顺序固定为 loadCache -> 判定 -> rebuild/buildIfEmpty。
           const cacheLoaded = await indexCacheLoadPromise;
@@ -217,6 +236,10 @@ if (!gotTheLock) {
             await fileIndex.buildIfEmpty();
           }
         } catch {}
+        finally {
+          startupIndexBootstrapInFlight = false;
+          startupIndexBootstrapFinished = true;
+        }
       })();
       return startupIndexBootstrapPromise;
     };

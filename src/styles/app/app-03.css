@@ -49,8 +49,8 @@
   border: 1px solid transparent;
   color: var(--fs-muted);
   cursor: pointer;
-  padding: 0;
   border-radius: 8px;
+  margin-right: 5px;
   -webkit-app-region: no-drag;
   transition: all 0.2s;
 }

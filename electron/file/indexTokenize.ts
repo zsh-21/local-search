@@ -62,8 +62,8 @@ export function createFlexsearchEncode() {
       const isHan = /[\p{Script=Han}]/u.test(seg);
       if (isAscii) {
         push(seg);
-        const baseMaxPrefix = seg.length <= 10 ? 10 : 6;
-        const maxPrefix = Math.min(baseMaxPrefix, seg.length);
+        // 长拼音（如 zhongwenwendang）需要更长前缀，避免输入到第 7~12 位时命中丢失。
+        const maxPrefix = Math.min(12, seg.length);
         for (let i = 2; i <= maxPrefix; i++) push(seg.slice(0, i));
         if (seg.length >= 4 && seg.length <= 16 && out.length < MAX_TOKENS) {
           let added = 0;
@@ -95,4 +95,3 @@ export function createFlexsearchEncode() {
     return out;
   };
 }
-

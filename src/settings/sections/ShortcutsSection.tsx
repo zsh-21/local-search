@@ -32,7 +32,7 @@ export function ShortcutsSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconShortcuts size={20} />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">呼出搜索面板</div>
@@ -57,7 +57,7 @@ export function ShortcutsSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconShortcuts size={20} />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">打开设置面板</div>
@@ -82,7 +82,7 @@ export function ShortcutsSection({
         <div className="setting-item-card">
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
-              <IconShortcuts size={20} />
+              <IconShortcuts size={18} />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">写入选中项</div>
@@ -111,7 +111,7 @@ export function ShortcutsSection({
           <div className="setting-item-card" key={item.title}>
             <div className="setting-item-main">
               <span className="setting-item-icon" aria-hidden="true">
-                <IconShortcuts size={20} />
+                <IconShortcuts size={18} />
               </span>
               <div className="setting-item-copy">
                 <div className="setting-item-title">{item.title}</div>

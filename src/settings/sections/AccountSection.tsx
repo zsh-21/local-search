@@ -92,7 +92,7 @@ export function AccountSection({
 
   return (
     <div className="settings-content">
-      <div className="settings-group">
+      <div className="settings-group settings-group-account">
         {/* 分组标题改为纯文本展示，去掉 hover 提示入口。 */}
         <div className="settings-group-title">账号信息</div>
         {/* 账号分区补充说明，清晰交代登录与会员信息的展示范围。 */}
