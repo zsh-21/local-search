@@ -88,6 +88,33 @@
   border-radius: 6px;
   box-shadow: inset 0 0 0 1px rgba(164, 183, 206, 0.3);
 }
+.theme-card.theme-dark-win .theme-preview {
+  background:
+    radial-gradient(circle at 20% -16%, rgba(112, 102, 188, 0.26) 0%, transparent 44%),
+    linear-gradient(180deg, rgba(39, 35, 58, 0.98) 0%, rgba(35, 32, 55, 1) 100%);
+}
+.theme-card.theme-dark-win .theme-preview::before {
+  content: "";
+  position: absolute;
+  top: 13%;
+  left: 14%;
+  width: 72%;
+  height: 12px;
+  background: rgba(56, 53, 72, 0.92);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(245, 238, 255, 0.08);
+}
+.theme-card.theme-dark-win .theme-preview::after {
+  content: "";
+  position: absolute;
+  top: 36%;
+  left: 10%;
+  width: 82%;
+  height: 38%;
+  background: rgba(47, 44, 72, 0.84);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px rgba(245, 238, 255, 0.06);
+}
 .theme-card.theme-alloy .theme-preview {
   background:
     linear-gradient(154deg, rgba(113, 160, 214, 0.28) 0%, transparent 58%),

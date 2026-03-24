@@ -12,6 +12,7 @@ import { useSearchController } from "./useSearchController";
 
 export function SearchViewImpl() {
   const c = useSearchController();
+  const [footerOffsetPx, setFooterOffsetPx] = useState(0);
 
   const isHistoryMode = c.query.trim().length === 0;
   const isCalcMode = c.isCalcMode;
@@ -139,10 +140,48 @@ export function SearchViewImpl() {
   const pinButtonTitle = c.isPanelPinned ? "取消固定 (Alt+T)" : "固定 (Alt+T)";
   const pinButtonAriaLabel = c.isPanelPinned ? "取消固定搜索面板" : "固定搜索面板";
 
+  useLayoutEffect(() => {
+    let rafId = 0;
+    const measureFooterOffset = () => {
+      const container = c.containerRef.current;
+      if (!container) return;
+      const footerEl = container.querySelector(".list-bottom-info") as HTMLElement | null;
+      if (!footerEl) {
+        setFooterOffsetPx((prev) => (prev === 0 ? prev : 0));
+        return;
+      }
+      const nextOffset = Math.max(0, Math.round(window.innerHeight - container.scrollHeight));
+      setFooterOffsetPx((prev) => (prev === nextOffset ? prev : nextOffset));
+    };
+    const scheduleMeasure = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        measureFooterOffset();
+      });
+    };
+    const container = c.containerRef.current;
+    const resizeObserver =
+      container && typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => scheduleMeasure()) : null;
+    if (resizeObserver && container) resizeObserver.observe(container);
+    window.addEventListener("resize", scheduleMeasure);
+    scheduleMeasure();
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+    };
+  }, [c.containerRef]);
+
   return (
     <div
-      className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""} ${c.settings.compactMode ? "compact" : ""}`}
+      className={`container search-container ${c.typeMenuOpen ? "menu-open" : ""} ${c.settings.compactMode ? "compact" : ""} ${footerOffsetPx > 0 ? "footer-docked" : ""}`}
       ref={c.containerRef}
+      style={
+        footerOffsetPx > 0
+          ? { ["--search-footer-offset" as any]: `${footerOffsetPx}px` }
+          : undefined
+      }
       onClickCapture={(e) => {
         c.clearActionSelection();
         const target = e.target as HTMLElement | null;
@@ -190,7 +229,7 @@ export function SearchViewImpl() {
 
       <div className="search-box">
         <div className="search-icon-wrapper">
-          <IconSearch size={18} className="search-icon-svg" />
+          <IconSearch size={18} className="search-icon-svg" variant="mono" />
         </div>
         <div className="search-input-wrap">
           <input
@@ -225,7 +264,7 @@ export function SearchViewImpl() {
               aria-label="清空输入"
               title="清空 (Ctrl+L)"
             >
-              <IconClear size={14} />
+              <IconClear size={14} variant="mono" />
             </button>
           ) : null}
 
@@ -243,7 +282,7 @@ export function SearchViewImpl() {
           type="button"
           title={`打开设置面板 (${c.settings.settingsShortcut})`}
         >
-          <IconSettings size={18} />
+          <IconSettings size={20} />
         </button>
         <button
           type="button"
@@ -256,7 +295,7 @@ export function SearchViewImpl() {
           aria-label={pinButtonAriaLabel}
           title={pinButtonTitle}
         >
-          {c.isPanelPinned ? <IconPin size={18} /> : <IconPinOff size={18} />}
+          {c.isPanelPinned ? <IconPin size={17} /> : <IconPinOff size={20} />}
         </button>
       </div>
 

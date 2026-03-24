@@ -42,6 +42,7 @@ export function mergeResultsStable(prev: AppItem[], next: AppItem[]) {
         ...it,
         ...newer,
         icon: typeof newer.icon === "string" && newer.icon ? newer.icon : it.icon,
+        iconKey: typeof newer.iconKey === "string" && newer.iconKey ? newer.iconKey : it.iconKey,
       });
     } else {
       merged.push(it);
@@ -79,6 +80,7 @@ export function mergeByServerOrder(prev: AppItem[], serverOrdered: AppItem[], li
       out.push({
         ...it,
         icon: typeof it.icon === "string" && it.icon ? it.icon : p.icon,
+        iconKey: typeof it.iconKey === "string" && it.iconKey ? it.iconKey : p.iconKey,
       });
     } else {
       out.push(it);

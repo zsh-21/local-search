@@ -4,6 +4,7 @@ export interface AppItem {
   path: string;
   description?: string;
   icon?: string;
+  iconKey?: string;
   type?: string;
 }
 

@@ -1,12 +1,24 @@
-﻿export function prefetchIconsInBackground(input: {
+import { warmIconKeys } from "../icon/iconKeyService";
+
+type SearchLikePayload = {
+  id?: string;
+  name?: string;
+  path?: string;
+  type?: string;
+  iconKey?: string;
+};
+
+function normalizeIconKey(raw: unknown) {
+  const key = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return key || "";
+}
+
+export function prefetchIconsInBackground(input: {
   event: Electron.IpcMainInvokeEvent;
   query: string;
   searchTypeId: string;
   searchSessionId: string;
-  items: Array<{ name: string; path: string; type: string }>;
-  iconDataCache: Map<string, string>;
-  getFileIconData: (filePath: string) => Promise<string>;
-  getAppIconDataStable: (appName: string, appId: string, maxAttempts?: number) => Promise<string>;
+  items: SearchLikePayload[];
   getCurrentIconPrefetchToken: () => number;
   iconPrefetchToken: number;
   shouldCancel?: () => boolean;
@@ -17,9 +29,6 @@
     searchTypeId,
     searchSessionId,
     items,
-    iconDataCache,
-    getFileIconData,
-    getAppIconDataStable,
     getCurrentIconPrefetchToken,
     iconPrefetchToken,
   } = input;
@@ -27,56 +36,34 @@
   const shouldCancel = () => Boolean(input.shouldCancel?.());
 
   (async () => {
-    const batchSize = 32;
-    for (let i = 0; i < items.length; i += batchSize) {
+    const keys = Array.from(
+      new Set(
+        (items || [])
+          .map((it) => normalizeIconKey(it?.iconKey))
+          .filter((k) => Boolean(k)),
+      ),
+    );
+    if (keys.length <= 0) return;
+
+    const batchSize = 24;
+    for (let i = 0; i < keys.length; i += batchSize) {
       if (shouldCancel()) return;
       if (iconPrefetchToken !== getCurrentIconPrefetchToken()) return;
 
-      const batch = items.slice(i, i + batchSize);
-      const updates: Array<{ name: string; path: string; type: string; icon: string }> = [];
-
-      for (const it of batch) {
-        if (shouldCancel()) return;
-        if (iconPrefetchToken !== getCurrentIconPrefetchToken()) return;
-        if (!it?.path) continue;
-
-        if (it.type === "file" || it.type === "folder") {
-          const key = `file:${it.path}`;
-          const cached = iconDataCache.get(key) || "";
-          if (cached) {
-            updates.push({ ...it, icon: cached });
-            continue;
-          }
-          const icon = await getFileIconData(it.path);
-          if (typeof icon === "string" && icon) updates.push({ ...it, icon });
-          continue;
-        }
-
-        if (it.type === "app") {
-          const key = `app:${it.path}`;
-          const cached = iconDataCache.get(key) || "";
-          if (cached) {
-            updates.push({ ...it, icon: cached });
-            continue;
-          }
-          const icon = await getAppIconDataStable(it.name, it.path, 2);
-          if (typeof icon === "string" && icon) updates.push({ ...it, icon });
-          continue;
-        }
-      }
-
-      if (!shouldCancel() && updates.length > 0) {
-        event.sender.send("more-results", {
+      const batch = keys.slice(i, i + batchSize);
+      const readyKeys = await warmIconKeys(batch);
+      if (shouldCancel()) return;
+      if (iconPrefetchToken !== getCurrentIconPrefetchToken()) return;
+      if (readyKeys.length > 0) {
+        event.sender.send("icons-updated", {
           query,
           searchTypeId,
           searchSessionId,
-          results: updates,
+          keys: readyKeys,
         });
       }
-
-      const sleepMs = i === 0 ? 0 : 8;
-      if (sleepMs > 0) await new Promise((resolve) => setTimeout(resolve, sleepMs));
-      else await new Promise((resolve) => setImmediate(resolve as any));
+      await new Promise((resolve) => setTimeout(resolve, i === 0 ? 0 : 10));
     }
   })();
 }
+

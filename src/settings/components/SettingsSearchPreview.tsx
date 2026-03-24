@@ -96,16 +96,6 @@ const SEARCH_PREVIEW_SAMPLES: SearchPreviewSample[] = [
   },
 ];
 
-const PREVIEW_TYPE_LABEL_MAP: Record<SearchPreviewType, string> = {
-  app: "应用",
-  command: "命令",
-  settings: "设置",
-  file: "文件",
-  folder: "文件夹",
-  image: "图片",
-  video: "视频",
-};
-
 type SettingsSearchPreviewProps = {
   draft: AppSettings;
   currentDefaultTypeLabel: string;
@@ -185,28 +175,12 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
     return out;
   };
 
-  const buildBadgeText = (item: SearchPreviewSample) => {
-    if (item.type === "folder") return "文件夹";
-    if (item.type === "settings") return "设置";
-    if (item.type !== "file" && item.type !== "image" && item.type !== "video") return "";
-    if (!item.name.includes(".")) return PREVIEW_TYPE_LABEL_MAP.file;
-    const ext = item.name.split(".").pop()?.toUpperCase();
-    return ext && ext.length <= 6 ? ext : PREVIEW_TYPE_LABEL_MAP.file;
-  };
-
   const renderResultIcon = (item: SearchPreviewSample) => {
-    if (item.type === "folder") return <IconFolder size={35} className="result-icon" />;
-    if (item.type === "settings") return <IconSettings size={35} className="result-icon" />;
-    if (item.type === "file" || item.type === "image" || item.type === "video") {
-      const badge = buildBadgeText(item);
-      return (
-        <span className="result-icon ext-icon" aria-hidden="true">
-          <span className="ext-icon-text">{badge}</span>
-        </span>
-      );
-    }
-    if (item.type === "command") return <IconCommand size={35} className="result-icon" />;
-    return <IconFile size={35} className="result-icon" />;
+    if (item.type === "folder") return <IconFolder size={40} className="result-icon" />;
+    if (item.type === "settings") return <IconSettings size={40} className="result-icon" />;
+    if (item.type === "file" || item.type === "image" || item.type === "video") return <IconFile size={40} className="result-icon" />;
+    if (item.type === "command") return <IconCommand size={40} className="result-icon" />;
+    return <IconFile size={40} className="result-icon" />;
   };
 
   const isLimitedByDisplayCount = (Number(draft.searchDisplayLimit) || 0) < previewRows.length;
@@ -216,24 +190,24 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
       <div className={`container search-container ${draft.compactMode ? "compact" : ""}`}>
         <div className="search-box">
           <div className="search-icon-wrapper">
-            <IconSearch size={18} className="search-icon-svg" />
+            <IconSearch size={18} className="search-icon-svg" variant="mono" />
           </div>
           <div className="search-input-wrap">
             <input type="text" readOnly tabIndex={-1} value="ui-ux-pro-max" aria-label="搜索预览输入框" />
           </div>
           <div className="search-box-right">
             <button type="button" className="clear-btn" tabIndex={-1} aria-label="清空输入" title="清空 (Ctrl+L)">
-              <IconClear size={14} />
+              <IconClear size={14} variant="mono" />
             </button>
             <div className="type-select">
               <span className="type-select-text">{currentDefaultTypeLabel}</span>
             </div>
           </div>
           <button className="settings-btn" type="button" tabIndex={-1} title="打开设置面板">
-            <IconSettings size={18} />
+            <IconSettings size={20} />
           </button>
           <button type="button" className="pin-btn" tabIndex={-1} aria-label="固定搜索面板" title="固定 (Alt+T)">
-            <IconPinOff size={18} />
+            <IconPinOff size={20} />
           </button>
         </div>
 
@@ -241,7 +215,6 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
           <div className="settings-preview-results-scroll">
             {visibleRows.map((item, index) => {
               const isSelected = index === 0;
-              const badgeText = buildBadgeText(item);
               const showPathLine = draft.showResultPath && typeof item.path === "string" && /^[a-zA-Z]:\\/.test(item.path);
               const actionIds = getVisibleActionIdsForItem(item);
               return (
@@ -252,25 +225,23 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
                     <div className="result-meta">
                       <div className="result-name-row">
                         <span className="app-name">{item.name}</span>
-                        {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
-                        {isSelected ? <span className="shortcut-hint">ENTER</span> : null}
                       </div>
                       {showPathLine ? <span className="app-path">{item.path}</span> : null}
                     </div>
                     <div className="action-group">
                       {actionIds.includes("openFolder") ? (
                         <button type="button" className="action-btn" data-action-id="openFolder" tabIndex={-1}>
-                          <IconOpenFolder size={16} />
+                          <IconOpenFolder size={18} />
                         </button>
                       ) : null}
                       {actionIds.includes("copyPath") ? (
                         <button type="button" className="action-btn" data-action-id="copyPath" tabIndex={-1}>
-                          <IconCopyPath size={16} />
+                          <IconCopyPath size={18} />
                         </button>
                       ) : null}
                       {actionIds.includes("runAsAdmin") ? (
                         <button type="button" className="action-btn" data-action-id="runAsAdmin" tabIndex={-1}>
-                          <IconRunAsAdmin size={16} />
+                          <IconRunAsAdmin size={18} />
                         </button>
                       ) : null}
                     </div>

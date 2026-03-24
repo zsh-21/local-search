@@ -6,6 +6,7 @@ import {
   IconChevronUp,
   IconCopyPath,
   IconDeleteHistory,
+  IconFile,
   IconFolder,
   IconOpenFolder,
   IconRunAsAdmin,
@@ -69,11 +70,6 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
     return classes.join(" ");
   };
 
-  const getExtension = (targetPath: string) => {
-    const parts = targetPath.split(".");
-    return parts.length > 1 ? parts.pop()?.toUpperCase() : "";
-  };
-
   const isImageFile = (targetPath: string) => {
     const ext = (targetPath.split(".").pop() || "").toLowerCase();
     return ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg"].includes(ext);
@@ -87,34 +83,32 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
   };
 
   const renderResultIcon = (item: AppItem, isImg: boolean) => {
+    const iconData =
+      (typeof item.iconKey === "string" && item.iconKey ? c.iconByKey[item.iconKey.toLowerCase()] : "") ||
+      item.icon ||
+      "";
     if (isCalcLikeItem(item)) {
       if (c.calculatorIconDataUrl) {
         return <img className={buildIconClassName(c.calculatorIconDataUrl)} src={c.calculatorIconDataUrl} alt="" />;
       }
-      return <IconCalc size={35} className="result-icon" />;
+      return <IconCalc size={40} className="result-icon" />;
     }
     if (item.type === "folder") {
-      return <IconFolder size={35} className="result-icon" />;
+      return <IconFolder size={40} className="result-icon" />;
     }
     if (item.type === "app") {
-      if (!item.icon) return <span className="result-icon placeholder" />;
-      return <img className={buildIconClassName(item.icon)} src={item.icon} alt="" />;
+      if (!iconData) return <span className="result-icon placeholder fallback-icon fallback-app-icon" aria-hidden="true" />;
+      return <img className={buildIconClassName(iconData)} src={iconData} alt="" />;
     }
     if (item.type === "settings") {
-      return <IconSettings size={35} className="result-icon" />;
+      return <IconSettings size={40} className="result-icon" />;
     }
     if (item.type === "file") {
-      if (item.icon && isImg) return <img className="result-icon image-preview" src={item.icon} alt="" />;
-      if (item.icon) return <img className={buildIconClassName(item.icon)} src={item.icon} alt="" />;
-      const ext = (item.path.split(".").pop() || "").trim().toUpperCase();
-      const label = ext && ext.length <= 6 ? ext : "FILE";
-      return (
-        <span className="result-icon ext-icon" aria-hidden="true">
-          <span className="ext-icon-text">{label}</span>
-        </span>
-      );
+      if (iconData && isImg) return <img className="result-icon image-preview" src={iconData} alt="" />;
+      if (iconData) return <img className={buildIconClassName(iconData)} src={iconData} alt="" />;
+      return <IconFile size={40} className="result-icon" />;
     }
-    return <span className="result-icon placeholder" />;
+    return <span className="result-icon placeholder fallback-icon fallback-generic-icon" aria-hidden="true" />;
   };
 
   const Row = ({
@@ -131,8 +125,6 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
 
     const isSelected = index === c.selectedIndex;
     const isImg = item.type === "file" && isImageFile(item.path);
-    const lowerPath = (item.path || "").toLowerCase();
-    const isLink = lowerPath.endsWith(".lnk") || lowerPath.endsWith(".url");
     const isNativeCalcItem = item.type === "calc";
     const calcExpression = isNativeCalcItem ? String(item.path || "").trim() : "";
     const calcResult = isNativeCalcItem ? String(item.name || "").trim() : "";
@@ -145,8 +137,6 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
     const tooltipAddress = showPathLine ? item.path : undefined;
 
     const actionIds = getVisibleActionIdsForItem(item);
-    const badgeText =
-      item.type === "folder" ? "文件夹" : item.type === "settings" ? "设置" : isLink ? "LINK" : item.type === "file" ? getExtension(item.path) : "";
 
     return (
       <div
@@ -168,8 +158,6 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
               <span className="app-name" title={displayName} data-title-delay="500" data-title-no-scroll="true">
                 {renderHighlightedText(displayName, nameHighlightRanges)}
               </span>
-              {badgeText ? <span className="file-ext-badge">{badgeText}</span> : null}
-              {isSelected && <span className="shortcut-hint">ENTER</span>}
             </div>
             {showPathLine ? (
               <span className="app-path" title={tooltipAddress} data-title-delay="500" data-title-no-scroll="true">
@@ -198,7 +186,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
                     title="打开所在目录"
                     aria-label="打开所在目录"
                   >
-                    <IconOpenFolder size={16} />
+                    <IconOpenFolder size={18} />
                   </button>
                 );
               }
@@ -219,7 +207,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
                     title="复制路径"
                     aria-label="复制路径"
                   >
-                    <IconCopyPath size={16} />
+                    <IconCopyPath size={18} />
                   </button>
                 );
               }
@@ -240,7 +228,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
                     title="以管理员身份运行"
                     aria-label="以管理员身份运行"
                   >
-                    <IconRunAsAdmin size={16} />
+                    <IconRunAsAdmin size={18} />
                   </button>
                 );
               }
@@ -261,7 +249,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
                     title="删除该历史"
                     aria-label="删除该历史"
                   >
-                    <IconDeleteHistory size={16} />
+                    <IconDeleteHistory size={18} />
                   </button>
                 );
               }
@@ -278,6 +266,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
     const ignored = Array.isArray(c.settings.ignoredPaths) ? c.settings.ignoredPaths : [];
     const visibleCount = c.visibleResults.length;
     const hasIgnored = ignored.some((p) => typeof p === "string" && p.trim().length > 0);
+    const isShortQueryMode = !isHistoryMode && !isCalcMode && c.trimmedQuery.length > 0 && c.trimmedQuery.length <= 2;
     return (
       <div className="list-bottom-info">
         {isHistoryMode ? (
@@ -287,6 +276,9 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
         ) : (
           <div className="no-more-results">{`共 ${visibleCount} 个结果`}</div>
         )}
+        {isShortQueryMode ? (
+          <div className="no-more-results ignore-tips">短查询（1~2 字符）仅展示前 10 条结果，不再继续补批。</div>
+        ) : null}
         {hasIgnored ? (
           <div className="no-more-results ignore-tips">
             如果搜索不到您想要的文件，可以尝试在【设置-搜索-黑名单路径】移除对应的路径再试~
@@ -336,7 +328,7 @@ export function SearchResultsPanel({ c, isHistoryMode, isCalcMode, statusText }:
           <BottomInfo />
           {c.showBackToTop && (
             <button className="back-to-top-btn" onClick={c.scrollToTop} title="返回顶部" type="button">
-              <IconChevronUp size={18} />
+              <IconChevronUp size={20} />
             </button>
           )}
         </>

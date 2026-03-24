@@ -1,5 +1,5 @@
 import { fileIndex, isIgnoredPathByCache } from "../file/indexService";
-import { reconcileRecentIndex, recentIndex, normalizeRecentKey } from "../file/watcher";
+import { recentIndex, normalizeRecentKey } from "../file/watcher";
 import { loadSettings } from "../config/settings";
 import { loadHistoryStats, normalizeHistoryKey, normalizeExtKey } from "../history/history";
 import { getInstalledAppsCache } from "../apps/installedApps";
@@ -12,7 +12,6 @@ type SearchFilesOptions = { searchTypeId?: string; searchSessionId?: string; dri
 
 const searchFilesDeps: SearchFilesDeps = {
   fileIndex,
-  reconcileRecentIndex: () => void reconcileRecentIndex(),
   loadSettings,
   loadHistoryStats,
   normalizeHistoryKey,

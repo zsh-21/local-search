@@ -15,6 +15,7 @@ import {
 import { getCacheArtifactPaths } from './indexCacheLayout';
 import {
   FILE_INDEX_ENTRIES_PER_WORKER,
+  FILE_INDEX_LAYOUT_VERSION,
   FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
   FILE_INDEX_VERSION,
   FILE_INDEX_WORKER_MAX,
@@ -26,6 +27,7 @@ export const FILE_INDEX_PATH = getFileIndexPath();
 export const FILE_INDEX_META_PATH = getFileIndexMetaPath();
 // 索引版本已抽离：便于你集中管理“结构变更触发重建”的开?
 export { FILE_INDEX_VERSION };
+export { FILE_INDEX_LAYOUT_VERSION };
 
 type FileIndexWorkerOp =
   | 'init'
@@ -479,20 +481,19 @@ export async function clearFileIndexCacheOnDisk() {
   await Promise.all(tasks);
 }
 
-export function loadFileIndexMeta(): { version: number; appVersion?: string; driveSignature?: string } | null {
+export function loadFileIndexMeta(): { version: number; layoutVersion?: number } | null {
   try {
     if (!existsSync(FILE_INDEX_META_PATH)) return null;
     const raw = JSON.parse(readFileSync(FILE_INDEX_META_PATH, 'utf-8'));
     if (typeof raw?.version !== 'number') return null;
-    const appVersion = typeof raw?.appVersion === 'string' ? raw.appVersion : undefined;
-    const driveSignature = typeof raw?.driveSignature === 'string' ? raw.driveSignature : undefined;
-    return { version: raw.version, appVersion, driveSignature };
+    const layoutVersion = typeof raw?.layoutVersion === 'number' ? raw.layoutVersion : undefined;
+    return { version: raw.version, layoutVersion };
   } catch {
     return null;
   }
 }
 
-export function saveFileIndexMeta(meta: { version: number; appVersion?: string; driveSignature?: string }) {
+export function saveFileIndexMeta(meta: { version: number; layoutVersion?: number }) {
   try {
     writeFileSync(FILE_INDEX_META_PATH, JSON.stringify(meta));
   } catch {}

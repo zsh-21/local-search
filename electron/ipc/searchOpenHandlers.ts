@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { recordHistoryItem } from "../history/history";
 import { getInstalledAppsCache } from "../apps/installedApps";
 import { getAppIconDataStable, getFileIconData } from "../icon/iconService";
+import { resolveIconsByKeys } from "../icon/iconKeyService";
 import { clearLocalCacheAll } from "../utils/cacheCleaner";
 import { resolveAppId } from "../win/resolveAppId";
 import { openResolvedTarget } from "../utils/open";
@@ -188,7 +189,7 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
       const commandLine = `cmd.exe /c start \"\" ${deps.quoteCmdArg(targetToRun)}`;
       const resp = await deps.sudoExec(commandLine);
       if (resp.ok) BrowserWindow.fromWebContents(event.sender)?.hide();
-      return false;
+      return resp;
     } catch {
       return { ok: false, message: "以管理员身份运行失败" };
     }
@@ -241,6 +242,16 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
       return "";
     }
   });
+
+  ipcMain.handle(
+    "get-icons-by-keys",
+    async (_event, payload: { keys?: string[]; cacheOnly?: boolean; max?: number } | string[]) => {
+      const keys = Array.isArray(payload) ? payload : Array.isArray(payload?.keys) ? payload.keys : [];
+      const cacheOnly = Array.isArray(payload) ? true : payload?.cacheOnly !== false;
+      const max = Array.isArray(payload) ? keys.length : payload?.max;
+      return resolveIconsByKeys(keys, { cacheOnly, max });
+    },
+  );
 
   ipcMain.handle("search-files", async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
     return await searchFilesViaService(event, query, options);

@@ -39,6 +39,8 @@ export const SETTINGS_WINDOW_MIN_HEIGHT = 520;
 
 // 索引版本：结构变更时递增，用于触发重建
 export const FILE_INDEX_VERSION = 4;
+// 索引布局版本：涉及快照分桶/迁移规则变更时递增，用于一次性迁移。
+export const FILE_INDEX_LAYOUT_VERSION = 2;
 
 // Worker 数量限制：避免过多线程竞争导致性能抖动
 export const FILE_INDEX_WORKER_MIN = 1;

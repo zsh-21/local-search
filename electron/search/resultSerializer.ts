@@ -1,3 +1,5 @@
+import { deriveIconKey } from "../icon/iconKey";
+
 export function createSearchResultId(input: { type?: string; path?: string; name?: string }) {
   const type = typeof input?.type === "string" ? input.type.trim().toLowerCase() : "";
   const path = typeof input?.path === "string" ? input.path.trim().toLowerCase() : "";
@@ -16,14 +18,18 @@ export function serializeSearchResult(input: any) {
     name,
     path,
     type,
+    iconKey: deriveIconKey({
+      type,
+      path,
+      name,
+      isDirectory: Boolean(input?.isDirectory),
+    }),
   };
 
   if (typeof input?.description === "string" && input.description) out.description = input.description;
-  if (typeof input?.icon === "string" && input.icon) out.icon = input.icon;
   if (typeof input?.source === "string" && input.source) out.source = input.source;
   if (typeof input?.isDirectory === "boolean") out.isDirectory = input.isDirectory;
   if (input?.metaFlags && typeof input.metaFlags === "object") out.metaFlags = input.metaFlags;
 
   return out;
 }
-

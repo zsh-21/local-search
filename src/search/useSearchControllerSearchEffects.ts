@@ -2,6 +2,51 @@ import { startTransition, useEffect } from "react";
 import { dedupeResults, mergeResultsStable } from "./searchResultUtils";
 
 export function useSearchControllerSearchEffects(params: any) {
+  const mergeIconMap = (next: Record<string, string>) => {
+    if (!next || typeof next !== "object") return;
+    params.setIconByKey((prev: Record<string, string>) => {
+      const merged = { ...(prev || {}) };
+      let changed = false;
+      for (const [key, value] of Object.entries(next)) {
+        if (!key || typeof value !== "string" || !value) continue;
+        if (merged[key] === value) continue;
+        merged[key] = value;
+        changed = true;
+      }
+      if (!changed) return prev;
+      params.iconByKeyRef.current = merged;
+      return merged;
+    });
+  };
+
+  const requestIconsByKeys = async (keys: string[]) => {
+    if (!window.ipcRenderer) return;
+    const normalized = Array.from(
+      new Set(
+        (keys || [])
+          .map((k) => (typeof k === "string" ? k.trim().toLowerCase() : ""))
+          .filter(Boolean),
+      ),
+    ).slice(0, 180);
+    if (normalized.length <= 0) return;
+    const resp = (await window.ipcRenderer.invoke("get-icons-by-keys", {
+      keys: normalized,
+      cacheOnly: false,
+      max: normalized.length,
+    })) as Record<string, string> | undefined;
+    if (!resp || typeof resp !== "object") return;
+    mergeIconMap(resp);
+  };
+
+  const requestIconsForItems = (items: any[]) => {
+    const known = params.iconByKeyRef.current || {};
+    const keys = (items || [])
+      .map((it) => (typeof it?.iconKey === "string" ? it.iconKey.trim().toLowerCase() : ""))
+      .filter((key) => key && !known[key]);
+    if (keys.length <= 0) return;
+    void requestIconsByKeys(keys);
+  };
+
   const clearFlushAppendTimer = () => {
     if (params.flushAppendTimerRef.current != null) {
       window.clearTimeout(params.flushAppendTimerRef.current);
@@ -64,6 +109,29 @@ export function useSearchControllerSearchEffects(params: any) {
     return () => {
       flushPendingAppends();
       window.ipcRenderer?.off("more-results", handler);
+    };
+  }, []);
+
+  useEffect(() => {
+    requestIconsForItems(params.results || []);
+  }, [params.results]);
+
+  useEffect(() => {
+    const handler = (_event: any, payload: { query?: string; searchTypeId?: string; searchSessionId?: string; keys?: string[] }) => {
+      const currentQuery = params.parseDrivePrefix(params.queryRef.current).term;
+      const currentTypeId = params.searchTypeIdRef.current;
+      const currentSessionId = params.searchSessionIdRef.current;
+      if (!currentQuery || !currentTypeId || !currentSessionId) return;
+      if ((payload?.query || "") !== currentQuery) return;
+      if ((payload?.searchTypeId || "") !== currentTypeId) return;
+      if ((payload?.searchSessionId || "") !== currentSessionId) return;
+      const keys = Array.isArray(payload?.keys) ? payload.keys : [];
+      if (keys.length <= 0) return;
+      void requestIconsByKeys(keys);
+    };
+    window.ipcRenderer?.on("icons-updated", handler);
+    return () => {
+      window.ipcRenderer?.off("icons-updated", handler);
     };
   }, []);
 

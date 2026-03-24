@@ -79,6 +79,61 @@ html[data-theme="dark"] {
   --fs-result-selected-gradient: linear-gradient(96deg, rgba(141, 162, 190, 0.24) 0%, rgba(98, 115, 138, 0.18) 100%);
   --fs-result-selected-border: rgba(168, 185, 207, 0.56);
 }
+html[data-theme="dark-win"] {
+  --fs-bg: #211f35;
+  --fs-surface: rgba(46, 43, 68, 0.92);
+  --fs-surface-2: rgba(249, 245, 255, 0.05);
+  --fs-surface-active: rgba(58, 54, 84, 0.96);
+  --fs-border: rgba(238, 232, 255, 0.08);
+  --fs-border-soft: rgba(238, 232, 255, 0.05);
+  --fs-text: #fbf8ff;
+  --fs-text-secondary: #e7def7;
+  --fs-search-text: #fdfaff;
+  --fs-muted: #b7aecb;
+  --fs-accent: #d39ae8;
+  --fs-nav-active-accent: #d39ae8;
+  --fs-accent-soft: rgba(211, 154, 232, 0.22);
+  --fs-shadow: 0 28px 64px -32px rgba(3, 4, 12, 0.88);
+  --fs-dots: rgba(211, 154, 232, 0.22);
+  --fs-glow: 0 0 24px rgba(211, 154, 232, 0.16);
+  /* Win11 暗色：紫黑基底配合低对比玻璃层次，尽量贴近截图里的沉稳通透感。 */
+  --fs-window-bg:
+    radial-gradient(circle at 20% -12%, rgba(112, 102, 188, 0.18) 0%, transparent 42%),
+    linear-gradient(180deg, rgba(38, 35, 58, 0.98) 0%, rgba(35, 32, 55, 0.99) 100%);
+  --fs-window-border: rgba(240, 234, 255, 0.08);
+  --fs-panel-bg: rgba(47, 44, 72, 0.78);
+  --fs-control-bg: rgba(56, 53, 72, 0.92);
+  --fs-control-hover: rgba(66, 62, 85, 0.96);
+  --fs-menu-bg: rgba(44, 41, 65, 0.97);
+  --fs-item-hover: rgba(255, 255, 255, 0.055);
+  --fs-selected-bg: rgba(217, 167, 236, 0.14);
+  --fs-selected-border: rgba(225, 192, 241, 0.42);
+  --fs-focus-shadow: 0 0 0 3px rgba(211, 154, 232, 0.18), 0 16px 30px -18px rgba(0, 0, 0, 0.72);
+  --fs-radius-window: 10px;
+  --fs-radius-panel: 14px;
+  --fs-radius-control: 12px;
+  --fs-radius-item: 12px;
+  /* 只保留轻度模糊和适度提饱和，避免深色面板发灰。 */
+  --fs-theme-blur: 14px;
+  --fs-theme-saturate: 118%;
+  --fs-theme-contrast: 104%;
+  --fs-brand-blue: #1a73e8;
+  --fs-brand-red: #ea4335;
+  --fs-brand-yellow: #fbbc05;
+  --fs-brand-green: #34a853;
+  --fs-font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --fs-icon-filter: invert(1) brightness(1.08);
+  /* 面板和控件都只保留一层微亮描边，保持系统设置页那种克制的边缘关系。 */
+  --fs-material-frame: inset 0 0 0 1px rgba(255, 255, 255, 0.03), inset 0 0 0 2px rgba(19, 17, 33, 0.12);
+  --fs-material-panel-frame: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 0 0 1px rgba(245, 238, 255, 0.06);
+  --fs-material-control-frame: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --fs-control-accent-gradient: linear-gradient(102deg, rgba(211, 154, 232, 0.14) 0%, rgba(132, 121, 214, 0.12) 100%);
+  --fs-control-accent-border: rgba(225, 192, 241, 0.18);
+  --fs-type-active-gradient: linear-gradient(102deg, rgba(211, 154, 232, 0.2) 0%, rgba(132, 121, 214, 0.14) 100%);
+  --fs-type-active-border: rgba(225, 192, 241, 0.34);
+  --fs-result-selected-gradient: linear-gradient(98deg, rgba(211, 154, 232, 0.2) 0%, rgba(132, 121, 214, 0.16) 100%);
+  --fs-result-selected-border: rgba(225, 192, 241, 0.38);
+}
 html[data-theme="alloy"] {
   --fs-bg: #111922;
   --fs-surface: #1a2837;

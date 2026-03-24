@@ -163,8 +163,8 @@ html[data-bg-tone="dark"] .setting-item-title {
   flex: 1;
 }
 .setting-item-icon {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
   background: var(--fs-control-hover, var(--fs-surface));
   border: 1px solid var(--fs-border-soft, var(--fs-border));

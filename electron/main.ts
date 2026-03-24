@@ -2,8 +2,14 @@ import { app, globalShortcut, BrowserWindow } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadSettings } from './config/settings';
-import { fileIndex, loadFileIndexMeta, saveFileIndexMeta, FILE_INDEX_VERSION } from './file/indexService';
-import { SystemDetector } from './file/systemDetector';
+import {
+  fileIndex,
+  loadFileIndexMeta,
+  saveFileIndexMeta,
+  FILE_INDEX_LAYOUT_VERSION,
+  FILE_INDEX_VERSION,
+  clearFileIndexCacheOnDisk,
+} from './file/indexService';
 import { getFileIndexStatsPath } from './constants/storagePaths';
 import { startUserDirectoryWatchers, closeAllWatchers, trimRecentIndex } from './file/watcher';
 import {
@@ -22,7 +28,7 @@ import { registerIpcHandlers } from './ipc/ipcHandlers';
 import { ensureWindowsAppContextMenu } from './win/contextMenu';
 import { handleAddToQuickListArgv } from './app/quickList';
 import { clearIconCaches, prewarmInstalledAppIcons } from './icon/iconService';
-import { loadPersistedAppIconCache } from './icon/iconCache';
+import { clearPersistedIconStore, restoreIconManifest } from './icon/iconCache';
 import { primeBootstrapState, setBootstrapIndexStatus } from './app/bootstrapState';
 
 process.env.DIST = path.join(__dirname, '../dist');
@@ -43,15 +49,6 @@ const ICON_FIRST_ROUND_CONCURRENCY = 2;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-function buildDriveSignature(drives: Array<{ mountPoint?: string }>) {
-  const list = drives
-    .map((d) => String(d?.mountPoint || '').trim())
-    .filter(Boolean)
-    .map((d) => d.toUpperCase())
-    .sort();
-  return list.join('|');
 }
 
 function startIndexStatsWriter() {
@@ -172,7 +169,16 @@ if (!gotTheLock) {
 
   app.whenReady().then(async () => {
     // 启动即恢复持久化图标缓存，优先提升首轮搜索命中速度。
-    loadPersistedAppIconCache();
+    const metaBeforeStartup = loadFileIndexMeta();
+    const needLayoutMigration =
+      !metaBeforeStartup ||
+      metaBeforeStartup.version !== FILE_INDEX_VERSION ||
+      metaBeforeStartup.layoutVersion !== FILE_INDEX_LAYOUT_VERSION;
+    if (needLayoutMigration) {
+      await clearFileIndexCacheOnDisk().catch(() => {});
+      await clearPersistedIconStore().catch(() => {});
+    }
+    restoreIconManifest();
     const initialSettings = loadSettings();
 
     // 隐藏创建搜索窗口，提前完成渲染资源预热，避免托盘出现后首次呼出卡顿。
@@ -194,20 +200,16 @@ if (!gotTheLock) {
       if (startupIndexBootstrapPromise) return startupIndexBootstrapPromise;
       startupIndexBootstrapPromise = (async () => {
         try {
-          const currentAppVersion = app.getVersion();
           // 复用启动阶段缓存加载任务，保证顺序固定为 loadCache -> 判定 -> rebuild/buildIfEmpty。
           const cacheLoaded = await indexCacheLoadPromise;
           const meta = loadFileIndexMeta();
-          const systemInfo = await SystemDetector.getInstance().detect();
-          const driveSignature = buildDriveSignature(systemInfo?.drives || []);
           const shouldRebuild =
             !meta ||
             meta.version !== FILE_INDEX_VERSION ||
-            meta.appVersion !== currentAppVersion ||
-            meta.driveSignature !== driveSignature;
+            meta.layoutVersion !== FILE_INDEX_LAYOUT_VERSION;
           setBootstrapIndexStatus({ hasCache: cacheLoaded, isIndexing: shouldRebuild || !cacheLoaded });
           if (shouldRebuild) {
-            saveFileIndexMeta({ version: FILE_INDEX_VERSION, appVersion: currentAppVersion, driveSignature });
+            saveFileIndexMeta({ version: FILE_INDEX_VERSION, layoutVersion: FILE_INDEX_LAYOUT_VERSION });
             await fileIndex.rebuild();
             return;
           }
@@ -245,18 +247,18 @@ if (!gotTheLock) {
     // 保留后续两轮补热，覆盖启动后动态刷新到的新应用列表。
     setTimeout(() => {
       const apps = getInstalledAppsCache();
-      void prewarmInstalledAppIcons(apps, { maxCount: 320, concurrency: 3 });
+      void prewarmInstalledAppIcons(apps, { maxCount: 320, concurrency: 3 }).catch(() => undefined);
     }, 2000);
     setTimeout(() => {
       const apps = getInstalledAppsCache();
-      void prewarmInstalledAppIcons(apps, { maxCount: 480, concurrency: 2 });
+      void prewarmInstalledAppIcons(apps, { maxCount: 480, concurrency: 2 }).catch(() => undefined);
     }, 12000);
 
     void ensureWindowsAppContextMenu();
     try {
       handleAddToQuickListArgv(process.argv);
     } catch {}
-    void startUserDirectoryWatchers();
+    void startUserDirectoryWatchers().catch(() => undefined);
     startResourceGuard();
     startIndexStatsWriter();
     app.setLoginItemSettings({ openAtLogin: initialSettings.autoStart, openAsHidden: true, path: app.getPath('exe') });

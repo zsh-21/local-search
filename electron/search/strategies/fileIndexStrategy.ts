@@ -24,6 +24,7 @@ export const fileIndexStrategy: SearchStrategy = {
   id: "fileIndex",
   async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
+    if (ctx.queryLength <= 1) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
 
     const currentSettings = deps.loadSettings();
     const customExts = Array.isArray(currentSettings.customSearchTypes)
@@ -86,6 +87,11 @@ export const fileIndexStrategy: SearchStrategy = {
     for (const r of filteredFiles) {
       if (ctx.isSessionCancelled()) break;
       const type = r.isDirectory ? "folder" : "file";
+      if (ctx.queryLength === 2) {
+        const q = ctx.lowerQuery;
+        const nameLower = String(r.name || "").toLowerCase();
+        if (!nameLower.startsWith(q)) continue;
+      }
       const matchTarget = ctx.isPathQuery ? r.path : r.name;
       const { weightedScore, staticScore, matchIndex, nameLen } = ctx.nameScorer.computeWeightedNameMatch(matchTarget);
       if (staticScore <= 0) continue;

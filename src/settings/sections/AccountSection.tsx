@@ -182,7 +182,7 @@ export function AccountSection({
               >
                 {/* 刷新按钮复用统一图标，状态动画仍由现有 spin 样式控制。 */}
                 {/* 刷新图标使用双色叠层：与设置页其他图标保持统一；旋转动画仍由 className 控制。 */}
-                <IconRefresh size={20} variant="duotone" className={isRefreshingStatus ? "spin-anim" : ""} />
+                <IconRefresh size={22} variant="duotone" className={isRefreshingStatus ? "spin-anim" : ""} />
               </button>
             </div>
 

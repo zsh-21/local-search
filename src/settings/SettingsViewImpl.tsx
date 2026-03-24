@@ -22,10 +22,10 @@ const LIGHT_THEMES = new Set(["chrome", "mac", "paper"]);
 // 设置页渲染层：负责整体布局与导航，具体逻辑集中在 useSettingsController，分区 UI 下沉到 sections
 const NAV_ITEMS: { key: Exclude<SettingsTabKey, "account">; label: string; icon: JSX.Element }[] = [
   // 设置侧栏图标统一复用组件，避免在业务组件中继续堆叠内联 SVG。
-  { key: "general", label: "通用", icon: <IconGeneral size={17} variant="duotone" /> },
-  { key: "search", label: "搜索", icon: <IconSearch size={17} variant="duotone" /> },
-  { key: "shortcuts", label: "快捷键", icon: <IconShortcuts size={17} variant="duotone" /> },
-  { key: "appearance", label: "外观", icon: <IconAppearance size={17} variant="duotone" /> },
+  { key: "general", label: "通用", icon: <IconGeneral size={20} variant="duotone" /> },
+  { key: "search", label: "搜索", icon: <IconSearch size={20} variant="duotone" /> },
+  { key: "shortcuts", label: "快捷键", icon: <IconShortcuts size={20} variant="duotone" /> },
+  { key: "appearance", label: "外观", icon: <IconAppearance size={20} variant="duotone" /> },
 ];
 
 const SECTION_META: Record<SettingsTabKey, { title: string; desc: string }> = {
@@ -134,7 +134,7 @@ export function SettingsViewImpl() {
             }}
           >
             {/* 官网按钮改为统一的外链图标，避免在同一行里混入另一套线稿。 */}
-            <IconOfficialLink size={14} variant="duotone" />
+            <IconOfficialLink size={16} variant="duotone" />
           </button>
         </div>
         <div className="settings-header-spacer" />
@@ -190,7 +190,7 @@ export function SettingsViewImpl() {
                         {c.user.avatarText || c.user.nickname?.slice(0, 1).toUpperCase()}
                       </span>
                     ) : (
-                      <IconAccount size={18} variant="duotone" className="settings-nav-account-avatar-icon" />
+                      <IconAccount size={20} variant="duotone" className="settings-nav-account-avatar-icon" />
                     )}
                   </span>
                 </div>

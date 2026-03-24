@@ -359,7 +359,7 @@ export function SearchSection({
         onFocus={(e) => showInfoTooltipByRect(help.text, help.example, e.currentTarget.getBoundingClientRect())}
         onBlur={() => setTooltip(null)}
       >
-        <IconInfo size={14} variant="duotone" />
+        <IconInfo size={16} variant="duotone" />
       </button>
     </span>
   );

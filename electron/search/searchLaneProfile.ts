@@ -17,7 +17,7 @@ function clampInt(value: number, min: number, max: number) {
 }
 
 function scaleLimit(value: number, factor: number) {
-  return Math.max(10, Math.floor(value * factor));
+  return Math.max(0, Math.floor(value * factor));
 }
 
 export function createSearchLaneProfile(input: {
@@ -31,36 +31,46 @@ export function createSearchLaneProfile(input: {
   const isIndexingHint = Boolean(input.isIndexingHint);
 
   let matchMode: SearchMatchMode = "full";
-  let fastFileLimit = isAllOrFile ? 220 : 320;
-  let fullFileLimit = isAllOrFile ? 500 : 900;
-  let fastRecentLimit = 48;
-  let fullRecentLimit = 120;
+  let fastFileLimit = isAllOrFile ? 90 : 160;
+  let fullFileLimit = isAllOrFile ? 260 : 520;
+  let fastRecentLimit = 20;
+  let fullRecentLimit = 80;
+  let enableFullLane = true;
 
-  if (queryLength <= 2) {
+  if (queryLength <= 1) {
     matchMode = "short";
-    fastFileLimit = isAllOrFile ? 70 : 120;
-    fullFileLimit = isAllOrFile ? 160 : 260;
-    fastRecentLimit = 16;
-    fullRecentLimit = 40;
+    fastFileLimit = 0;
+    fullFileLimit = 0;
+    fastRecentLimit = 8;
+    fullRecentLimit = 16;
+    enableFullLane = false;
+  } else if (queryLength === 2) {
+    matchMode = "short";
+    fastFileLimit = isAllOrFile ? 24 : 40;
+    fullFileLimit = isAllOrFile ? 42 : 80;
+    fastRecentLimit = 12;
+    fullRecentLimit = 24;
+    enableFullLane = false;
   } else if (queryLength <= 4) {
     matchMode = "medium";
-    fastFileLimit = isAllOrFile ? 120 : 220;
-    fullFileLimit = isAllOrFile ? 300 : 520;
-    fastRecentLimit = 32;
-    fullRecentLimit = 80;
+    fastFileLimit = isAllOrFile ? 60 : 120;
+    fullFileLimit = isAllOrFile ? 180 : 360;
+    fastRecentLimit = 16;
+    fullRecentLimit = 60;
+    enableFullLane = true;
   }
 
   if (isIndexingHint) {
-    fastFileLimit = scaleLimit(fastFileLimit, 0.7);
-    fullFileLimit = scaleLimit(fullFileLimit, 0.75);
-    fastRecentLimit = scaleLimit(fastRecentLimit, 0.8);
-    fullRecentLimit = scaleLimit(fullRecentLimit, 0.85);
+    fastFileLimit = scaleLimit(fastFileLimit, 0.8);
+    fullFileLimit = scaleLimit(fullFileLimit, 0.85);
+    fastRecentLimit = scaleLimit(fastRecentLimit, 0.9);
+    fullRecentLimit = scaleLimit(fullRecentLimit, 0.9);
   }
 
-  fastFileLimit = clampInt(fastFileLimit, 20, 1500);
-  fullFileLimit = clampInt(Math.max(fullFileLimit, fastFileLimit + 20), 40, 4000);
-  fastRecentLimit = clampInt(fastRecentLimit, 5, 300);
-  fullRecentLimit = clampInt(Math.max(fullRecentLimit, fastRecentLimit), 10, 600);
+  fastFileLimit = clampInt(fastFileLimit, 0, 1500);
+  fullFileLimit = clampInt(Math.max(fullFileLimit, fastFileLimit), 0, 4000);
+  fastRecentLimit = clampInt(fastRecentLimit, 0, 300);
+  fullRecentLimit = clampInt(Math.max(fullRecentLimit, fastRecentLimit), 0, 600);
 
   return {
     matchMode,
@@ -68,7 +78,7 @@ export function createSearchLaneProfile(input: {
     fullFileLimit,
     fastRecentLimit,
     fullRecentLimit,
-    enableFullLane: true,
+    enableFullLane,
   };
 }
 

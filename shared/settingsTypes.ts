@@ -49,6 +49,7 @@ export interface AppSettings {
   // 历史配置中的已移除主题会在归一化阶段回落到 dark，避免出现无效主题值。
   theme:
     | "dark"
+    | "dark-win"
     | "vector"
     | "noir"
     | "oxide"

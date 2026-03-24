@@ -100,7 +100,7 @@ const EXT_ICON_MAP: Record<string, string> = {
 	'.msc': 'file-cog.svg',
 };
 
-function getBundledIconDataByName(name: string) {
+export function getBundledIconDataByName(name: string) {
 	if (!name || !BUNDLED_ICON_DIR) return '';
 	const key = name.toLowerCase();
 	const cached = bundledIconDataCache.get(key);
@@ -128,6 +128,24 @@ function getBundledIconForPath(filePath: string) {
 	const ext = path.extname(filePath).toLowerCase();
 	const iconName = EXT_ICON_MAP[ext] || 'file.svg';
 	return getBundledIconDataByName(iconName);
+}
+
+export function getBundledIconForExtension(ext: string) {
+	const normalizedExt = String(ext || '').toLowerCase();
+	const iconName = EXT_ICON_MAP[normalizedExt] || 'file.svg';
+	return getBundledIconDataByName(iconName);
+}
+
+export function getDefaultFolderIconData() {
+	return getBundledIconDataByName('folder.svg');
+}
+
+export function getDefaultCommandIconData() {
+	return getBundledIconDataByName('command.svg') || getBundledIconDataByName('file-cog.svg') || getBundledIconDataByName('file.svg');
+}
+
+export function getDefaultSettingsIconData() {
+	return getBundledIconDataByName('settings.svg') || getBundledIconDataByName('file-cog.svg') || getBundledIconDataByName('file.svg');
 }
 
 function getImageMimeByExt(ext: string) {

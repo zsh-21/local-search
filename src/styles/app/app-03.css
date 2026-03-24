@@ -39,9 +39,9 @@
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fs-accent) 30%, transparent));
 }
 .settings-btn {
-  width: 27px;
+  width: 26px;
   /* 稍微减小尺寸 */
-  height: 28px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -50,18 +50,15 @@
   color: var(--fs-muted);
   cursor: pointer;
   padding: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   -webkit-app-region: no-drag;
   transition: all 0.2s;
 }
 .settings-btn:hover {
-  /* background: var(--fs-surface-2); */
   color: var(--fs-accent);
-  /* border-color: var(--fs-border); */
 }
 .type-select {
   position: relative;
-  margin-right: 4px;
   -webkit-app-region: no-drag;
 }
 /* 类型下拉移除后，用纯文本承载当前类型，保持对齐并沿用主题色。 */

@@ -59,6 +59,7 @@ export function useSearchController() {
   const [totalCount, setTotalCount] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [hoveredKey, setHoveredKey] = useState("");
+  const [iconByKey, setIconByKey] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<null | { kind: "success" | "error" | "info"; message: string }>(null);
   const [calculatorIconDataUrl, setCalculatorIconDataUrl] = useState("");
   const [isPanelPinned, setIsPanelPinned] = useState(false);
@@ -88,6 +89,7 @@ export function useSearchController() {
   const resizeRafRef = useRef<number | null>(null);
   const searchingIndicatorTimerRef = useRef<number | null>(null);
   const queryRef = useRef("");
+  const iconByKeyRef = useRef<Record<string, string>>({});
   const searchTypeIdRef = useRef(searchTypeId);
   const selectedPathRef = useRef("");
   const isPanelPinnedRef = useRef(isPanelPinned);
@@ -274,9 +276,14 @@ export function useSearchController() {
     queryRef, searchTypeIdRef, selectedPathRef, calcItemRef, searchRequestIdRef, searchSessionIdRef,
     typeSwitchRequestedRef, pendingAppendRef, flushAppendTimerRef, setResults, setTotalCount, setIsSearching,
     setHasMore, setHoveredKey, setSelectedIndex, setIsIndexing, refreshHistory, filterItemsBySearchType,
+    iconByKeyRef, setIconByKey,
     applyStrictSearchResults, applyCalcResults, MAX_PENDING_APPEND_ITEMS, SEARCH_DEBOUNCE_INDEXING_MS,
     SEARCH_DEBOUNCE_READY_MS,
   });
+
+  useEffect(() => {
+    iconByKeyRef.current = iconByKey;
+  }, [iconByKey]);
 
   const hideWindow = () => {
     setTypeMenuOpen(false);
@@ -515,7 +522,7 @@ export function useSearchController() {
     lastSelectedBy, setLastSelectedBy, results, isSearching, isIndexing, hasMore, totalCount, isCalcMode,
     isPanelPinned, placeholder, searchTypeOptions: enabledSearchTypeOptions, currentTypeLabel,
     visibleResults, listHeight, showEmptyState, showInputHint, searchActivity, indexProgress, ITEM_HEIGHT,
-    MAX_LIST_HEIGHT, inputRef, listRef, scrollContainerRef, typeSelectRef, typeMenuRef, containerRef,
+    MAX_LIST_HEIGHT, iconByKey, inputRef, listRef, scrollContainerRef, typeSelectRef, typeMenuRef, containerRef,
     handleKeyDownCapture: handleReactKeyDownCapture, handleWindowKeyDownCapture, openSettings, openFolder,
     launchApp, runAsAdmin, copyPath, hideWindow, togglePanelPinned, refreshHistory, deleteHistoryItem,
     deleteResultItem, scrollToTop, onItemsRendered, trimmedQuery, showBackToTop, hoveredKey, setHoveredKey,

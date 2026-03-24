@@ -22,7 +22,7 @@ export function GeneralSection({
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
               {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconPower size={18} variant="duotone" />
+              <IconPower size={20} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">开机自启</div>
@@ -46,7 +46,7 @@ export function GeneralSection({
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
               {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconState size={18} variant="duotone" />
+              <IconState size={20} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">保留搜索状态</div>
@@ -70,7 +70,7 @@ export function GeneralSection({
           <div className="setting-item-main">
             <span className="setting-item-icon" aria-hidden="true">
               {/* 设置分区图标使用双色叠层：增强层次，同时保持整体风格统一。 */}
-              <IconHistory size={18} variant="duotone" />
+              <IconHistory size={20} variant="duotone" />
             </span>
             <div className="setting-item-copy">
               <div className="setting-item-title">历史记录</div>

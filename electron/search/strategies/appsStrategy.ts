@@ -12,18 +12,9 @@ export const appsStrategy: SearchStrategy = {
       lane: ctx.lane,
       getInstalledApps: deps.getInstalledApps,
       normalizeAppGroupKey: deps.normalizeAppGroupKey,
-      iconDataCache: deps.iconDataCache,
-      isTooSmallAppIconDataUrl: deps.isTooSmallAppIconDataUrl,
-      getAppIconDataStable: deps.getAppIconDataStable,
       computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
       computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
       getLastUsedMs: ctx.scoreComputer.getLastUsedMs,
-      event: ctx.event,
-      query: ctx.query,
-      searchSessionId: ctx.searchSessionId,
-      iconPrefetchToken: deps.currentIconPrefetchToken,
-      getCurrentIconPrefetchToken: deps.getCurrentIconPrefetchToken,
-      shouldCancel: ctx.isSessionCancelled,
     });
 
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };

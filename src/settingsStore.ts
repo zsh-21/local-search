@@ -64,15 +64,7 @@ export function normalizeSettings(s: any): AppSettings {
   // 先做历史主题映射，再做白名单校验，保证旧配置能平滑升级。
   const normalizedThemeCandidate =
     typeof s?.theme === "string" ? (legacyThemeMap[s.theme] ?? s.theme) : DEFAULT_SETTINGS.theme;
-  const allowedThemes: AppSettings["theme"][] = [
-    "dark",
-    "vector",
-    "noir",
-    "oxide",
-    "mac",
-    "blueprint",
-    "paper",
-  ];
+  const allowedThemes: AppSettings["theme"][] = ["dark", "dark-win", "vector", "noir", "oxide", "mac", "blueprint", "paper"];
   const theme: AppSettings["theme"] = allowedThemes.includes(normalizedThemeCandidate as AppSettings["theme"])
     ? (normalizedThemeCandidate as AppSettings["theme"])
     : DEFAULT_SETTINGS.theme;

@@ -5,7 +5,7 @@ export type SearchCandidate = {
   path: string;
   type: string;
   description?: string;
-  icon?: string;
+  iconKey?: string;
   timeMs?: number;
   size?: number;
   isDirectory?: boolean;
@@ -60,12 +60,10 @@ export type SearchContext = {
 export type SearchStrategyDeps = {
   fileIndex: {
     getStatus: () => Promise<{ isIndexing: boolean }>;
-    pauseIndexingFor: (ms: number) => void | Promise<void>;
     search: (query: string, limit: number, options?: { where?: any; sessionId?: string }) => Promise<any>;
     buildIfEmpty: () => Promise<void>;
     cancelSearchSession?: (sessionId: string) => void | Promise<void>;
   };
-  reconcileRecentIndex: () => void | Promise<void>;
   loadSettings: () => { customSearchTypes?: string[]; ignoredPaths?: string[]; searchRanking?: any };
   loadHistoryStats: () => any;
   normalizeHistoryKey: (rawPath: string) => string;

@@ -14,16 +14,16 @@ export const FS_BACKUP_SETTINGS_KEY = "fs_backup_settings";
 
 export { BASE_SEARCH_TYPE_IDS, DEFAULT_SETTINGS };
 
-// 主题选项精简为 7 套：按需求移除 Chrome、Neon Terminal、Mist Titanium、Forest Ritual。
+// 主题选项统一在这里维护，避免设置页和账户页出现不一致。
 export const THEME_STYLE_OPTIONS: Array<{ id: AppSettings["theme"]; label: string }> = [
-  { id: "dark", label: "Dark · 石墨工业基线" },
-  // 保留剩余主题的旧 ID，避免已存储配置发生结构变化。
-  { id: "vector", label: "Night Glass · 极夜玻璃" },
-  { id: "paper", label: "Cream Editorial · 奶油纸张" },
-  { id: "blueprint", label: "Pixel Arcade · 复古像素电玩" },
-  { id: "noir", label: "Obsidian Luxe · 奢雅黑金" },
-  { id: "mac", label: "Pastel Flux · 糖霜未来" },
-  { id: "oxide", label: "Ember Mono · 赤焰极简" },
+  { id: "dark", label: "Dark / 石墨工业基线" },
+  { id: "dark-win", label: "dark win" },
+  { id: "vector", label: "Night Glass / 极夜玻璃" },
+  { id: "paper", label: "Cream Editorial / 奶油纸张" },
+  { id: "blueprint", label: "Pixel Arcade / 复古像素电玩" },
+  { id: "noir", label: "Obsidian Luxe / 奢雅黑金" },
+  { id: "mac", label: "Pastel Flux / 糖霜未来" },
+  { id: "oxide", label: "Ember Mono / 赭焰极简" },
 ];
 
 export const RESULT_ACTION_OPTIONS: Array<{

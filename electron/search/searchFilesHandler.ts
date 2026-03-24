@@ -18,14 +18,13 @@ export type SearchFilesDeps = Omit<SearchStrategyDeps, "getCurrentIconPrefetchTo
 
 let iconPrefetchToken = 0;
 
-const DISPLAY_LIMIT = 500;
-const FIRST_BATCH_LIMIT = 70;
-const MORE_BATCH_SIZE = 50;
+const DISPLAY_LIMIT = 240;
+const MORE_BATCH_SIZE = 30;
 const FAST_COMMAND_LIMIT = 5;
-const FULL_COMMAND_LIMIT = 20;
-const FAST_SETTINGS_LIMIT = 20;
-const FULL_SETTINGS_LIMIT = 40;
-const FAST_APPS_LIMIT = 20;
+const FULL_COMMAND_LIMIT = 12;
+const FAST_SETTINGS_LIMIT = 10;
+const FULL_SETTINGS_LIMIT = 20;
+const FAST_APPS_LIMIT = 12;
 const FULL_APPS_LIMIT = 50;
 
 function stripInvisibleChars(input: string) {
@@ -104,7 +103,7 @@ export async function handleSearchFiles(
   options: SearchFilesOptions | undefined,
   deps: SearchFilesDeps
 ) {
-  const { fileIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey, iconDataCache } = deps;
+  const { fileIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey } = deps;
   const rawQueryForEvents = typeof query === "string" ? query : "";
   const searchIntent = parseSearchMatchIntent(rawQueryForEvents);
   const queryForSearch = searchIntent.term;
@@ -133,8 +132,6 @@ export async function handleSearchFiles(
   if (!queryForSearch || queryForSearch.trim().length < 1) {
     return { results: [], isIndexing: status.isIndexing, hasMore: false, searchSessionId, totalCount: 0 };
   }
-
-  fileIndex.pauseIndexingFor(status.isIndexing ? 2000 : 900);
 
   const queryLength = queryForSearch.trim().length;
   const laneProfile = createSearchLaneProfile({
@@ -297,32 +294,27 @@ export async function handleSearchFiles(
   if (isSessionCancelled()) return buildCancelledResponse(isIndexing);
 
   const topCandidates = fastCollected.topCandidates;
-  const firstBatch = topCandidates.slice(0, FIRST_BATCH_LIMIT);
-  const fastRemainingBatch = topCandidates.slice(FIRST_BATCH_LIMIT);
+  const firstBatchLimit = 10;
+  const isShortQuery = queryLength <= 2;
+  const firstBatch = topCandidates.slice(0, firstBatchLimit);
+  const fastRemainingBatch = topCandidates.slice(firstBatchLimit);
   const firstPayload = firstBatch.map(serializeSearchResult);
 
-  if (!status.isIndexing && !isSessionCancelled()) {
+  if (!isSessionCancelled()) {
     prefetchIconsInBackground({
       event,
       query: rawQueryForEvents,
       searchTypeId,
       searchSessionId,
-      items: topCandidates.map((it) => ({
-        name: String(it?.name || ""),
-        path: String(it?.path || ""),
-        type: String(it?.type || ""),
-      })),
-      iconDataCache,
-      getFileIconData: deps.getFileIconData,
-      getAppIconDataStable: deps.getAppIconDataStable,
+      items: topCandidates.map((it) => serializeSearchResult(it)),
       getCurrentIconPrefetchToken,
       iconPrefetchToken: currentIconPrefetchToken,
       shouldCancel: isSessionCancelled,
     });
   }
 
-  const shouldRunFullLane = laneProfile.enableFullLane;
-  const hasMore = fastRemainingBatch.length > 0 || shouldRunFullLane;
+  const shouldRunFullLane = !isShortQuery && laneProfile.enableFullLane;
+  const hasMore = !isShortQuery && (fastRemainingBatch.length > 0 || shouldRunFullLane);
 
   if (hasMore) {
     const alreadySent = new Set(firstPayload.map((item) => createSearchResultId(item)));
@@ -336,16 +328,6 @@ export async function handleSearchFiles(
           if (!key || alreadySent.has(key)) continue;
           alreadySent.add(key);
 
-          if (serialized.type === "file" || serialized.type === "folder") {
-            const cached = iconDataCache.get(`file:${serialized.path}`) || "";
-            payload.push(cached ? { ...serialized, icon: cached } : serialized);
-            continue;
-          }
-          if (serialized.type === "app") {
-            const cached = iconDataCache.get(`app:${serialized.path}`) || "";
-            payload.push(cached ? { ...serialized, icon: cached } : serialized);
-            continue;
-          }
           payload.push(serialized);
         }
 
