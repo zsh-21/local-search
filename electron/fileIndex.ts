@@ -13,6 +13,7 @@ import {
 import { fileIndexRebuild } from './file/indexRebuild';
 import { fileIndexSearch } from './file/indexSearch';
 import { clearTokenizeCache, createFlexsearchEncode } from './file/indexTokenize';
+import { getDeltaPath } from './file/indexCacheLayout';
 
 export interface FileIndexEntry {
   path: string;
@@ -65,6 +66,7 @@ export class FileIndex {
   private pathToId = new Map<string, string>();
   private driveCounts = new Map<string, number>();
   private readonly cachePath: string;
+  private readonly deltaPath: string;
   private readonly maxEntries: number;
   private isIndexing = false;
   private abortRequested = false;
@@ -92,6 +94,7 @@ export class FileIndex {
 
   constructor(options: { cachePath: string; maxEntries?: number }) {
     this.cachePath = options.cachePath;
+    this.deltaPath = getDeltaPath(this.cachePath);
     this.maxEntries = options.maxEntries ?? 750_000;
   }
 
@@ -381,7 +384,7 @@ export class FileIndex {
   private ensureCacheAppendStream() {
     if (this.cacheAppendWs) return this.cacheAppendWs;
     try {
-      this.cacheAppendWs = createWriteStream(this.cachePath, { encoding: 'utf-8', flags: 'a' });
+      this.cacheAppendWs = createWriteStream(this.deltaPath, { encoding: 'utf-8', flags: 'a' });
       this.cacheAppendWs.on('error', () => {
         try { this.cacheAppendWs?.end(); } catch {}
         this.cacheAppendWs = null;
@@ -397,7 +400,7 @@ export class FileIndex {
     if (this.cacheAppendFlushing || this.cacheAppendQueue.length === 0) return;
     this.cacheAppendFlushing = true;
     try {
-      await fs.mkdir(path.dirname(this.cachePath), { recursive: true }).catch(() => {});
+      await fs.mkdir(path.dirname(this.deltaPath), { recursive: true }).catch(() => {});
       const ws = this.ensureCacheAppendStream();
       if (!ws) return;
       while (this.cacheAppendQueue.length > 0) {

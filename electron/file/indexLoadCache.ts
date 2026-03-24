@@ -4,13 +4,16 @@ import path from "node:path";
 import readline from "node:readline";
 import { toPinyinFull, toPinyinInitials } from "../pinyin";
 import { shouldIndexFile, classifyKind, normalizeDrive } from "./utils";
+import { getCacheArtifactPaths } from "./indexCacheLayout";
 
 export async function fileIndexLoadCache(ctx: any): Promise<boolean> {
-  if (!createReadStream) return false;
-  if (!(await existsSafe(ctx.cachePath))) return false;
+  const artifacts = getCacheArtifactPaths(ctx.cachePath);
+  const hasSnapshot = await existsSafe(artifacts.snapshotPath);
+  const hasLegacy = await existsSafe(artifacts.legacyPath);
+  if (!hasSnapshot && !hasLegacy) return false;
+
   ctx.clearIdleCompactTimer();
   ctx.isCompacted = false;
-
   ctx.isIndexing = true;
   ctx.startIndexingProgress();
   ctx.rebuildStartedAt = Date.now();
@@ -21,11 +24,9 @@ export async function fileIndexLoadCache(ctx: any): Promise<boolean> {
   ctx.driveCounts.clear();
 
   try {
-    const stream = createReadStream(ctx.cachePath, { encoding: "utf-8" });
-    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-
     const batch: Array<{ path: string; isDirectory: boolean; timeMs: number }> = [];
     const BATCH_SIZE = 500;
+    let touchedCount = 0;
 
     const processBatch = async () => {
       if (batch.length === 0) return;
@@ -64,34 +65,34 @@ export async function fileIndexLoadCache(ctx: any): Promise<boolean> {
       batch.length = 0;
     };
 
-    let count = 0;
-    for await (const line of rl) {
-      const raw = line.trim();
-      if (!raw) continue;
-      if (count >= ctx.maxEntries) break;
+    const applyLine = async (raw: string, allowOps: boolean) => {
+      const line = raw.trim();
+      if (!line) return;
 
       let p = "";
       let isDirectory = false;
       let timeMs = 0;
       let op: "i" | "r" | "" = "";
-      if (raw.startsWith("{")) {
+      if (line.startsWith("{")) {
         try {
-          const obj = JSON.parse(raw);
+          const obj = JSON.parse(line);
           op = obj?.op === "i" || obj?.op === "r" ? obj.op : "";
           p = typeof obj?.p === "string" ? obj.p : "";
           isDirectory = obj?.d === 1 || obj?.d === true;
           timeMs = Number.isFinite(obj?.t) ? Math.max(0, Number(obj.t)) : 0;
-        } catch {}
+        } catch {
+          return;
+        }
       } else {
-        p = raw;
+        p = line;
       }
 
       p = typeof p === "string" ? p.trim() : "";
-      if (!p) continue;
-      if (process.platform === "win32" && !/^[a-zA-Z]:/.test(p) && !p.startsWith("\\")) continue;
+      if (!p) return;
+      if (process.platform === "win32" && !/^[a-zA-Z]:/.test(p) && !p.startsWith("\\")) return;
 
       const key = p.toLowerCase();
-      if (op === "r") {
+      if (allowOps && op === "r") {
         const existed = ctx.pathToId.has(key);
         const id = ctx.pathToId.get(key);
         if (id && ctx.index) {
@@ -101,29 +102,52 @@ export async function fileIndexLoadCache(ctx: any): Promise<boolean> {
         }
         ctx.pathToId.delete(key);
         if (existed) ctx.bumpDriveCount(ctx.getDriveKeyFromPath(p), -1);
-        continue;
+        touchedCount++;
+        return;
       }
-      if (ctx.pathToId.has(key)) continue;
+
+      if (ctx.pathToId.has(key)) return;
       if (!isDirectory) {
         const ext = path.extname(p).toLowerCase();
-        if (!shouldIndexFile(false, ext)) continue;
+        if (!shouldIndexFile(false, ext)) return;
       }
-      if (ctx.isIgnoredPath(p)) continue;
+      if (ctx.isIgnoredPath(p)) return;
 
       batch.push({ path: p, isDirectory, timeMs });
-      count++;
       ctx.bumpIndexingProgress(1);
+      touchedCount++;
 
       if (batch.length >= BATCH_SIZE) {
         await processBatch();
         await ctx.cooperativeYield(() => {});
       }
+    };
+
+    const consumeFile = async (targetPath: string, allowOps: boolean) => {
+      if (!(await existsSafe(targetPath))) return;
+      const stream = createReadStream(targetPath, { encoding: "utf-8" });
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+        for await (const line of rl) {
+          if (ctx.pathToId.size >= ctx.maxEntries) break;
+          await applyLine(line, allowOps);
+        }
+      } finally {
+        rl.close();
+      }
+    };
+
+    if (hasSnapshot) {
+      await consumeFile(artifacts.snapshotPath, false);
+      await consumeFile(artifacts.deltaPath, true);
+    } else {
+      await consumeFile(artifacts.legacyPath, true);
     }
 
     await processBatch();
     await ctx.cooperativeYield(() => {});
     ctx.indexedCountHint = ctx.pathToId.size;
-    return count > 0;
+    return touchedCount > 0;
   } catch {
     if (!ctx.index) ctx.index = ctx.createIndex();
     ctx.indexedCountHint = ctx.pathToId.size;

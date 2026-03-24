@@ -10,10 +10,9 @@ import {
   getFileIndexMetaPath,
   getFileIndexPath,
   getFileIndexShardPath,
-  getFileIndexShardTmpPath,
-  getFileIndexTmpPath,
   getFileIndexStatsPath,
 } from '../constants/storagePaths';
+import { getCacheArtifactPaths } from './indexCacheLayout';
 import {
   FILE_INDEX_ENTRIES_PER_WORKER,
   FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
@@ -460,12 +459,22 @@ export const fileIndex = {
 export async function clearFileIndexCacheOnDisk() {
   const tasks: Array<Promise<any>> = [];
   tasks.push(fs.rm(FILE_INDEX_META_PATH, { force: true }).catch(() => {}));
-  tasks.push(fs.rm(FILE_INDEX_PATH, { force: true }).catch(() => {}));
-  tasks.push(fs.rm(getFileIndexTmpPath(), { force: true }).catch(() => {}));
   tasks.push(fs.rm(getFileIndexStatsPath(), { force: true }).catch(() => {}));
+
+  const rootArtifacts = getCacheArtifactPaths(FILE_INDEX_PATH);
+  tasks.push(fs.rm(rootArtifacts.legacyPath, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(rootArtifacts.legacyTmpPath, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(rootArtifacts.snapshotPath, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(rootArtifacts.snapshotTmpPath, { force: true }).catch(() => {}));
+  tasks.push(fs.rm(rootArtifacts.deltaPath, { force: true }).catch(() => {}));
+
   for (let i = 0; i < WORKER_COUNT; i++) {
-    tasks.push(fs.rm(getFileIndexShardPath(i), { force: true }).catch(() => {}));
-    tasks.push(fs.rm(getFileIndexShardTmpPath(i), { force: true }).catch(() => {}));
+    const shardArtifacts = getCacheArtifactPaths(getFileIndexShardPath(i));
+    tasks.push(fs.rm(shardArtifacts.legacyPath, { force: true }).catch(() => {}));
+    tasks.push(fs.rm(shardArtifacts.legacyTmpPath, { force: true }).catch(() => {}));
+    tasks.push(fs.rm(shardArtifacts.snapshotPath, { force: true }).catch(() => {}));
+    tasks.push(fs.rm(shardArtifacts.snapshotTmpPath, { force: true }).catch(() => {}));
+    tasks.push(fs.rm(shardArtifacts.deltaPath, { force: true }).catch(() => {}));
   }
   await Promise.all(tasks);
 }

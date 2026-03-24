@@ -2,20 +2,15 @@ import { BrowserWindow, ipcMain, shell } from "electron";
 import path from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { loadSettings } from "../config/settings";
-import { fileIndex, isIgnoredPathByCache } from "../file/indexService";
-import { handleSearchFiles } from "../search/searchFilesHandler";
-import { reconcileRecentIndex, recentIndex, normalizeRecentKey } from "../file/watcher";
-import { loadHistoryStats, normalizeHistoryKey, normalizeExtKey, recordHistoryItem } from "../history/history";
+import { recordHistoryItem } from "../history/history";
 import { getInstalledAppsCache } from "../apps/installedApps";
-import { iconDataCache, isTooSmallAppIconDataUrl } from "../icon/iconCache";
 import { getAppIconDataStable, getFileIconData } from "../icon/iconService";
-import { normalizeAppGroupKey } from "../utils/normalize";
 import { clearLocalCacheAll } from "../utils/cacheCleaner";
 import { resolveAppId } from "../win/resolveAppId";
 import { openResolvedTarget } from "../utils/open";
 import { readUrlShortcut, openLnkShortcut } from "../win/shortcuts";
 import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from "../win/startMenuShortcutIndex";
+import { searchFilesViaService } from "../search/searchService";
 
 type RegisterSearchOpenIpcHandlersDeps = {
   broadcastHistoryUpdated: () => Promise<{ results: any[] }>;
@@ -248,22 +243,6 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
   });
 
   ipcMain.handle("search-files", async (event, query: string, options?: { searchTypeId?: string; searchSessionId?: string; drive?: string }) => {
-    return await handleSearchFiles(event, query, options, {
-      fileIndex,
-      reconcileRecentIndex: () => void reconcileRecentIndex(),
-      loadSettings,
-      loadHistoryStats,
-      normalizeHistoryKey,
-      normalizeExtKey,
-      getInstalledApps: () => getInstalledAppsCache(),
-      normalizeAppGroupKey,
-      iconDataCache,
-      isTooSmallAppIconDataUrl,
-      getAppIconDataStable,
-      getFileIconData,
-      isIgnoredPathByCache,
-      normalizeRecentKey,
-      recentIndex,
-    });
+    return await searchFilesViaService(event, query, options);
   });
 }
