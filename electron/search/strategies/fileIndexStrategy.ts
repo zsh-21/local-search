@@ -1,4 +1,4 @@
-﻿import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
+import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
 
 const imageExts = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
 const videoExts = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
@@ -8,16 +8,8 @@ function isShortcutPath(p: string) {
   return lower.endsWith(".lnk") || lower.endsWith(".url");
 }
 
-function isShortQueryWeakMatch(ctx: SearchContext, entry: { path: string; name: string }) {
-  if (ctx.queryLength > 2) return false;
-  const q = ctx.lowerQuery;
-  if (!q) return false;
-  const nameLower = String(entry.name || "").toLowerCase();
-  if (nameLower.startsWith(q)) return false;
-  const pathLower = String(entry.path || "").toLowerCase();
-  if (pathLower.includes(`\\${q}`)) return false;
-  if (pathLower.endsWith(q)) return false;
-  return true;
+function shouldSkipByType(ctx: SearchContext) {
+  return ctx.searchTypeId === "app" || ctx.searchTypeId === "settings";
 }
 
 export const fileIndexStrategy: SearchStrategy = {
@@ -25,6 +17,7 @@ export const fileIndexStrategy: SearchStrategy = {
   async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
     if (ctx.queryLength <= 1) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
+    if (shouldSkipByType(ctx)) return { kind: "continue", items: [], meta: { isIndexing: ctx.isIndexingHint } };
 
     const currentSettings = deps.loadSettings();
     const customExts = Array.isArray(currentSettings.customSearchTypes)
@@ -70,7 +63,7 @@ export const fileIndexStrategy: SearchStrategy = {
       size?: number;
     }> = Array.isArray((fileSearch as any)?.results) ? (fileSearch as any).results : [];
 
-    const filteredFiles: Array<any> = [];
+    const out: SearchCandidate[] = [];
     for (const r of fileResultsRaw) {
       if (!r?.path) continue;
       if (isShortcutPath(r.path)) continue;
@@ -79,34 +72,18 @@ export const fileIndexStrategy: SearchStrategy = {
       if (ctx.extFilter && !String(r.path).toLowerCase().endsWith(ctx.extFilter)) continue;
       if (ctx.searchTypeId === "file" && String(r.path).toLowerCase().endsWith(".exe")) continue;
       if (process.platform === "win32" && !/^[a-zA-Z]:/.test(r.path) && !r.path.startsWith("\\\\")) continue;
-      if (isShortQueryWeakMatch(ctx, r)) continue;
-      filteredFiles.push(r);
-    }
 
-    const scoredFiles: SearchCandidate[] = [];
-    for (const r of filteredFiles) {
-      if (ctx.isSessionCancelled()) break;
-      const type = r.isDirectory ? "folder" : "file";
-      if (ctx.queryLength === 2) {
-        const q = ctx.lowerQuery;
-        const nameLower = String(r.name || "").toLowerCase();
-        if (!nameLower.startsWith(q)) continue;
-      }
-      const matchTarget = ctx.isPathQuery ? r.path : r.name;
-      const { weightedScore, staticScore, matchIndex, nameLen } = ctx.nameScorer.computeWeightedNameMatch(matchTarget);
-      if (staticScore <= 0) continue;
-      const timeMs = typeof r.timeMs === "number" ? r.timeMs : 0;
-      const score = ctx.scoreComputer.computeCombinedScore({
-        staticScore,
-        type,
-        rawPath: r.path,
-        timeMs,
-      });
-      scoredFiles.push({ ...r, type, score, staticScore, weightedScore, matchIndex, nameLen });
+      out.push({
+        ...r,
+        type: r.isDirectory ? "folder" : "file",
+        timeMs: typeof r.timeMs === "number" ? r.timeMs : 0,
+        source: "fileIndex",
+        rawSource: "fileIndex",
+      } as any);
     }
 
     const isIndexing = (fileSearch as any)?.isIndexing ?? (await deps.fileIndex.getStatus()).isIndexing;
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [], meta: { isIndexing } };
-    return { kind: "continue", items: scoredFiles, meta: { isIndexing } };
+    return { kind: "continue", items: out, meta: { isIndexing } };
   },
 };

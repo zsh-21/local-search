@@ -14,7 +14,6 @@ import {
   filterItemsBySearchType as filterItemsBySearchTypeUtil,
   limitResults as limitResultsUtil,
 } from "./searchResultUtils";
-import { isStrictSearchMatch, parseSearchMatchIntent, pickSearchMatchTargetText } from "../../shared/searchMatch";
 import { buildCalcItem, mapCalcHistoryToItems, normalizeCalcHistoryPayload, parseCalcMode } from "./searchCalcUtils";
 import { parseDrivePrefix, resolveGhostCandidateByInput } from "./searchInputUtils";
 import { resizeSearchWindowToContent } from "./searchWindowResize";
@@ -171,14 +170,6 @@ export function useSearchController() {
   };
 
   const limitHistoryResults = (items: AppItem[]) => limitResultsUtil(items, DISPLAY_LIMIT);
-  const applyStrictSearchResults = useCallback((items: AppItem[], rawQuery: string) => {
-    const intent = parseSearchMatchIntent(rawQuery);
-    if (!intent.term || intent.tokens.length === 0) return [];
-    return items.filter((item) => {
-      const target = pickSearchMatchTargetText(item, intent);
-      return isStrictSearchMatch(target, intent);
-    });
-  }, []);
   const applyCalcResults = useCallback((currentCalcItem: AppItem | null, preservePath?: string) => {
     applyCalcResultsCore({
       currentCalcItem,
@@ -276,7 +267,7 @@ export function useSearchController() {
     typeSwitchRequestedRef, pendingAppendRef, flushAppendTimerRef, setResults, setTotalCount, setIsSearching,
     setHasMore, setHoveredKey, setSelectedIndex, setIsIndexing, refreshHistory, filterItemsBySearchType,
     iconByKeyRef, setIconByKey,
-    applyStrictSearchResults, applyCalcResults, MAX_PENDING_APPEND_ITEMS, SEARCH_DEBOUNCE_INDEXING_MS,
+    applyCalcResults, MAX_PENDING_APPEND_ITEMS, SEARCH_DEBOUNCE_INDEXING_MS,
     SEARCH_DEBOUNCE_READY_MS,
   });
 

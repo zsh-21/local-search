@@ -25,6 +25,9 @@ export default defineConfig(({ command }) => {
 					entry: 'electron/fileIndex.worker.ts',
 				},
 				{
+					entry: 'electron/search/searchMatch.worker.ts',
+				},
+				{
 					entry: 'electron/preload.ts',
 					onstart({ reload }) {
 						if (isServe) reload();

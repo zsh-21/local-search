@@ -1,153 +1,39 @@
-import { deriveIconKey } from "../icon/iconKey";
-
-const APP_SOURCE_SCORE = 100;
-
 export async function searchApps(input: {
   searchTypeId: string;
-  lowerQuery: string;
-  lane?: "fast" | "full";
   getInstalledApps: () => Array<{ Name: string; AppID: string; installTimeMs?: number }>;
-  normalizeAppGroupKey: (name: string) => string;
-  computeWeightedNameMatch: (name: string) => { weightedScore: number; staticScore: number; matchIndex: number; nameLen: number };
-  computeCombinedScore: (input: { staticScore: number; type: string; rawPath: string; timeMs?: number; sourceScore?: number }) => number;
-  getLastUsedMs: (rawPath: string) => number;
 }) {
-  const {
-    searchTypeId,
-    lowerQuery,
-    lane,
-    getInstalledApps,
-    normalizeAppGroupKey,
-    computeWeightedNameMatch,
-    computeCombinedScore,
-    getLastUsedMs,
-  } = input;
-
+  const { searchTypeId, getInstalledApps } = input;
   if (searchTypeId !== "all" && searchTypeId !== "app") return [];
-  const isShortcutAppId = (appId: string) => {
-    const lower = String(appId || "").toLowerCase();
-    return lower.endsWith(".lnk") || lower.endsWith(".url");
-  };
 
-  const installedApps = getInstalledApps();
-  const laneLimit = lane === "fast" ? 12 : 50;
-  const actionTokens = ["卸载", "uninstall", "remove", "删除", "移除"];
-  const isActionQuery = actionTokens.some((t) => lowerQuery.includes(t));
-
-  const matchedGroupKeys = new Set<string>();
-  const matchedAppIds = new Set<string>();
-  const results: Array<{
+  const out: Array<{
     name: string;
     path: string;
     type: string;
-    iconKey: string;
-    score: number;
-    sourceScore: number;
     timeMs: number;
-    staticScore: number;
-    weightedScore: number;
-    matchIndex: number;
-    nameLen: number;
+    source: string;
+    rawSource: string;
+    sourceScore: number;
   }> = [];
 
-  const getAppTimeMs = (appItem: { AppID: string; installTimeMs?: number }) => {
-    const lastUsedMs = getLastUsedMs(appItem.AppID);
-    if (Number.isFinite(lastUsedMs) && lastUsedMs > 0) return Math.round(lastUsedMs);
-    const installTimeMs = Number(appItem.installTimeMs || 0);
-    return Number.isFinite(installTimeMs) && installTimeMs > 0 ? Math.round(installTimeMs) : 0;
-  };
+  const apps = getInstalledApps();
+  for (const app of apps) {
+    const appId = typeof app?.AppID === "string" ? app.AppID.trim() : "";
+    const appName = typeof app?.Name === "string" ? app.Name.trim() : "";
+    if (!appId || !appName) continue;
+    const lower = appId.toLowerCase();
+    if (lower.endsWith(".lnk") || lower.endsWith(".url")) continue;
 
-  for (const appItem of installedApps) {
-    if (isShortcutAppId(appItem.AppID)) continue;
-
-    const weighted = computeWeightedNameMatch(appItem.Name);
-    if (weighted.staticScore <= 0) continue;
-
-    const groupKey = normalizeAppGroupKey(appItem.Name);
-    if (groupKey) matchedGroupKeys.add(groupKey);
-    matchedAppIds.add(String(appItem.AppID || "").toLowerCase());
-
-    const appTimeMs = getAppTimeMs(appItem);
-    const score = computeCombinedScore({
-      staticScore: weighted.staticScore,
+    const installTimeMs = Number(app?.installTimeMs || 0);
+    out.push({
+      name: appName,
+      path: appId,
       type: "app",
-      rawPath: appItem.AppID,
-      timeMs: appTimeMs,
-      sourceScore: APP_SOURCE_SCORE,
-    });
-
-    results.push({
-      name: appItem.Name,
-      path: appItem.AppID,
-      type: "app",
-      iconKey: deriveIconKey({ type: "app", path: appItem.AppID, name: appItem.Name }),
-      score,
-      sourceScore: APP_SOURCE_SCORE,
-      timeMs: appTimeMs,
-      staticScore: weighted.staticScore,
-      weightedScore: weighted.weightedScore,
-      matchIndex: weighted.matchIndex,
-      nameLen: weighted.nameLen,
+      timeMs: Number.isFinite(installTimeMs) && installTimeMs > 0 ? Math.round(installTimeMs) : 0,
+      source: "apps",
+      rawSource: "apps",
+      sourceScore: 100,
     });
   }
 
-  if (matchedGroupKeys.size > 0) {
-    let added = 0;
-    const maxRelated = 80;
-    for (const appItem of installedApps) {
-      if (added >= maxRelated) break;
-      if (isShortcutAppId(appItem.AppID)) continue;
-
-      const appIdLower = String(appItem.AppID || "").toLowerCase();
-      if (!appIdLower || matchedAppIds.has(appIdLower)) continue;
-
-      const groupKey = normalizeAppGroupKey(appItem.Name);
-      if (!groupKey || !matchedGroupKeys.has(groupKey)) continue;
-
-      const nameLower = appItem.Name.toLowerCase();
-      if (isActionQuery && !actionTokens.some((t) => nameLower.includes(t))) continue;
-
-      const weighted = computeWeightedNameMatch(appItem.Name);
-      const fallbackStatic = weighted.staticScore > 0 ? weighted.staticScore : 0.22;
-      const appTimeMs = getAppTimeMs(appItem);
-      const score = computeCombinedScore({
-        staticScore: fallbackStatic,
-        type: "app",
-        rawPath: appItem.AppID,
-        timeMs: appTimeMs,
-        sourceScore: APP_SOURCE_SCORE,
-      });
-
-      results.push({
-        name: appItem.Name,
-        path: appItem.AppID,
-        type: "app",
-        iconKey: deriveIconKey({ type: "app", path: appItem.AppID, name: appItem.Name }),
-        score,
-        sourceScore: APP_SOURCE_SCORE,
-        timeMs: appTimeMs,
-        staticScore: fallbackStatic,
-        weightedScore: weighted.weightedScore,
-        matchIndex: weighted.matchIndex,
-        nameLen: weighted.nameLen,
-      });
-      matchedAppIds.add(appIdLower);
-      added += 1;
-    }
-  }
-
-  const sorted = results.sort((a, b) => {
-    const scoreDiff = (b.score || 0) - (a.score || 0);
-    if (scoreDiff !== 0) return scoreDiff;
-    const matchDiff = (a.matchIndex || 1_000_000) - (b.matchIndex || 1_000_000);
-    if (matchDiff !== 0) return matchDiff;
-    return (a.nameLen || 1_000_000) - (b.nameLen || 1_000_000);
-  });
-
-  if (searchTypeId === "app") {
-    return sorted
-      .slice(0, 100)
-      .map(({ score, weightedScore, matchIndex, nameLen, ...rest }) => rest);
-  }
-  return sorted.slice(0, laneLimit);
+  return out;
 }

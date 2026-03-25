@@ -10,8 +10,6 @@ export const settingsStrategy: SearchStrategy = {
     const { settingsResults, settingsOnly } = searchSettingsItems({
       searchTypeId: ctx.searchTypeId,
       settingsItems,
-      computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
-      computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
     });
 
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };

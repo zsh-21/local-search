@@ -1,19 +1,12 @@
-﻿import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
+import type { SearchCandidate, SearchContext, SearchExecResult, SearchStrategy, SearchStrategyDeps } from "./types";
 
 function isShortcutPath(p: string) {
   const lower = String(p || "").toLowerCase();
   return lower.endsWith(".lnk") || lower.endsWith(".url");
 }
 
-function passShortQueryHeatFilter(ctx: SearchContext, item: { name: string; path: string }) {
-  if (ctx.queryLength > 2) return true;
-  const q = ctx.lowerQuery;
-  if (!q) return false;
-  const nameLower = String(item.name || "").toLowerCase();
-  if (nameLower.startsWith(q)) return true;
-  const pathLower = String(item.path || "").toLowerCase();
-  if (pathLower.includes(`\\${q}`)) return true;
-  return false;
+function shouldSkipByType(ctx: SearchContext) {
+  return ctx.searchTypeId === "app" || ctx.searchTypeId === "settings";
 }
 
 export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStrategy {
@@ -21,6 +14,7 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
     id: "recentIndex",
     async execute(ctx: SearchContext, deps: SearchStrategyDeps): Promise<SearchExecResult> {
       if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };
+      if (shouldSkipByType(ctx)) return { kind: "continue", items: [] };
 
       const items = Array.from(deps.recentIndex.values());
       items.sort((a, b) => (b.timeMs || 0) - (a.timeMs || 0));
@@ -40,29 +34,14 @@ export function createRecentIndexStrategy(seenPathKeys: Set<string>): SearchStra
         if (ctx.extFilter && !String(it.path).toLowerCase().endsWith(ctx.extFilter)) continue;
         if (ctx.searchTypeId === "file" && String(it.path).toLowerCase().endsWith(".exe")) continue;
         if (process.platform === "win32" && !/^[a-zA-Z]:/.test(it.path) && !it.path.startsWith("\\\\")) continue;
-        if (!passShortQueryHeatFilter(ctx, it)) continue;
 
-        const weighted = ctx.nameScorer.computeWeightedNameMatch(it.name);
-        if (weighted.staticScore <= 0) continue;
-
-        const type = it.isDirectory ? "folder" : "file";
-        const score = ctx.scoreComputer.computeCombinedScore({
-          staticScore: weighted.staticScore,
-          type,
-          rawPath: it.path,
-          timeMs: it.timeMs || 0,
-        });
         out.push({
           name: it.name,
           path: it.path,
-          type,
-          score,
-          staticScore: weighted.staticScore,
-          weightedScore: weighted.weightedScore,
-          matchIndex: weighted.matchIndex,
-          nameLen: weighted.nameLen,
+          type: it.isDirectory ? "folder" : "file",
           timeMs: it.timeMs || 0,
           source: "recentIndex",
+          rawSource: "recentIndex",
           metaFlags: { recentHeat: true },
         } as any);
 

@@ -8,13 +8,7 @@ export const appsStrategy: SearchStrategy = {
 
     const appResults: any[] = await searchApps({
       searchTypeId: ctx.searchTypeId,
-      lowerQuery: ctx.lowerQuery,
-      lane: ctx.lane,
       getInstalledApps: deps.getInstalledApps,
-      normalizeAppGroupKey: deps.normalizeAppGroupKey,
-      computeWeightedNameMatch: ctx.nameScorer.computeWeightedNameMatch,
-      computeCombinedScore: ctx.scoreComputer.computeCombinedScore,
-      getLastUsedMs: ctx.scoreComputer.getLastUsedMs,
     });
 
     if (ctx.isSessionCancelled()) return { kind: "continue", items: [] };

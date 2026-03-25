@@ -1,14 +1,17 @@
-import { createNameScorer, createScoreComputer } from "./scoring";
 import { prefetchIconsInBackground } from "./iconPrefetch";
-import { appsStrategy } from "./strategies/appsStrategy";
-import { settingsStrategy } from "./strategies/settingsStrategy";
 import type { SearchContext, SearchStrategyDeps } from "./strategies/types";
-import { isStrictSearchMatch, parseSearchMatchIntent, pickSearchMatchTargetText } from "../../shared/searchMatch";
+import { parseSearchMatchIntent } from "../../shared/searchMatch";
 import { beginSearchSession } from "./sessionRegistry";
 import { createSearchResultId, serializeSearchResult } from "./resultSerializer";
 import { createSearchLaneProfile } from "./searchLaneProfile";
-import { buildCommandResults, collectTopCandidates, createLaneContext, runFileAndRecentLane } from "./searchLaneRuntime";
-import type { SearchScoreDebugRow } from "../../shared/searchScoreDebug";
+import { createLaneContext, runFileAndRecentLane } from "./searchLaneRuntime";
+import {
+  cancelSearchWorkerSession,
+  rankCandidatesFast,
+  rankCandidatesFull,
+  syncSearchWorkerAppsSnapshot,
+} from "./searchMatchWorkerClient";
+import type { SearchWorkerRankPayload } from "./searchMatchProtocol";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -18,15 +21,10 @@ type SearchFilesOptions = { searchTypeId?: string; searchSessionId?: string; dri
 export type SearchFilesDeps = Omit<SearchStrategyDeps, "getCurrentIconPrefetchToken" | "currentIconPrefetchToken">;
 
 let iconPrefetchToken = 0;
+let syncedAppsSnapshotRef: Array<{ Name: string; AppID: string; installTimeMs?: number }> | null = null;
 
 const DISPLAY_LIMIT = 240;
 const MORE_BATCH_SIZE = 30;
-const FAST_COMMAND_LIMIT = 5;
-const FULL_COMMAND_LIMIT = 12;
-const FAST_SETTINGS_LIMIT = 10;
-const FULL_SETTINGS_LIMIT = 20;
-const FAST_APPS_LIMIT = 12;
-const FULL_APPS_LIMIT = 50;
 
 function stripInvisibleChars(input: string) {
   return String(input || "")
@@ -55,6 +53,8 @@ async function tryResolveDirectPathCandidate(rawInput: string) {
       isDirectory,
       timeMs,
       source: "pathResolver",
+      rawSource: "pathResolver",
+      sourceScore: 120,
       metaFlags: { directPath: true },
     };
   } catch {
@@ -80,30 +80,19 @@ function normalizeExtFilter(searchTypeId: string) {
   return searchTypeId.startsWith("ext:") ? searchTypeId.slice(4).toLowerCase() : "";
 }
 
-function asArray<T = any>(value: any): T[] {
-  return Array.isArray(value) ? value : [];
+async function ensureAppsSnapshotSynced(getInstalledApps: () => Array<{ Name: string; AppID: string; installTimeMs?: number }>) {
+  const apps = getInstalledApps();
+  if (apps === syncedAppsSnapshotRef) return;
+  const payload = apps.map((app) => ({
+    Name: typeof app?.Name === "string" ? app.Name : "",
+    AppID: typeof app?.AppID === "string" ? app.AppID : "",
+    installTimeMs: Number.isFinite(app?.installTimeMs as number) ? Number(app.installTimeMs) : 0,
+  }));
+  await syncSearchWorkerAppsSnapshot(payload);
+  syncedAppsSnapshotRef = apps;
 }
 
-function tagSource(items: any[], source: string) {
-  return items.map((item) => {
-    if (!item || typeof item !== "object") return item;
-    if (typeof item.source === "string" && item.source) return item;
-    return { ...item, source };
-  });
-}
-
-function sliceSource(items: any[], limit: number) {
-  if (limit <= 0) return [] as any[];
-  if (!Array.isArray(items)) return [] as any[];
-  return items.length > limit ? items.slice(0, limit) : items;
-}
-
-function clamp01(v: number) {
-  if (!Number.isFinite(v)) return 0;
-  if (v <= 0) return 0;
-  if (v >= 1) return 1;
-  return v;
-}
+const NOOP_MATCH = { weightedScore: 0, staticScore: 0, matchIndex: 1_000_000, nameLen: 0 };
 
 export async function handleSearchFiles(
   event: Electron.IpcMainInvokeEvent,
@@ -111,7 +100,7 @@ export async function handleSearchFiles(
   options: SearchFilesOptions | undefined,
   deps: SearchFilesDeps
 ) {
-  const { fileIndex, loadHistoryStats, normalizeHistoryKey, normalizeExtKey } = deps;
+  const { fileIndex, loadHistoryStats } = deps;
   const rawQueryForEvents = typeof query === "string" ? query : "";
   const searchIntent = parseSearchMatchIntent(rawQueryForEvents);
   const queryForSearch = searchIntent.term;
@@ -122,12 +111,16 @@ export async function handleSearchFiles(
   const session = beginSearchSession({
     event,
     sessionId: searchSessionId,
-    cancelSearchSession: (id) => void deps.fileIndex.cancelSearchSession?.(id),
+    cancelSearchSession: (id) => {
+      void deps.fileIndex.cancelSearchSession?.(id);
+      void cancelSearchWorkerSession(id);
+    },
   });
   const isSessionCancelled = session.isCancelled;
 
   const buildCancelledResponse = (isIndexing: boolean) => ({
     results: [],
+    scoreDebugRows: [],
     isIndexing,
     hasMore: false,
     searchSessionId,
@@ -138,24 +131,10 @@ export async function handleSearchFiles(
   if (isSessionCancelled()) return buildCancelledResponse(status.isIndexing);
 
   if (!queryForSearch || queryForSearch.trim().length < 1) {
-    return { results: [], isIndexing: status.isIndexing, hasMore: false, searchSessionId, totalCount: 0 };
+    return { results: [], scoreDebugRows: [], isIndexing: status.isIndexing, hasMore: false, searchSessionId, totalCount: 0 };
   }
 
-  const queryLength = queryForSearch.trim().length;
-  const laneProfile = createSearchLaneProfile({
-    queryLength,
-    isIndexingHint: status.isIndexing,
-    searchTypeId,
-  });
-
-  const nameScorer = createNameScorer(queryForSearch, { mode: laneProfile.matchMode });
-  const { lowerQuery, computeWeightedNameMatch } = nameScorer;
-  const filterStrictResults = <T extends { name?: string; path?: string }>(items: T[]) =>
-    items.filter((item) => {
-      const target = pickSearchMatchTargetText(item, searchIntent);
-      return isStrictSearchMatch(target, searchIntent);
-    });
-
+  const lowerQuery = queryForSearch.trim().toLowerCase();
   if (searchIntent.matchTarget !== "path" && lowerQuery === "clear:cache") {
     const commandResult = {
       name: "\u6e05\u7a7a\u7f13\u5b58\u5e76\u91cd\u5efa\u7d22\u5f15",
@@ -163,10 +142,12 @@ export async function handleSearchFiles(
       type: "command",
       description: "\u6e05\u7a7a\u914d\u7f6e\u3001\u7f13\u5b58\u4e0e\u7d22\u5f15\uff0c\u4e0b\u6b21\u542f\u52a8\u4f1a\u91cd\u65b0\u751f\u6210",
       source: "command",
+      rawSource: "command",
       metaFlags: { command: true },
     };
     return {
       results: [serializeSearchResult(commandResult)],
+      scoreDebugRows: [],
       isIndexing: false,
       hasMore: false,
       searchSessionId,
@@ -174,94 +155,25 @@ export async function handleSearchFiles(
     };
   }
 
+  try {
+    await ensureAppsSnapshotSynced(deps.getInstalledApps);
+  } catch {
+    // apps 快照同步失败时保留上一版快照，不阻断本次搜索
+  }
+
   const currentIconPrefetchToken = ++iconPrefetchToken;
   const driveFilter = normalizeDriveFilter(options?.drive);
   const extFilter = normalizeExtFilter(searchTypeId);
-
   const now = Date.now();
   const historyStats = loadHistoryStats();
   const runtimeSettings = deps.loadSettings();
-  const { getLastUsedMs, computeCombinedScore, computeCombinedScoreDetail } = createScoreComputer({
-    now,
-    historyStats,
-    normalizeHistoryKey,
-    normalizeExtKey,
-    searchRanking: runtimeSettings.searchRanking,
-  });
 
-  const commandResults = buildCommandResults({
+  const queryLength = queryForSearch.trim().length;
+  const laneProfile = createSearchLaneProfile({
+    queryLength,
+    isIndexingHint: status.isIndexing,
     searchTypeId,
-    isPathQuery,
-    lowerQuery,
-    computeWeightedNameMatch,
-    computeCombinedScore,
-    getLastUsedMs,
   });
-
-  const buildScoreDebugRow = (item: any): SearchScoreDebugRow | null => {
-    if (!item || typeof item !== "object") return null;
-    const name = typeof item.name === "string" ? item.name : "";
-    const path = typeof item.path === "string" ? item.path : "";
-    const type = typeof item.type === "string" ? item.type : "file";
-    const id = createSearchResultId({ type, path, name });
-    if (!id) return null;
-
-    const staticScore =
-      typeof item.staticScore === "number" && Number.isFinite(item.staticScore)
-        ? clamp01(item.staticScore)
-        : clamp01(computeWeightedNameMatch(name).staticScore);
-    const timeMs = Number.isFinite(item.timeMs as number) ? Math.max(0, Number(item.timeMs)) : 0;
-    const sourceScore = Number.isFinite(item.sourceScore as number) ? Number(item.sourceScore) : 0;
-    const detail = computeCombinedScoreDetail({
-      staticScore,
-      type,
-      rawPath: path,
-      timeMs,
-      sourceScore,
-    });
-
-    return {
-      id,
-      name,
-      path,
-      type,
-      source: typeof item.source === "string" ? item.source : "",
-      totalScore: detail.totalScore,
-      sourceBonusScore: detail.sourceBonusScore,
-      extBonusScore: detail.extBonusScore,
-      extKey: detail.extKey,
-      scoreByMatch: detail.scoreByMatch,
-      scoreByFrequency: detail.scoreByFrequency,
-      scoreByRecency: detail.scoreByRecency,
-      scoreByFileMtime: detail.scoreByFileMtime,
-      staticScore: detail.staticScore,
-      staticWithType: detail.staticWithType,
-      frequencyScore: detail.frequencyScore,
-      recencyScore: detail.recencyScore,
-      fileMtimeScore: detail.fileMtimeScore,
-      weightMatch: detail.weightMatch,
-      weightFrequency: detail.weightFrequency,
-      weightRecency: detail.weightRecency,
-      weightFileMtime: detail.weightFileMtime,
-      priorityType: detail.priorityType,
-      priorityValue: detail.priorityValue,
-      priorityNorm: detail.priorityNorm,
-      historyCount: detail.historyCount,
-      historyLastUsedMs: detail.historyLastUsedMs,
-      itemTimeMs: detail.itemTimeMs,
-      effectiveRecencyTimeMs: detail.effectiveRecencyTimeMs,
-      fileMtimeSource: detail.fileMtimeSource,
-    };
-  };
-
-  const buildScoreDebugRows = (items: any[]): SearchScoreDebugRow[] => {
-    const rows: SearchScoreDebugRow[] = [];
-    for (const item of items || []) {
-      const row = buildScoreDebugRow(item);
-      if (row) rows.push(row);
-    }
-    return rows;
-  };
 
   const getCurrentIconPrefetchToken = () => iconPrefetchToken;
   const baseCtx: Omit<SearchContext, "lane" | "fileSearchLimit" | "recentLimit"> = {
@@ -277,8 +189,13 @@ export async function handleSearchFiles(
     driveFilter,
     extFilter,
     now,
-    nameScorer: { computeWeightedNameMatch },
-    scoreComputer: { getLastUsedMs, computeCombinedScore },
+    nameScorer: {
+      computeWeightedNameMatch: () => NOOP_MATCH,
+    },
+    scoreComputer: {
+      getLastUsedMs: () => 0,
+      computeCombinedScore: () => 0,
+    },
   };
 
   const strategyDeps: SearchStrategyDeps = {
@@ -290,85 +207,57 @@ export async function handleSearchFiles(
   const directPathCandidate = await tryResolveDirectPathCandidate(rawQueryForEvents);
   if (isSessionCancelled()) return buildCancelledResponse(status.isIndexing);
 
-  const fastCtx = createLaneContext({
-    base: baseCtx,
-    lane: "fast",
-    fileSearchLimit: laneProfile.fastFileLimit,
-    recentLimit: laneProfile.fastRecentLimit,
+  const shouldRunFileLanes = searchTypeId !== "app" && searchTypeId !== "settings";
+
+  const fastLaneOutput = shouldRunFileLanes
+    ? await runFileAndRecentLane({
+        ctx: createLaneContext({
+          base: baseCtx,
+          lane: "fast",
+          fileSearchLimit: laneProfile.fastFileLimit,
+          recentLimit: laneProfile.fastRecentLimit,
+        }),
+        deps: { normalizeRecentKey: deps.normalizeRecentKey },
+        strategyDeps,
+        isSessionCancelled,
+      })
+    : { fileItems: [] as any[], recentItems: [] as any[], isIndexing: status.isIndexing };
+
+  if (isSessionCancelled()) return buildCancelledResponse(fastLaneOutput.isIndexing);
+
+  const buildRankPayload = (input: {
+    lane: "fast" | "full";
+    fileItems: any[];
+    recentItems: any[];
+    displayLimit: number;
+  }): SearchWorkerRankPayload => ({
+    sessionId: searchSessionId,
+    query: queryForSearch,
+    searchTypeId,
+    lane: input.lane,
+    matchMode: laneProfile.matchMode,
+    isPathQuery,
+    displayLimit: input.displayLimit,
+    now,
+    historyStats,
+    searchRanking: runtimeSettings.searchRanking,
+    fileItems: Array.isArray(input.fileItems) ? input.fileItems : [],
+    recentItems: Array.isArray(input.recentItems) ? input.recentItems : [],
+    directItems: directPathCandidate ? [directPathCandidate] : [],
   });
 
-  const resultFromSettings = await settingsStrategy.execute(fastCtx, strategyDeps);
-  if (isSessionCancelled()) return buildCancelledResponse(status.isIndexing);
-  if (resultFromSettings.kind === "return") {
-    const strictSettings = filterStrictResults(asArray(resultFromSettings.response.results));
-    return {
-      ...resultFromSettings.response,
-      results: strictSettings.map(serializeSearchResult),
-      scoreDebugRows: buildScoreDebugRows(strictSettings),
-      totalCount: strictSettings.length,
-      hasMore: false,
-    };
-  }
-  const settingsResults = tagSource(resultFromSettings.items, "settings");
+  const fastRank = await rankCandidatesFast(
+    buildRankPayload({
+      lane: "fast",
+      fileItems: fastLaneOutput.fileItems,
+      recentItems: fastLaneOutput.recentItems,
+      displayLimit: DISPLAY_LIMIT,
+    }),
+  );
 
-  const resultFromApps = await appsStrategy.execute(fastCtx, strategyDeps);
-  if (isSessionCancelled()) return buildCancelledResponse(status.isIndexing);
-  if (resultFromApps.kind === "return") {
-    const strictApps = filterStrictResults(asArray(resultFromApps.response.results));
-    return {
-      ...resultFromApps.response,
-      results: strictApps.map(serializeSearchResult),
-      scoreDebugRows: buildScoreDebugRows(strictApps),
-      totalCount: strictApps.length,
-      hasMore: false,
-    };
-  }
-  const appResults = tagSource(resultFromApps.items, "apps");
+  if (isSessionCancelled() || fastRank.cancelled) return buildCancelledResponse(fastLaneOutput.isIndexing);
 
-  const { fileItems: fastFileItems, recentItems: fastRecentItems, isIndexing } = await runFileAndRecentLane({
-    ctx: fastCtx,
-    deps: { normalizeRecentKey: deps.normalizeRecentKey },
-    strategyDeps,
-    isSessionCancelled,
-  });
-  if (isSessionCancelled()) return buildCancelledResponse(isIndexing);
-
-  const directCandidates = (() => {
-    if (!directPathCandidate) return [] as any[];
-    const score = computeCombinedScore({
-      staticScore: 1,
-      type: directPathCandidate.type,
-      rawPath: directPathCandidate.path,
-      timeMs: directPathCandidate.timeMs || 0,
-    });
-    return [
-      {
-        ...directPathCandidate,
-        score,
-        staticScore: 1,
-        weightedScore: 10_000,
-        matchIndex: 0,
-        nameLen: 1,
-      },
-    ];
-  })();
-
-  const fastCollected = collectTopCandidates({
-    limit: DISPLAY_LIMIT,
-    searchIntent,
-    isSessionCancelled,
-    buckets: [
-      directCandidates,
-      sliceSource(commandResults, FAST_COMMAND_LIMIT),
-      sliceSource(settingsResults, FAST_SETTINGS_LIMIT),
-      sliceSource(appResults, FAST_APPS_LIMIT),
-      fastFileItems,
-      fastRecentItems,
-    ],
-  });
-  if (isSessionCancelled()) return buildCancelledResponse(isIndexing);
-
-  const topCandidates = fastCollected.topCandidates;
+  const topCandidates = Array.isArray(fastRank.items) ? fastRank.items : [];
   const firstBatchLimit = 10;
   const isShortQuery = queryLength <= 2;
   const firstBatch = topCandidates.slice(0, firstBatchLimit);
@@ -388,25 +277,21 @@ export async function handleSearchFiles(
     });
   }
 
-  const shouldRunFullLane = !isShortQuery && laneProfile.enableFullLane;
-  const hasMore = !isShortQuery && (fastRemainingBatch.length > 0 || shouldRunFullLane);
+  const shouldRunFullLane = !isShortQuery && laneProfile.enableFullLane && shouldRunFileLanes;
+  const hasMore = fastRemainingBatch.length > 0 || shouldRunFullLane;
 
   if (hasMore) {
     const alreadySent = new Set(firstPayload.map((item) => createSearchResultId(item)));
     (async () => {
       const emitBatch = async (batchItems: any[]) => {
         const payload: any[] = [];
-        const scoreDebugRows: SearchScoreDebugRow[] = [];
         for (const item of batchItems) {
           if (isSessionCancelled()) return false;
           const serialized = serializeSearchResult(item);
           const key = createSearchResultId(serialized);
           if (!key || alreadySent.has(key)) continue;
           alreadySent.add(key);
-
           payload.push(serialized);
-          const row = buildScoreDebugRow(item);
-          if (row) scoreDebugRows.push(row);
         }
 
         if (payload.length > 0 && !isSessionCancelled()) {
@@ -415,7 +300,7 @@ export async function handleSearchFiles(
             searchTypeId,
             searchSessionId,
             results: payload,
-            scoreDebugRows,
+            scoreDebugRows: [],
           });
         }
         await new Promise((resolve) => setTimeout(resolve, 16));
@@ -431,36 +316,30 @@ export async function handleSearchFiles(
       if (!shouldRunFullLane) return;
       if (isSessionCancelled()) return;
 
-      const fullCtx = createLaneContext({
-        base: baseCtx,
-        lane: "full",
-        fileSearchLimit: laneProfile.fullFileLimit,
-        recentLimit: laneProfile.fullRecentLimit,
-      });
-
-      const { fileItems: fullFileItems, recentItems: fullRecentItems } = await runFileAndRecentLane({
-        ctx: fullCtx,
+      const fullLaneOutput = await runFileAndRecentLane({
+        ctx: createLaneContext({
+          base: baseCtx,
+          lane: "full",
+          fileSearchLimit: laneProfile.fullFileLimit,
+          recentLimit: laneProfile.fullRecentLimit,
+        }),
         deps: { normalizeRecentKey: deps.normalizeRecentKey },
         strategyDeps,
         isSessionCancelled,
       });
       if (isSessionCancelled()) return;
 
-      const fullCollected = collectTopCandidates({
-        limit: DISPLAY_LIMIT,
-        searchIntent,
-        isSessionCancelled,
-        buckets: [
-          directCandidates,
-          sliceSource(commandResults, FULL_COMMAND_LIMIT),
-          sliceSource(settingsResults, FULL_SETTINGS_LIMIT),
-          sliceSource(appResults, FULL_APPS_LIMIT),
-          fullFileItems,
-          fullRecentItems,
-        ],
-      });
+      const fullRank = await rankCandidatesFull(
+        buildRankPayload({
+          lane: "full",
+          fileItems: fullLaneOutput.fileItems,
+          recentItems: fullLaneOutput.recentItems,
+          displayLimit: DISPLAY_LIMIT,
+        }),
+      );
+      if (isSessionCancelled() || fullRank.cancelled) return;
 
-      const fullTop = fullCollected.topCandidates;
+      const fullTop = Array.isArray(fullRank.items) ? fullRank.items : [];
       for (let i = 0; i < fullTop.length; i += MORE_BATCH_SIZE) {
         if (currentIconPrefetchToken !== iconPrefetchToken) return;
         const ok = await emitBatch(fullTop.slice(i, i + MORE_BATCH_SIZE));
@@ -471,10 +350,10 @@ export async function handleSearchFiles(
 
   return {
     results: firstPayload,
-    scoreDebugRows: buildScoreDebugRows(firstBatch),
-    isIndexing,
+    scoreDebugRows: [],
+    isIndexing: fastLaneOutput.isIndexing,
     hasMore,
     searchSessionId,
-    totalCount: fastCollected.totalSeenKeys.size,
+    totalCount: Number.isFinite(fastRank.totalCount) ? Math.max(0, Number(fastRank.totalCount)) : 0,
   };
 }

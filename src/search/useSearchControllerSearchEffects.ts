@@ -98,8 +98,7 @@ export function useSearchControllerSearchEffects(params: any) {
       if (payloadSessionId !== currentSessionId) return;
       mergeScoreDebugRows(payload?.scoreDebugRows);
 
-      const filteredMore = params.filterItemsBySearchType(payload.results, currentTypeId);
-      const strictMore = params.applyStrictSearchResults(filteredMore, currentQuery);
+      const strictMore = params.filterItemsBySearchType(payload.results, currentTypeId);
       if (strictMore.length <= 0) return;
       const hadPending = params.pendingAppendRef.current.length > 0;
       params.pendingAppendRef.current.push(...strictMore);
@@ -203,8 +202,7 @@ export function useSearchControllerSearchEffects(params: any) {
         if (params.parseDrivePrefix(params.queryRef.current).term !== trimmed) return;
         if (params.searchTypeIdRef.current !== params.searchTypeId) return;
         mergeScoreDebugRows(resp?.scoreDebugRows);
-        const nextResults = params.filterItemsBySearchType(resp?.results ?? [], params.searchTypeId);
-        const strictMatched = params.applyStrictSearchResults(nextResults, trimmed);
+        const strictMatched = params.filterItemsBySearchType(resp?.results ?? [], params.searchTypeId);
         const serverOrdered = dedupeResults(strictMatched);
         params.setSelectedIndex(0);
         startTransition(() => {
@@ -227,7 +225,6 @@ export function useSearchControllerSearchEffects(params: any) {
     params.searchTypeId,
     params.isIndexing,
     params.applyCalcResults,
-    params.applyStrictSearchResults,
   ]);
 
   useEffect(() => {
@@ -263,8 +260,7 @@ export function useSearchControllerSearchEffects(params: any) {
         if (params.searchTypeIdRef.current !== currentTypeId) return;
         mergeScoreDebugRows(resp?.scoreDebugRows);
 
-        const nextResults = params.filterItemsBySearchType(resp?.results ?? [], currentTypeId);
-        const strictMatched = params.applyStrictSearchResults(nextResults, trimmed);
+        const strictMatched = params.filterItemsBySearchType(resp?.results ?? [], currentTypeId);
         const serverOrdered = dedupeResults(strictMatched);
         startTransition(() => {
           params.setResults((prev: any[]) => {
@@ -285,7 +281,7 @@ export function useSearchControllerSearchEffects(params: any) {
       cancelled = true;
       window.clearTimeout(timerId);
     };
-  }, [params.query, params.isIndexing, params.isSearching, params.applyStrictSearchResults]);
+  }, [params.query, params.isIndexing, params.isSearching]);
 
   useEffect(() => {
     scoreDebugLoggerRef.current.schedule({
