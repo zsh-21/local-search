@@ -43,7 +43,6 @@ export type SearchContext = {
   now: number;
   nameScorer: {
     computeWeightedNameMatch: (name: string) => { weightedScore: number; staticScore: number; matchIndex: number; nameLen: number };
-    scoreRecentName: (name: string) => number;
   };
   scoreComputer: {
     getLastUsedMs: (rawPath: string) => number;

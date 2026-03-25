@@ -417,12 +417,7 @@ export function useSearchController() {
     !isSearching &&
     !isIndexing &&
     results.length === 0;
-  const showInputHint =
-    trimmedQuery.length > 0 &&
-    trimmedQuery.length < 1 &&
-    !isSearching &&
-    !isIndexing &&
-    results.length === 0;
+  const showInputHint = false;
   const ghostSuffixValue = useMemo(() => {
     if (!inputValue || !ghostInputValue) return "";
     if (ghostInputValue.length <= inputValue.length) return "";

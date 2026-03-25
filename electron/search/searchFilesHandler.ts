@@ -149,7 +149,7 @@ export async function handleSearchFiles(
   });
 
   const nameScorer = createNameScorer(queryForSearch, { mode: laneProfile.matchMode });
-  const { lowerQuery, computeWeightedNameMatch, scoreRecentName } = nameScorer;
+  const { lowerQuery, computeWeightedNameMatch } = nameScorer;
   const filterStrictResults = <T extends { name?: string; path?: string }>(items: T[]) =>
     items.filter((item) => {
       const target = pickSearchMatchTargetText(item, searchIntent);
@@ -277,7 +277,7 @@ export async function handleSearchFiles(
     driveFilter,
     extFilter,
     now,
-    nameScorer: { computeWeightedNameMatch, scoreRecentName },
+    nameScorer: { computeWeightedNameMatch },
     scoreComputer: { getLastUsedMs, computeCombinedScore },
   };
 

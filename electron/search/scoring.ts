@@ -109,7 +109,6 @@ function levenshteinDistance(a: string, b: string, maxDistance = 24) {
 
 export function createNameScorer(query: string, options?: { mode?: "short" | "medium" | "full" }) {
   const lowerQuery = normalizeTextForSearch(query);
-  const queryParts = tokenizeForScore(lowerQuery);
   const queryKeepPathSeparators = /[\\/]/.test(lowerQuery);
   const queryCompact = toCompactKey(lowerQuery, queryKeepPathSeparators);
   const matchMode = options?.mode || "full";
@@ -283,9 +282,7 @@ export function createNameScorer(query: string, options?: { mode?: "short" | "me
     };
   };
 
-  const scoreRecentName = (name: string) => computeWeightedNameMatch(name).weightedScore;
-
-  return { lowerQuery, queryParts, computeWeightedNameMatch, scoreRecentName };
+  return { lowerQuery, computeWeightedNameMatch };
 }
 
 export function createScoreComputer(input: {
