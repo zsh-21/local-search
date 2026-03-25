@@ -1,10 +1,12 @@
 import { deriveIconKey } from "../icon/iconKey";
 
+const APP_SOURCE_SCORE = 100;
+
 export async function searchApps(input: {
   searchTypeId: string;
   lowerQuery: string;
   lane?: "fast" | "full";
-  getInstalledApps: () => Array<{ Name: string; AppID: string }>;
+  getInstalledApps: () => Array<{ Name: string; AppID: string; installTimeMs?: number }>;
   normalizeAppGroupKey: (name: string) => string;
   computeWeightedNameMatch: (name: string) => { weightedScore: number; staticScore: number; matchIndex: number; nameLen: number };
   computeCombinedScore: (input: { staticScore: number; type: string; rawPath: string; timeMs?: number; sourceScore?: number }) => number;
@@ -40,11 +42,20 @@ export async function searchApps(input: {
     type: string;
     iconKey: string;
     score: number;
+    sourceScore: number;
+    timeMs: number;
     staticScore: number;
     weightedScore: number;
     matchIndex: number;
     nameLen: number;
   }> = [];
+
+  const getAppTimeMs = (appItem: { AppID: string; installTimeMs?: number }) => {
+    const lastUsedMs = getLastUsedMs(appItem.AppID);
+    if (Number.isFinite(lastUsedMs) && lastUsedMs > 0) return Math.round(lastUsedMs);
+    const installTimeMs = Number(appItem.installTimeMs || 0);
+    return Number.isFinite(installTimeMs) && installTimeMs > 0 ? Math.round(installTimeMs) : 0;
+  };
 
   for (const appItem of installedApps) {
     if (isShortcutAppId(appItem.AppID)) continue;
@@ -56,11 +67,13 @@ export async function searchApps(input: {
     if (groupKey) matchedGroupKeys.add(groupKey);
     matchedAppIds.add(String(appItem.AppID || "").toLowerCase());
 
+    const appTimeMs = getAppTimeMs(appItem);
     const score = computeCombinedScore({
       staticScore: weighted.staticScore,
       type: "app",
       rawPath: appItem.AppID,
-      timeMs: getLastUsedMs(appItem.AppID),
+      timeMs: appTimeMs,
+      sourceScore: APP_SOURCE_SCORE,
     });
 
     results.push({
@@ -69,6 +82,8 @@ export async function searchApps(input: {
       type: "app",
       iconKey: deriveIconKey({ type: "app", path: appItem.AppID, name: appItem.Name }),
       score,
+      sourceScore: APP_SOURCE_SCORE,
+      timeMs: appTimeMs,
       staticScore: weighted.staticScore,
       weightedScore: weighted.weightedScore,
       matchIndex: weighted.matchIndex,
@@ -94,11 +109,13 @@ export async function searchApps(input: {
 
       const weighted = computeWeightedNameMatch(appItem.Name);
       const fallbackStatic = weighted.staticScore > 0 ? weighted.staticScore : 0.22;
+      const appTimeMs = getAppTimeMs(appItem);
       const score = computeCombinedScore({
         staticScore: fallbackStatic,
         type: "app",
         rawPath: appItem.AppID,
-        timeMs: getLastUsedMs(appItem.AppID),
+        timeMs: appTimeMs,
+        sourceScore: APP_SOURCE_SCORE,
       });
 
       results.push({
@@ -107,6 +124,8 @@ export async function searchApps(input: {
         type: "app",
         iconKey: deriveIconKey({ type: "app", path: appItem.AppID, name: appItem.Name }),
         score,
+        sourceScore: APP_SOURCE_SCORE,
+        timeMs: appTimeMs,
         staticScore: fallbackStatic,
         weightedScore: weighted.weightedScore,
         matchIndex: weighted.matchIndex,
@@ -128,8 +147,7 @@ export async function searchApps(input: {
   if (searchTypeId === "app") {
     return sorted
       .slice(0, 100)
-      .map(({ score, staticScore, weightedScore, matchIndex, nameLen, ...rest }) => rest);
+      .map(({ score, weightedScore, matchIndex, nameLen, ...rest }) => rest);
   }
   return sorted.slice(0, laneLimit);
 }
-

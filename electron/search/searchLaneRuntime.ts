@@ -5,7 +5,19 @@ import { TopKCollector } from "./topKCollector";
 import type { SearchContext, SearchStrategyDeps } from "./strategies/types";
 import { isStrictSearchMatch, pickSearchMatchTargetText, type SearchMatchIntent } from "../../shared/searchMatch";
 
+const FILE_LIKE_TYPES = new Set(["file", "folder", "image", "video"]);
+
+function isFileLikeType(type: string) {
+  return FILE_LIKE_TYPES.has(type);
+}
+
 function compareCandidates(a: any, b: any) {
+  const typeA = typeof a?.type === "string" ? a.type : "";
+  const typeB = typeof b?.type === "string" ? b.type : "";
+  const nonFileA = !isFileLikeType(typeA);
+  const nonFileB = !isFileLikeType(typeB);
+  if (nonFileA !== nonFileB) return nonFileA ? -1 : 1;
+
   const sa = typeof a?.score === "number" ? a.score : 0;
   const sb = typeof b?.score === "number" ? b.score : 0;
   if (sa > sb) return -1;

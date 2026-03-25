@@ -271,7 +271,7 @@ export function useSearchController() {
   );
 
   useSearchControllerSearchEffects({
-    query, searchTypeId, isIndexing, isSearching, results, buildCalcItem, parseCalcMode, parseDrivePrefix,
+    query, searchTypeId, isIndexing, isSearching, hasMore, results, buildCalcItem, parseCalcMode, parseDrivePrefix,
     queryRef, searchTypeIdRef, selectedPathRef, calcItemRef, searchRequestIdRef, searchSessionIdRef,
     typeSwitchRequestedRef, pendingAppendRef, flushAppendTimerRef, setResults, setTotalCount, setIsSearching,
     setHasMore, setHoveredKey, setSelectedIndex, setIsIndexing, refreshHistory, filterItemsBySearchType,

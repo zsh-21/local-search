@@ -285,7 +285,7 @@ export function SearchSection({
     const fileMtime = Math.max(0, Number(weights.fileMtime) || 0);
     const sum = match + frequency + recency + fileMtime;
     if (!Number.isFinite(sum) || sum <= 0) {
-      return { match: 40, frequency: 30, recency: 20, fileMtime: 10 };
+      return { match: 38, frequency: 27, recency: 17, fileMtime: 18 };
     }
     return {
       match: Number(((match / sum) * 100).toFixed(4)),
@@ -322,7 +322,7 @@ export function SearchSection({
 
   const resetRankingToDefault = () => {
     updateRanking({
-      signalWeights: { match: 40, frequency: 30, recency: 20, fileMtime: 10 },
+      signalWeights: { match: 38, frequency: 27, recency: 17, fileMtime: 18 },
       frecency: { decayFactor: 0.01, frequencyWeight: 1 },
       typePriority: {
         app: 10,

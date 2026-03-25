@@ -22,10 +22,10 @@ export const DEFAULT_RESULT_ACTION_BUTTONS: ResultActionButtonId[] = ["openFolde
 // - typePriority 的 1-10 映射遵循“应用 > 系统命令 > 文件 > 网页 > 插件”
 export const DEFAULT_SEARCH_RANKING: SearchRankingConfig = {
   signalWeights: {
-    match: 40,
-    frequency: 30,
-    recency: 20,
-    fileMtime: 10,
+    match: 38,
+    frequency: 27,
+    recency: 17,
+    fileMtime: 18,
   },
   frecency: {
     decayFactor: 0.01,

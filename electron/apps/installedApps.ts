@@ -11,6 +11,7 @@ const INSTALLED_APPS_CACHE_VERSION = 1;
 export interface InstalledApp {
   Name: string;
   AppID: string;
+  installTimeMs?: number;
 }
 
 let installedAppsCache: InstalledApp[] = [];
@@ -35,7 +36,9 @@ export function loadInstalledApps() {
         const name = typeof (it as any)?.Name === 'string' ? (it as any).Name.trim() : '';
         const appId = typeof (it as any)?.AppID === 'string' ? (it as any).AppID.trim() : '';
         if (!name || !appId) continue;
-        merged.set(appId.toLowerCase(), { Name: name, AppID: appId });
+        const installTimeMsRaw = typeof (it as any)?.installTimeMs === 'number' ? (it as any).installTimeMs : Number((it as any)?.installTimeMs);
+        const installTimeMs = Number.isFinite(installTimeMsRaw) && installTimeMsRaw > 0 ? Math.round(installTimeMsRaw) : 0;
+        merged.set(appId.toLowerCase(), installTimeMs > 0 ? { Name: name, AppID: appId, installTimeMs } : { Name: name, AppID: appId });
       }
       if (merged.size > 0) installedAppsCache = Array.from(merged.values());
     } catch {}
@@ -52,12 +55,37 @@ export function loadInstalledApps() {
     return beforeComma;
   };
 
+  const parseInstallTimeMs = (raw: unknown) => {
+    const text = typeof raw === 'number' ? String(Math.trunc(raw)) : typeof raw === 'string' ? raw.trim() : '';
+    if (!text) return 0;
+    if (/^\d{8}$/.test(text)) {
+      const year = Number(text.slice(0, 4));
+      const month = Number(text.slice(4, 6));
+      const day = Number(text.slice(6, 8));
+      if (year >= 1970 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const parsed = new Date(year, month - 1, day).getTime();
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      }
+      return 0;
+    }
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  };
+
   const saveCache = (items: InstalledApp[]) => {
     try {
       const stable = items
         .slice()
         .filter((x) => x && typeof x.Name === 'string' && typeof x.AppID === 'string')
-        .map((x) => ({ Name: x.Name.trim(), AppID: x.AppID.trim() }))
+        .map((x) => {
+          const installTimeMs =
+            typeof x.installTimeMs === 'number' && Number.isFinite(x.installTimeMs) && x.installTimeMs > 0
+              ? Math.round(x.installTimeMs)
+              : 0;
+          return installTimeMs > 0
+            ? { Name: x.Name.trim(), AppID: x.AppID.trim(), installTimeMs }
+            : { Name: x.Name.trim(), AppID: x.AppID.trim() };
+        })
         .filter((x) => x.Name && x.AppID);
       stable.sort((a, b) => a.AppID.toLowerCase().localeCompare(b.AppID.toLowerCase()));
       writeFileSync(
@@ -113,7 +141,8 @@ export function loadInstalledApps() {
         "          $dn=(Get-ItemProperty -LiteralPath $p).DisplayName;",
         "          if(-not $dn){ return }",
         "          $di=(Get-ItemProperty -LiteralPath $p).DisplayIcon;",
-        "          if($di){ $items += [pscustomobject]@{Name=[string]$dn;AppID=[string]$di} }",
+        "          $id=(Get-ItemProperty -LiteralPath $p).InstallDate;",
+        "          if($di){ $items += [pscustomobject]@{Name=[string]$dn;AppID=[string]$di;InstallDate=[string]$id} }",
         "        } catch {}",
         "      }",
         "    }",
@@ -138,6 +167,7 @@ export function loadInstalledApps() {
         const list: InstalledApp[] = Array.isArray(apps) ? apps : apps ? [apps] : [];
         const merged = new Map<string, InstalledApp>();
         const nameSeen = new Set<string>();
+        const nameToKey = new Map<string, string>();
 
         // 去重策略：优先保留 Get-StartApps 的 AppID（通常更“官方”），注册表项作为补齐；同名项避免重复出现
         for (const it of list) {
@@ -155,9 +185,30 @@ export function loadInstalledApps() {
 
           const key = normalizedId.toLowerCase();
           const nameKey = name.toLowerCase();
-          if (nameSeen.has(nameKey) && !merged.has(key)) continue;
+          const installTimeMs = parseInstallTimeMs((it as any)?.InstallDate);
+          if (nameSeen.has(nameKey) && !merged.has(key)) {
+            const existingKey = nameToKey.get(nameKey);
+            if (existingKey) {
+              const existing = merged.get(existingKey);
+              if (existing && installTimeMs > 0 && (!existing.installTimeMs || installTimeMs > existing.installTimeMs)) {
+                existing.installTimeMs = installTimeMs;
+              }
+            }
+            continue;
+          }
 
-          if (!merged.has(key)) merged.set(key, { Name: name, AppID: normalizedId });
+          const existingByKey = merged.get(key);
+          if (existingByKey) {
+            if (installTimeMs > 0 && (!existingByKey.installTimeMs || installTimeMs > existingByKey.installTimeMs)) {
+              existingByKey.installTimeMs = installTimeMs;
+            }
+          } else {
+            merged.set(
+              key,
+              installTimeMs > 0 ? { Name: name, AppID: normalizedId, installTimeMs } : { Name: name, AppID: normalizedId }
+            );
+          }
+          if (!nameToKey.has(nameKey)) nameToKey.set(nameKey, key);
           nameSeen.add(nameKey);
         }
 

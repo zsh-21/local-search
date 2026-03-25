@@ -27,6 +27,24 @@ type SearchPreviewSample = {
 };
 
 const SEARCH_PREVIEW_FREQUENCY_CAP = 80;
+const SEARCH_PREVIEW_APP_SOURCE_BONUS = 10_000;
+const SEARCH_PREVIEW_CONFIG_EXT_BONUS = 3_000;
+const SEARCH_PREVIEW_TMP_EXT_BONUS = -5_000;
+const SEARCH_PREVIEW_CONFIG_EXTS = new Set([
+  ".ini",
+  ".conf",
+  ".config",
+  ".cfg",
+  ".cnf",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".env",
+  ".json",
+  ".xml",
+  ".properties",
+  ".reg",
+]);
 
 const SEARCH_PREVIEW_SAMPLES: SearchPreviewSample[] = [
   {
@@ -105,6 +123,16 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
   const ranking = draft.searchRanking;
 
   const previewRows = useMemo(() => {
+    const extBonusByPath = (targetPath: string, type: SearchPreviewType) => {
+      if (type !== "file") return 0;
+      const extMatch = String(targetPath || "").toLowerCase().match(/(\.[^./\\]+)$/);
+      const ext = extMatch?.[1] || "";
+      if (!ext) return 0;
+      if (ext === ".tmp") return SEARCH_PREVIEW_TMP_EXT_BONUS;
+      if (SEARCH_PREVIEW_CONFIG_EXTS.has(ext)) return SEARCH_PREVIEW_CONFIG_EXT_BONUS;
+      return 0;
+    };
+
     const weightSum =
       Math.max(0, Number(ranking.signalWeights.match) || 0) +
       Math.max(0, Number(ranking.signalWeights.frequency) || 0) +
@@ -118,7 +146,7 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
             recency: (Math.max(0, Number(ranking.signalWeights.recency) || 0) / weightSum) * 100,
             fileMtime: (Math.max(0, Number(ranking.signalWeights.fileMtime) || 0) / weightSum) * 100,
           }
-        : { match: 40, frequency: 30, recency: 20, fileMtime: 10 };
+        : { match: 38, frequency: 27, recency: 17, fileMtime: 18 };
 
     const decayFactor = Math.min(1, Math.max(0.0001, Number(ranking.frecency.decayFactor) || 0.01));
     const frequencyWeight = Math.min(10, Math.max(0, Number(ranking.frecency.frequencyWeight) || 0));
@@ -134,11 +162,14 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
           ? Math.exp(-decayFactor * Math.max(0, item.fileMtimeHours ?? 0))
           : 0;
 
-      const finalScore =
+      const normalizedScore =
         (normalizedWeights.match / 100) * staticScore +
         (normalizedWeights.frequency / 100) * frequencyScore +
         (normalizedWeights.recency / 100) * recencyScore +
         (normalizedWeights.fileMtime / 100) * fileMtimeScore;
+      const sourceBonus = item.type === "app" ? SEARCH_PREVIEW_APP_SOURCE_BONUS : 0;
+      const extBonus = extBonusByPath(item.path || "", item.type);
+      const finalScore = normalizedScore * 1_000_000 + sourceBonus + extBonus;
 
       return {
         ...item,

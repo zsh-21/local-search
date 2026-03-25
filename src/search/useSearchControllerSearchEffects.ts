@@ -1,7 +1,15 @@
-import { startTransition, useEffect } from "react";
+import { startTransition, useEffect, useRef } from "react";
 import { dedupeResults, mergeByServerOrder, mergeResultsStable } from "./searchResultUtils";
+import { SearchScoreDebugLogger } from "./searchScoreDebugLogger";
+import type { SearchScoreDebugRow } from "../../shared/searchScoreDebug";
 
 export function useSearchControllerSearchEffects(params: any) {
+  const scoreDebugLoggerRef = useRef<SearchScoreDebugLogger>(new SearchScoreDebugLogger(1000));
+
+  const mergeScoreDebugRows = (rows: SearchScoreDebugRow[] | undefined) => {
+    scoreDebugLoggerRef.current.mergeRows(rows);
+  };
+
   const mergeIconMap = (next: Record<string, string>) => {
     if (!next || typeof next !== "object") return;
     params.setIconByKey((prev: Record<string, string>) => {
@@ -74,7 +82,7 @@ export function useSearchControllerSearchEffects(params: any) {
   };
 
   useEffect(() => {
-    const handler = (_event: any, payload: { query: string; results: any[] }) => {
+    const handler = (_event: any, payload: { query: string; results: any[]; scoreDebugRows?: SearchScoreDebugRow[] }) => {
       const currentQuery = params.parseDrivePrefix(params.queryRef.current).term;
       const currentTypeId = params.searchTypeIdRef.current;
       const currentSessionId = params.searchSessionIdRef.current;
@@ -88,6 +96,7 @@ export function useSearchControllerSearchEffects(params: any) {
       if (payloadQuery !== currentQuery) return;
       if (payloadTypeId !== currentTypeId) return;
       if (payloadSessionId !== currentSessionId) return;
+      mergeScoreDebugRows(payload?.scoreDebugRows);
 
       const filteredMore = params.filterItemsBySearchType(payload.results, currentTypeId);
       const strictMore = params.applyStrictSearchResults(filteredMore, currentQuery);
@@ -109,6 +118,12 @@ export function useSearchControllerSearchEffects(params: any) {
     return () => {
       flushPendingAppends();
       window.ipcRenderer?.off("more-results", handler);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      scoreDebugLoggerRef.current.dispose();
     };
   }, []);
 
@@ -183,10 +198,11 @@ export function useSearchControllerSearchEffects(params: any) {
           searchTypeId: params.searchTypeId,
           searchSessionId,
           drive,
-        })) as { results?: any[]; isIndexing?: boolean; hasMore?: boolean } | undefined;
+        })) as { results?: any[]; isIndexing?: boolean; hasMore?: boolean; scoreDebugRows?: SearchScoreDebugRow[] } | undefined;
         if (params.searchRequestIdRef.current !== requestId) return;
         if (params.parseDrivePrefix(params.queryRef.current).term !== trimmed) return;
         if (params.searchTypeIdRef.current !== params.searchTypeId) return;
+        mergeScoreDebugRows(resp?.scoreDebugRows);
         const nextResults = params.filterItemsBySearchType(resp?.results ?? [], params.searchTypeId);
         const strictMatched = params.applyStrictSearchResults(nextResults, trimmed);
         const serverOrdered = dedupeResults(strictMatched);
@@ -240,11 +256,12 @@ export function useSearchControllerSearchEffects(params: any) {
           searchTypeId: currentTypeId,
           searchSessionId: currentSessionId,
           drive: currentDrive,
-        })) as { results?: any[]; isIndexing?: boolean; hasMore?: boolean } | undefined;
+        })) as { results?: any[]; isIndexing?: boolean; hasMore?: boolean; scoreDebugRows?: SearchScoreDebugRow[] } | undefined;
 
         if (cancelled) return;
         if (params.parseDrivePrefix(params.queryRef.current).term !== trimmed) return;
         if (params.searchTypeIdRef.current !== currentTypeId) return;
+        mergeScoreDebugRows(resp?.scoreDebugRows);
 
         const nextResults = params.filterItemsBySearchType(resp?.results ?? [], currentTypeId);
         const strictMatched = params.applyStrictSearchResults(nextResults, trimmed);
@@ -269,4 +286,15 @@ export function useSearchControllerSearchEffects(params: any) {
       window.clearTimeout(timerId);
     };
   }, [params.query, params.isIndexing, params.isSearching, params.applyStrictSearchResults]);
+
+  useEffect(() => {
+    scoreDebugLoggerRef.current.schedule({
+      sessionId: typeof params.searchSessionIdRef?.current === "string" ? params.searchSessionIdRef.current : "",
+      query: params.parseDrivePrefix(params.queryRef.current).term,
+      searchTypeId: typeof params.searchTypeIdRef?.current === "string" ? params.searchTypeIdRef.current : params.searchTypeId,
+      isSearching: Boolean(params.isSearching),
+      hasMore: Boolean(params.hasMore),
+      results: Array.isArray(params.results) ? params.results : [],
+    });
+  }, [params.results, params.isSearching, params.hasMore, params.query, params.searchTypeId]);
 }

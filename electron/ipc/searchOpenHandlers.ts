@@ -36,6 +36,18 @@ function normalizeSearchInput(input: any): SearchInputPayload {
   };
 }
 
+function resolveAppDisplayName(target: string) {
+  const normalizedTarget = typeof target === "string" ? target.trim() : "";
+  const lowerTarget = normalizedTarget.toLowerCase();
+  if (lowerTarget) {
+    const app = getInstalledAppsCache().find((it) => String(it?.AppID || "").trim().toLowerCase() === lowerTarget);
+    if (app?.Name) return app.Name;
+  }
+  const resolved = resolveAppId(normalizedTarget);
+  const basename = path.basename(resolved || normalizedTarget);
+  return basename || normalizedTarget || "未知应用";
+}
+
 async function recordHistoryAndHideWindow(
   event: any,
   deps: RegisterSearchOpenIpcHandlersDeps,
@@ -108,7 +120,13 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
     try {
       const resolved = resolveAppId(target);
       const ok = await openResolvedTarget(resolved);
-      if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+      if (ok) {
+        await recordHistoryAndHideWindow(event, deps, {
+          name: resolveAppDisplayName(target),
+          path: target,
+          type: "app",
+        });
+      }
       return ok;
     } catch {
       return false;
@@ -153,7 +171,13 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
 
       if (process.platform !== "win32") {
         const ok = await openResolvedTarget(resolved);
-        if (ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+        if (ok) {
+          await recordHistoryAndHideWindow(event, deps, {
+            name: n || resolveAppDisplayName(p),
+            path: p,
+            type: t || "file",
+          });
+        }
         return { ok: Boolean(ok) };
       }
 
@@ -188,7 +212,13 @@ export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandler
 
       const commandLine = `cmd.exe /c start \"\" ${deps.quoteCmdArg(targetToRun)}`;
       const resp = await deps.sudoExec(commandLine);
-      if (resp.ok) BrowserWindow.fromWebContents(event.sender)?.hide();
+      if (resp.ok) {
+        await recordHistoryAndHideWindow(event, deps, {
+          name: n || (t === "app" ? resolveAppDisplayName(p) : path.basename(p || targetToRun)),
+          path: p,
+          type: t || "file",
+        });
+      }
       return resp;
     } catch {
       return { ok: false, message: "以管理员身份运行失败" };

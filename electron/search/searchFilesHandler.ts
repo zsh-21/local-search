@@ -8,6 +8,7 @@ import { beginSearchSession } from "./sessionRegistry";
 import { createSearchResultId, serializeSearchResult } from "./resultSerializer";
 import { createSearchLaneProfile } from "./searchLaneProfile";
 import { buildCommandResults, collectTopCandidates, createLaneContext, runFileAndRecentLane } from "./searchLaneRuntime";
+import type { SearchScoreDebugRow } from "../../shared/searchScoreDebug";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -97,6 +98,13 @@ function sliceSource(items: any[], limit: number) {
   return items.length > limit ? items.slice(0, limit) : items;
 }
 
+function clamp01(v: number) {
+  if (!Number.isFinite(v)) return 0;
+  if (v <= 0) return 0;
+  if (v >= 1) return 1;
+  return v;
+}
+
 export async function handleSearchFiles(
   event: Electron.IpcMainInvokeEvent,
   query: string,
@@ -173,7 +181,7 @@ export async function handleSearchFiles(
   const now = Date.now();
   const historyStats = loadHistoryStats();
   const runtimeSettings = deps.loadSettings();
-  const { getLastUsedMs, computeCombinedScore } = createScoreComputer({
+  const { getLastUsedMs, computeCombinedScore, computeCombinedScoreDetail } = createScoreComputer({
     now,
     historyStats,
     normalizeHistoryKey,
@@ -189,6 +197,71 @@ export async function handleSearchFiles(
     computeCombinedScore,
     getLastUsedMs,
   });
+
+  const buildScoreDebugRow = (item: any): SearchScoreDebugRow | null => {
+    if (!item || typeof item !== "object") return null;
+    const name = typeof item.name === "string" ? item.name : "";
+    const path = typeof item.path === "string" ? item.path : "";
+    const type = typeof item.type === "string" ? item.type : "file";
+    const id = createSearchResultId({ type, path, name });
+    if (!id) return null;
+
+    const staticScore =
+      typeof item.staticScore === "number" && Number.isFinite(item.staticScore)
+        ? clamp01(item.staticScore)
+        : clamp01(computeWeightedNameMatch(name).staticScore);
+    const timeMs = Number.isFinite(item.timeMs as number) ? Math.max(0, Number(item.timeMs)) : 0;
+    const sourceScore = Number.isFinite(item.sourceScore as number) ? Number(item.sourceScore) : 0;
+    const detail = computeCombinedScoreDetail({
+      staticScore,
+      type,
+      rawPath: path,
+      timeMs,
+      sourceScore,
+    });
+
+    return {
+      id,
+      name,
+      path,
+      type,
+      source: typeof item.source === "string" ? item.source : "",
+      totalScore: detail.totalScore,
+      sourceBonusScore: detail.sourceBonusScore,
+      extBonusScore: detail.extBonusScore,
+      extKey: detail.extKey,
+      scoreByMatch: detail.scoreByMatch,
+      scoreByFrequency: detail.scoreByFrequency,
+      scoreByRecency: detail.scoreByRecency,
+      scoreByFileMtime: detail.scoreByFileMtime,
+      staticScore: detail.staticScore,
+      staticWithType: detail.staticWithType,
+      frequencyScore: detail.frequencyScore,
+      recencyScore: detail.recencyScore,
+      fileMtimeScore: detail.fileMtimeScore,
+      weightMatch: detail.weightMatch,
+      weightFrequency: detail.weightFrequency,
+      weightRecency: detail.weightRecency,
+      weightFileMtime: detail.weightFileMtime,
+      priorityType: detail.priorityType,
+      priorityValue: detail.priorityValue,
+      priorityNorm: detail.priorityNorm,
+      historyCount: detail.historyCount,
+      historyLastUsedMs: detail.historyLastUsedMs,
+      itemTimeMs: detail.itemTimeMs,
+      effectiveRecencyTimeMs: detail.effectiveRecencyTimeMs,
+      fileMtimeSource: detail.fileMtimeSource,
+    };
+  };
+
+  const buildScoreDebugRows = (items: any[]): SearchScoreDebugRow[] => {
+    const rows: SearchScoreDebugRow[] = [];
+    for (const item of items || []) {
+      const row = buildScoreDebugRow(item);
+      if (row) rows.push(row);
+    }
+    return rows;
+  };
 
   const getCurrentIconPrefetchToken = () => iconPrefetchToken;
   const baseCtx: Omit<SearchContext, "lane" | "fileSearchLimit" | "recentLimit"> = {
@@ -231,6 +304,7 @@ export async function handleSearchFiles(
     return {
       ...resultFromSettings.response,
       results: strictSettings.map(serializeSearchResult),
+      scoreDebugRows: buildScoreDebugRows(strictSettings),
       totalCount: strictSettings.length,
       hasMore: false,
     };
@@ -244,6 +318,7 @@ export async function handleSearchFiles(
     return {
       ...resultFromApps.response,
       results: strictApps.map(serializeSearchResult),
+      scoreDebugRows: buildScoreDebugRows(strictApps),
       totalCount: strictApps.length,
       hasMore: false,
     };
@@ -321,6 +396,7 @@ export async function handleSearchFiles(
     (async () => {
       const emitBatch = async (batchItems: any[]) => {
         const payload: any[] = [];
+        const scoreDebugRows: SearchScoreDebugRow[] = [];
         for (const item of batchItems) {
           if (isSessionCancelled()) return false;
           const serialized = serializeSearchResult(item);
@@ -329,6 +405,8 @@ export async function handleSearchFiles(
           alreadySent.add(key);
 
           payload.push(serialized);
+          const row = buildScoreDebugRow(item);
+          if (row) scoreDebugRows.push(row);
         }
 
         if (payload.length > 0 && !isSessionCancelled()) {
@@ -337,6 +415,7 @@ export async function handleSearchFiles(
             searchTypeId,
             searchSessionId,
             results: payload,
+            scoreDebugRows,
           });
         }
         await new Promise((resolve) => setTimeout(resolve, 16));
@@ -392,6 +471,7 @@ export async function handleSearchFiles(
 
   return {
     results: firstPayload,
+    scoreDebugRows: buildScoreDebugRows(firstBatch),
     isIndexing,
     hasMore,
     searchSessionId,

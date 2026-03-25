@@ -7,6 +7,11 @@ const COMPACT_SYMBOL_KEEP_PATH_RE = /[^\p{L}\p{N}\\/]+/gu;
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.svg']);
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']);
+const CONFIG_FILE_EXTENSIONS = new Set(['.ini', '.conf', '.config', '.cfg', '.cnf', '.yaml', '.yml', '.toml', '.env', '.json', '.xml', '.properties', '.reg']);
+const TEMP_FILE_EXTENSIONS = new Set(['.tmp']);
+const CONFIG_FILE_EXT_BONUS_SCORE = 3000;
+const TEMP_FILE_EXT_BONUS_SCORE = -5000;
+const MISSING_FILE_TIME_FALLBACK_SCORE = 0.04;
 const FREQUENCY_CAP = 80;
 
 function clamp01(v: number) {
@@ -17,12 +22,10 @@ function clamp01(v: number) {
 }
 
 function normalizeTextForSearch(input: string) {
-  // 统一做 NFKC 与小写，减少全角/半角和大小写差异导致的匹配噪声
   return String(input || '').normalize('NFKC').toLowerCase().trim();
 }
 
 function tokenizeForScore(input: string) {
-  // 除路径符号外其余符号视作分隔符，保证“UI-UX / UI UX / ui_ux”语义一致
   const normalized = normalizeTextForSearch(input);
   if (!normalized) return [] as string[];
   return normalized
@@ -178,7 +181,6 @@ export function createNameScorer(query: string, options?: { mode?: "short" | "me
       }
     }
 
-    // 缩写匹配：如“vs -> Visual Studio”，优先于一般模糊匹配
     const initials = buildInitialsKey(target);
     if (queryCompact && initials) {
       const abbrIndex = initials.indexOf(queryCompact);
@@ -205,7 +207,6 @@ export function createNameScorer(query: string, options?: { mode?: "short" | "me
       // 关键词全覆盖：强加分
       score += 24;
       if (isTokenOrderConsistent(target, scoreTokens)) {
-        // 词序一致：进一步提升排序稳定性
         score += 10;
       }
     } else if (matchedTokenCount > 0 && tokenCount > 0) {
@@ -256,7 +257,6 @@ export function createNameScorer(query: string, options?: { mode?: "short" | "me
     const noExt = nameLower.replace(/\.[^./\\]+$/, '');
     const candidates = noExt && noExt !== nameLower ? [nameLower, noExt] : [nameLower];
 
-    // 查询包含英数且目标有中文时，额外引入全拼与首字母候选，提升中英文混输命中
     const hasLatinOrNumberQuery = /[a-z0-9]/.test(queryCompact);
     if (hasLatinOrNumberQuery && hasChineseChar(rawName)) {
       const py = normalizeTextForSearch(toPinyinFull(rawName));
@@ -283,7 +283,6 @@ export function createNameScorer(query: string, options?: { mode?: "short" | "me
     };
   };
 
-  // 兼容旧调用：返回加权分，避免策略层在迁移期出现签名断裂
   const scoreRecentName = (name: string) => computeWeightedNameMatch(name).weightedScore;
 
   return { lowerQuery, queryParts, computeWeightedNameMatch, scoreRecentName };
@@ -389,7 +388,16 @@ export function createScoreComputer(input: {
   const isFileLike = (priorityType: keyof typeof ranking.typePriority) =>
     priorityType === 'file' || priorityType === 'folder' || priorityType === 'image' || priorityType === 'video';
 
-  const computeCombinedScore = (params: {
+  const getFileExtensionBias = (rawPath: string, type: string) => {
+    if (type !== 'file') return { ext: '', score: 0 };
+    const ext = normalizeExtKey(rawPath);
+    if (!ext) return { ext: '', score: 0 };
+    if (TEMP_FILE_EXTENSIONS.has(ext)) return { ext, score: TEMP_FILE_EXT_BONUS_SCORE };
+    if (CONFIG_FILE_EXTENSIONS.has(ext)) return { ext, score: CONFIG_FILE_EXT_BONUS_SCORE };
+    return { ext, score: 0 };
+  };
+
+  const computeCombinedScoreDetail = (params: {
     staticScore: number;
     type: string;
     rawPath: string;
@@ -398,25 +406,79 @@ export function createScoreComputer(input: {
   }) => {
     const priorityType = inferPriorityType(params.type, params.rawPath);
     const usage = getHistoryUsage(params.rawPath);
+    const itemTimeMs = Number.isFinite(params.timeMs as number) ? Math.max(0, Number(params.timeMs)) : 0;
+    const recencyTimeMs = usage.lastUsed > 0 ? usage.lastUsed : (priorityType === 'app' ? itemTimeMs : 0);
 
     const frequencyScore = getFrequencyScore(usage.count);
-    const recencyScore = getRecencyScore(usage.lastUsed);
-    const fileMtimeScore = isFileLike(priorityType) ? getRecencyScore(Number(params.timeMs || 0)) : 0;
+    const recencyScore = getRecencyScore(recencyTimeMs);
+    const hasItemTimeMs = itemTimeMs > 0;
+    const hasHistoryLastUsedMs = usage.lastUsed > 0;
+    const fileMtimeScore = (() => {
+      if (!isFileLike(priorityType)) return 0;
+      if (hasItemTimeMs) return getRecencyScore(itemTimeMs);
+      if (hasHistoryLastUsedMs) return getRecencyScore(usage.lastUsed);
+      return MISSING_FILE_TIME_FALLBACK_SCORE;
+    })();
+    const fileMtimeSource = (() => {
+      if (!isFileLike(priorityType)) return '';
+      if (hasItemTimeMs) return 'itemTime';
+      if (hasHistoryLastUsedMs) return 'historyLastUsed';
+      return 'fallback';
+    })();
 
     const typePriorityNorm = clamp01((ranking.typePriority[priorityType] || 1) / 10);
-    // 类型优先级通过调制静态分参与总分，避免与行为分互相吞噬
     const staticWithType = clamp01(clamp01(params.staticScore) * (0.72 + 0.28 * typePriorityNorm));
 
-    const finalScoreNormalized =
-      ranking.signalWeights.match * staticWithType +
-      ranking.signalWeights.frequency * frequencyScore +
-      ranking.signalWeights.recency * recencyScore +
-      ranking.signalWeights.fileMtime * fileMtimeScore;
+    const scoreByMatchNorm = ranking.signalWeights.match * staticWithType;
+    const scoreByFrequencyNorm = ranking.signalWeights.frequency * frequencyScore;
+    const scoreByRecencyNorm = ranking.signalWeights.recency * recencyScore;
+    const scoreByFileMtimeNorm = ranking.signalWeights.fileMtime * fileMtimeScore;
+    const finalScoreNormalized = scoreByMatchNorm + scoreByFrequencyNorm + scoreByRecencyNorm + scoreByFileMtimeNorm;
 
-    // 预留 sourceScore：插件侧可通过大分差固定插件内部顺序
     const sourceScore = Number.isFinite(params.sourceScore as number) ? Number(params.sourceScore) : 0;
-    return Math.round(finalScoreNormalized * 1_000_000 + sourceScore * 100);
+    const sourceBonusScore = sourceScore * 100;
+    const extBias = getFileExtensionBias(params.rawPath, params.type);
+    const extBonusScore = extBias.score;
+    const totalScore = Math.round(finalScoreNormalized * 1_000_000 + sourceBonusScore + extBonusScore);
+
+    return {
+      totalScore,
+      sourceBonusScore,
+      extBonusScore,
+      extKey: extBias.ext,
+      scoreByMatch: Math.round(scoreByMatchNorm * 1_000_000),
+      scoreByFrequency: Math.round(scoreByFrequencyNorm * 1_000_000),
+      scoreByRecency: Math.round(scoreByRecencyNorm * 1_000_000),
+      scoreByFileMtime: Math.round(scoreByFileMtimeNorm * 1_000_000),
+      staticScore: clamp01(params.staticScore),
+      staticWithType,
+      frequencyScore,
+      recencyScore,
+      fileMtimeScore,
+      weightMatch: ranking.signalWeights.match,
+      weightFrequency: ranking.signalWeights.frequency,
+      weightRecency: ranking.signalWeights.recency,
+      weightFileMtime: ranking.signalWeights.fileMtime,
+      priorityType,
+      priorityValue: ranking.typePriority[priorityType] || 1,
+      priorityNorm: typePriorityNorm,
+      historyCount: usage.count,
+      historyLastUsedMs: usage.lastUsed,
+      itemTimeMs,
+      effectiveRecencyTimeMs: recencyTimeMs,
+      fileMtimeSource,
+    };
   };
 
-  return { getLastUsedMs, computeCombinedScore };
+  const computeCombinedScore = (params: {
+    staticScore: number;
+    type: string;
+    rawPath: string;
+    timeMs?: number;
+    sourceScore?: number;
+  }) => computeCombinedScoreDetail(params).totalScore;
+
+  return { getLastUsedMs, computeCombinedScore, computeCombinedScoreDetail };
 }
+
+

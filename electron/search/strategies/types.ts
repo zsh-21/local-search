@@ -68,7 +68,7 @@ export type SearchStrategyDeps = {
   loadHistoryStats: () => any;
   normalizeHistoryKey: (rawPath: string) => string;
   normalizeExtKey: (rawPath: string) => string;
-  getInstalledApps: () => Array<{ Name: string; AppID: string }>;
+  getInstalledApps: () => Array<{ Name: string; AppID: string; installTimeMs?: number }>;
   normalizeAppGroupKey: (name: string) => string;
   iconDataCache: Map<string, string>;
   isTooSmallAppIconDataUrl: (value: string) => boolean;
