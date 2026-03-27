@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AppSettings } from "../../appTypes";
 import { IconInfo } from "../../components/icons/SettingsIcons";
-import { RESULT_ACTION_OPTIONS } from "../../constants/initialValues";
+import { DEFAULT_SETTINGS, RESULT_ACTION_OPTIONS } from "../../constants/initialValues";
 import { getSearchTypeOptions } from "../../settingsStore";
 import { handleNumericStepperKeyDown } from "../numericInputStepper";
 import { SearchSectionBasics } from "./search/SearchSectionBasics";
@@ -268,6 +268,7 @@ export function SearchSection({
   };
 
   const ranking = draft.searchRanking;
+  const rankingDefaults = DEFAULT_SETTINGS.searchRanking;
   const rankingTypeRows: Array<{ key: Exclude<keyof AppSettings["searchRanking"]["typePriority"], "web" | "plugin">; label: string }> = [
     { key: "app", label: "应用" },
     { key: "command", label: "系统命令" },
@@ -278,30 +279,21 @@ export function SearchSection({
     { key: "video", label: "视频" },
   ];
 
-  const normalizeSignalWeights = (weights: AppSettings["searchRanking"]["signalWeights"]) => {
-    const match = Math.max(0, Number(weights.match) || 0);
-    const frequency = Math.max(0, Number(weights.frequency) || 0);
-    const recency = Math.max(0, Number(weights.recency) || 0);
-    const fileMtime = Math.max(0, Number(weights.fileMtime) || 0);
-    const sum = match + frequency + recency + fileMtime;
-    if (!Number.isFinite(sum) || sum <= 0) {
-      return { match: 38, frequency: 27, recency: 17, fileMtime: 18 };
-    }
-    return {
-      match: Number(((match / sum) * 100).toFixed(4)),
-      frequency: Number(((frequency / sum) * 100).toFixed(4)),
-      recency: Number(((recency / sum) * 100).toFixed(4)),
-      fileMtime: Number(((fileMtime / sum) * 100).toFixed(4)),
-    };
-  };
-
   const updateRanking = (next: AppSettings["searchRanking"]) => {
     setDraft({
       ...draft,
       searchRanking: {
-        signalWeights: normalizeSignalWeights(next.signalWeights),
+        signalWeights: {
+          match: Math.max(0, Number(next.signalWeights.match) || 0),
+          frequency: Math.max(0, Number(next.signalWeights.frequency) || 0),
+          recency: Math.max(0, Number(next.signalWeights.recency) || 0),
+          fileMtime: Math.max(0, Number(next.signalWeights.fileMtime) || 0),
+        },
         frecency: {
-          decayFactor: Math.min(1, Math.max(0.0001, Number(next.frecency.decayFactor) || 0.01)),
+          decayFactor: Math.min(
+            1,
+            Math.max(0.0001, Number(next.frecency.decayFactor) || rankingDefaults.frecency.decayFactor)
+          ),
           frequencyWeight: Math.min(10, Math.max(0, Number(next.frecency.frequencyWeight) || 0)),
         },
         typePriority: {
@@ -322,19 +314,9 @@ export function SearchSection({
 
   const resetRankingToDefault = () => {
     updateRanking({
-      signalWeights: { match: 38, frequency: 27, recency: 17, fileMtime: 18 },
-      frecency: { decayFactor: 0.01, frequencyWeight: 1 },
-      typePriority: {
-        app: 10,
-        command: 9,
-        settings: 9,
-        file: 8,
-        folder: 8,
-        image: 8,
-        video: 8,
-        web: 7,
-        plugin: 6,
-      },
+      signalWeights: { ...rankingDefaults.signalWeights },
+      frecency: { ...rankingDefaults.frecency },
+      typePriority: { ...rankingDefaults.typePriority },
     });
   };
 

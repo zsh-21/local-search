@@ -3,7 +3,6 @@ import { BackgroundImage } from "../components/BackgroundImage";
 import {
   IconClear,
   IconPin,
-  IconPinOff,
   IconSearch,
   IconSettings,
 } from "../components/icons/SettingsIcons";
@@ -286,7 +285,7 @@ export function SearchViewImpl() {
         </button>
         <button
           type="button"
-          className={`pin-btn ${c.isPanelPinned ? "active" : ""}`}
+          className={`pin-btn ${c.isPanelPinned ? "active" : "inactive"}`}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -295,7 +294,8 @@ export function SearchViewImpl() {
           aria-label={pinButtonAriaLabel}
           title={pinButtonTitle}
         >
-          {c.isPanelPinned ? <IconPin size={17} /> : <IconPinOff size={20} />}
+          {/* 非固定态沿用同一图标语义，仅通过样式区分“无背景 + 更暗”视觉。 */}
+          <IconPin size={17} />
         </button>
       </div>
 

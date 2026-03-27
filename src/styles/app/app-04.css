@@ -25,6 +25,12 @@
   background: var(--fs-accent-soft);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fs-accent) 34%, var(--fs-border) 66%);
 }
+.pin-btn.inactive {
+  /* 未固定态保持无背景，仅通过更暗图标色体现“可固定但未启用”。 */
+  color: color-mix(in srgb, var(--fs-muted) 82%, #000 18%);
+  background: transparent;
+  box-shadow: none;
+}
 .result-count {
   font-size: 11px;
   color: var(--fs-muted);

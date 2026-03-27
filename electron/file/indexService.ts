@@ -3,9 +3,9 @@ import path from 'node:path';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
-import { cpus } from 'node:os';
 import { SystemDetector } from './systemDetector';
 import { shouldSkipHiddenOrSystemPath } from './utils';
+import { resolveIndexWorkerCount, resolveIndexWorkerRuntimeContext } from './indexRuntime';
 import {
   getFileIndexMetaPath,
   getFileIndexPath,
@@ -18,14 +18,10 @@ import {
   FILE_INDEX_LAYOUT_VERSION,
   FILE_INDEX_TOTAL_MAX_ENTRIES_CAP,
   FILE_INDEX_VERSION,
-  FILE_INDEX_WORKER_MAX,
-  FILE_INDEX_WORKER_MIN,
 } from '../constants/initialValues';
 
-// 索引落盘路径已抽离：便于你统一维护所有缓?索引文件的落盘位?
 export const FILE_INDEX_PATH = getFileIndexPath();
 export const FILE_INDEX_META_PATH = getFileIndexMetaPath();
-// 索引版本已抽离：便于你集中管理“结构变更触发重建”的开?
 export { FILE_INDEX_VERSION };
 export { FILE_INDEX_LAYOUT_VERSION };
 
@@ -46,11 +42,9 @@ type FileIndexWorkerOp =
   | 'cancelSearchSession'
   | 'search';
 
-// 主进程的“忽略路径”判断做本地缓存：避?watcher 事件里频繁跨线程调用
 let ignoredPrefixesCache: Array<{ prefix: string; prefixWithSep: string }> = [];
 let ignoredAnyDirNamesCache = new Set<string>();
 
-// 分片管理
 interface IndexShard {
   id: number;
   worker: Worker | null;
@@ -59,10 +53,9 @@ interface IndexShard {
   roots: string[]; // 该分片负责的根路?
 }
 
-// 限制 Worker 数量，避免过多线程竞?
-const WORKER_COUNT = Math.max(FILE_INDEX_WORKER_MIN, Math.min(FILE_INDEX_WORKER_MAX, cpus().length));
+// 启动时按 CPU + 可用内存计算索引并发，进程生命周期内固定使用该值
+const WORKER_COUNT = resolveIndexWorkerCount(resolveIndexWorkerRuntimeContext());
 
-// 预分配分片结构：避免在未初始?Worker 时，shards.map(...) 变成空数?
 const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
   id: i,
   worker: null,
@@ -71,7 +64,6 @@ const shards: IndexShard[] = Array.from({ length: WORKER_COUNT }, (_, i) => ({
   roots: [],
 }));
 
-// 运行期状态缓存：用于延迟创建 Worker 时仍能保持行为一?
 let searchWindowVisibleCache = false;
 let ignoredPathsCacheForWorkers: string[] = [];
 let preferredFileExtensionsCacheForWorkers: string[] = [];
@@ -136,15 +128,10 @@ function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   const shard = shards[shardIndex];
   if (shard?.worker) return shard;
 
-  // 为每个分片分配独立的缓存文件
   const cachePath = getFileIndexShardPath(shardIndex);
   
-  // Worker 脚本?vite-plugin-electron 构建?dist-electron，同目录下直接加?
-  // 注意：如果打包后 main.js ?dist-electron 根目录，则此处路径正?
   const workerPath = path.join(__dirname, 'fileIndex.worker.js');
 
-	// 这里移除固定堆上限：此前固定上限会在大盘?大目录场景触?ERR_WORKER_OUT_OF_MEMORY
-	// 交由 Node/Electron 默认内存策略管理，优先保证索引构建能够完整进?
 	const worker = new Worker(workerPath);
   shard.worker = worker;
 
@@ -163,7 +150,6 @@ function ensureShard(shardIndex: number, options: { maxEntries: number }) {
   });
   
 	worker.on('exit', () => {
-		// Worker 异常退出时需要清?pending：否则调用方会一直挂起，并出现未处理?Promise rejection
 		for (const [, waiter] of shard.pending) waiter.reject(new Error('Worker exited'));
 		shard.pending.clear();
 		shard.worker = null;
@@ -457,6 +443,11 @@ export const fileIndex = {
     return { results: topResults, isIndexing, totalCount, rawCount };
   }
 };
+
+// 暴露当前索引 Worker 并发数：供渲染进程调试展示
+export function getWorkerCount() {
+  return WORKER_COUNT;
+}
 
 export async function clearFileIndexCacheOnDisk() {
   const tasks: Array<Promise<any>> = [];

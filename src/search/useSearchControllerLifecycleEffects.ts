@@ -67,14 +67,43 @@ export function useSearchControllerLifecycleEffects(params: any) {
   }, []);
 
   useEffect(() => {
+    /** 轮询取消标记 */
     let cancelled = false;
+    /** 当前轮询定时器句柄 */
     let timerId: number | null = null;
+    /** 搜索窗口可见状态 */
+    let searchWindowVisible = true;
+    /** 稳态索引状态 */
     let stableIsIndexing = false;
+    /** 连续非索引计数 */
     let falseStreak = 0;
+    /** 索引中的快速轮询频率：保证进度条与状态变化反馈及时 */
+    const POLL_FAST_INDEXING_MS = 500;
+    /** 稳定空闲时的降频轮询：减少无收益 IPC 调用 */
+    const POLL_IDLE_MS = 5000;
+    /** 失败重试间隔：避免异常场景高频重试 */
+    const POLL_ERROR_RETRY_MS = 3000;
     const FALSE_STREAK_THRESHOLD = 3;
+    /** 统一下一次调度入口，避免重复 setTimeout 泄漏 */
+    const scheduleNext = (delayMs: number) => {
+      if (cancelled) return;
+      if (!searchWindowVisible) return;
+      if (timerId != null) {
+        window.clearTimeout(timerId);
+      }
+      timerId = window.setTimeout(() => {
+        void poll();
+      }, Math.max(100, Math.floor(Number(delayMs) || 0)));
+    };
     const poll = async () => {
       if (cancelled) return;
-      if (!window.ipcRenderer) return;
+      if (!window.ipcRenderer) {
+        scheduleNext(POLL_IDLE_MS);
+        return;
+      }
+      if (!searchWindowVisible) return;
+      /** 本轮拉取是否出错 */
+      let hasError = false;
       try {
         const resp = (await window.ipcRenderer.invoke("get-index-progress")) as
           | {
@@ -108,17 +137,46 @@ export function useSearchControllerLifecycleEffects(params: any) {
             }
           }
         }
-      } catch {}
-
-      if (cancelled) return;
-      timerId = window.setTimeout(() => {
-        void poll();
-      }, 500);
+        const nextDelayMs =
+          isIndexing || stableIsIndexing ? POLL_FAST_INDEXING_MS : POLL_IDLE_MS;
+        scheduleNext(nextDelayMs);
+      } catch {
+        hasError = true;
+      }
+      if (hasError && !cancelled && searchWindowVisible) {
+        scheduleNext(POLL_ERROR_RETRY_MS);
+      }
     };
+
+
+    /** 搜索窗口隐藏时暂停轮询，避免后台无意义拉取 */
+    const handleSearchWindowHidden = () => {
+      searchWindowVisible = false;
+      if (timerId != null) {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+    };
+
+    /** 搜索窗口重新打开时立即恢复轮询，避免首屏状态滞后 */
+    const handleSearchWindowOpened = () => {
+      if (cancelled) return;
+      searchWindowVisible = true;
+      if (timerId != null) {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+      void poll();
+    };
+
+    window.ipcRenderer?.on("search-window-hidden", handleSearchWindowHidden as any);
+    window.ipcRenderer?.on("search-window-opened", handleSearchWindowOpened as any);
     void poll();
     return () => {
       cancelled = true;
       if (timerId != null) window.clearTimeout(timerId);
+      window.ipcRenderer?.off("search-window-hidden", handleSearchWindowHidden as any);
+      window.ipcRenderer?.off("search-window-opened", handleSearchWindowOpened as any);
     };
   }, []);
 

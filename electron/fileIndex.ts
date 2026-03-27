@@ -192,7 +192,8 @@ export class FileIndex {
 
   setSearchWindowVisible(visible: boolean) {
     this.searchWindowVisible = visible;
-    this.lowPriority = visible;
+    // 索引优先级与窗口可见性保持一致：窗口隐藏（后台）时降为低优先级，降低对系统交互的影响。
+    this.lowPriority = !visible;
     if (visible) {
       this.pauseUntil = 0;
       this.clearIdleCompactTimer();

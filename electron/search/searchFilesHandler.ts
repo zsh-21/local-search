@@ -12,6 +12,7 @@ import {
   syncSearchWorkerAppsSnapshot,
 } from "./searchMatchWorkerClient";
 import type { SearchWorkerRankPayload } from "./searchMatchProtocol";
+import type { SearchScoreDebugRow } from "../../shared/searchScoreDebug";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -94,6 +95,36 @@ async function ensureAppsSnapshotSynced(getInstalledApps: () => Array<{ Name: st
 
 const NOOP_MATCH = { weightedScore: 0, staticScore: 0, matchIndex: 1_000_000, nameLen: 0 };
 
+// 构建评分明细索引：便于按结果 ID 快速回填
+function buildScoreDebugRowMap(rows: SearchScoreDebugRow[] | undefined) {
+  const out = new Map<string, SearchScoreDebugRow>();
+  if (!Array.isArray(rows) || rows.length <= 0) return out;
+  for (const row of rows) {
+    const id = typeof row?.id === "string" ? row.id.trim().toLowerCase() : "";
+    if (!id) continue;
+    out.set(id, row);
+  }
+  return out;
+}
+
+// 从本次下发结果中挑选对应的评分明细
+function pickScoreDebugRows(results: any[], rowsById: Map<string, SearchScoreDebugRow>) {
+  if (!Array.isArray(results) || results.length <= 0) return [] as SearchScoreDebugRow[];
+  if (rowsById.size <= 0) return [] as SearchScoreDebugRow[];
+  // 仅回传当前批次真实下发给前端的行，避免调试表与界面顺序/数量不一致。
+  const out: SearchScoreDebugRow[] = [];
+  const seen = new Set<string>();
+  for (const item of results) {
+    const key = createSearchResultId(item).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    const row = rowsById.get(key);
+    if (!row) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
 export async function handleSearchFiles(
   event: Electron.IpcMainInvokeEvent,
   query: string,
@@ -158,7 +189,7 @@ export async function handleSearchFiles(
   try {
     await ensureAppsSnapshotSynced(deps.getInstalledApps);
   } catch {
-    // apps ����ͬ��ʧ��ʱ������һ����գ�����ϱ�������
+    // apps 快照同步失败时保留上一版快照，不阻断本次搜索
   }
 
   const currentIconPrefetchToken = ++iconPrefetchToken;
@@ -258,11 +289,13 @@ export async function handleSearchFiles(
   if (isSessionCancelled() || fastRank.cancelled) return buildCancelledResponse(fastLaneOutput.isIndexing);
 
   const topCandidates = Array.isArray(fastRank.items) ? fastRank.items : [];
+  const fastRowsById = buildScoreDebugRowMap((fastRank as any).scoreDebugRows as SearchScoreDebugRow[] | undefined);
   const firstBatchLimit = 10;
   const isShortQuery = queryLength <= 2;
   const firstBatch = topCandidates.slice(0, firstBatchLimit);
   const fastRemainingBatch = topCandidates.slice(firstBatchLimit);
   const firstPayload = firstBatch.map(serializeSearchResult);
+  const firstScoreDebugRows = pickScoreDebugRows(firstPayload, fastRowsById);
 
   if (!isSessionCancelled()) {
     prefetchIconsInBackground({
@@ -300,7 +333,7 @@ export async function handleSearchFiles(
             searchTypeId,
             searchSessionId,
             results: payload,
-            scoreDebugRows: [],
+            scoreDebugRows: pickScoreDebugRows(payload, fastRowsById),
           });
         }
         await new Promise((resolve) => setTimeout(resolve, 16));
@@ -340,17 +373,35 @@ export async function handleSearchFiles(
       if (isSessionCancelled() || fullRank.cancelled) return;
 
       const fullTop = Array.isArray(fullRank.items) ? fullRank.items : [];
+      const fullRowsById = buildScoreDebugRowMap((fullRank as any).scoreDebugRows as SearchScoreDebugRow[] | undefined);
       for (let i = 0; i < fullTop.length; i += MORE_BATCH_SIZE) {
         if (currentIconPrefetchToken !== iconPrefetchToken) return;
-        const ok = await emitBatch(fullTop.slice(i, i + MORE_BATCH_SIZE));
-        if (!ok) return;
+        const payload: any[] = [];
+        for (const item of fullTop.slice(i, i + MORE_BATCH_SIZE)) {
+          if (isSessionCancelled()) return;
+          const serialized = serializeSearchResult(item);
+          const key = createSearchResultId(serialized);
+          if (!key || alreadySent.has(key)) continue;
+          alreadySent.add(key);
+          payload.push(serialized);
+        }
+        if (payload.length > 0 && !isSessionCancelled()) {
+          event.sender.send("more-results", {
+            query: rawQueryForEvents,
+            searchTypeId,
+            searchSessionId,
+            results: payload,
+            scoreDebugRows: pickScoreDebugRows(payload, fullRowsById),
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 16));
       }
     })();
   }
 
   return {
     results: firstPayload,
-    scoreDebugRows: [],
+    scoreDebugRows: firstScoreDebugRows,
     isIndexing: fastLaneOutput.isIndexing,
     hasMore,
     searchSessionId,

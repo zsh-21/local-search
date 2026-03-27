@@ -107,13 +107,17 @@ function levenshteinDistance(a: string, b: string, maxDistance = 24) {
   return prev[lb] > maxDistance ? -1 : prev[lb];
 }
 
-export function createNameScorer(query: string, options?: { mode?: "short" | "medium" | "full" }) {
+export function createNameScorer(
+  query: string,
+  options?: { mode?: "short" | "medium" | "full"; disableFuzzyFallback?: boolean }
+) {
   const lowerQuery = normalizeTextForSearch(query);
   const queryKeepPathSeparators = /[\\/]/.test(lowerQuery);
   const queryCompact = toCompactKey(lowerQuery, queryKeepPathSeparators);
   const matchMode = options?.mode || "full";
-  const allowLevenshtein = matchMode === "full";
-  const allowSubsequence = matchMode !== "short";
+  // 允许按调用方关闭“编辑距离/子序列”兜底，避免应用/设置出现“近似误命中”。
+  const allowLevenshtein = matchMode === "full" && !options?.disableFuzzyFallback;
+  const allowSubsequence = matchMode !== "short" && !options?.disableFuzzyFallback;
   const normalizeForMatchName = (name: string) => normalizeTextForSearch(String(name || '').replace(/\.(exe|lnk)$/i, ''));
   const scoreTokens = tokenizeForScore(lowerQuery);
 

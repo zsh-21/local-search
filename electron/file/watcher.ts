@@ -7,10 +7,10 @@ import { fileIndex, isIgnoredPathByCache } from "./indexService";
 import { shouldSkipHiddenOrSystemPath } from "./utils";
 import { createWatcherEventReducer } from "./watcherEventReducer";
 import { WatcherActionQueue } from "./watcherActionQueue";
+import { WATCH_BACKLOG_RECONCILE_THRESHOLD, WINDOWS_ROOTS_REFRESH_FAILSAFE_INTERVAL_MS, WINDOWS_ROOTS_REFRESH_IDLE_INTERVAL_MS, WINDOWS_ROOTS_REFRESH_INDEXING_INTERVAL_MS } from "../constants/initialValues";
 const userDirWatchers = new Map<string, ReturnType<typeof watch>>();
 let windowsFileSystemRootsCache: string[] = [];
-let windowsFileSystemRootsLastAt = 0;
-let windowsRootsRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let windowsRootsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let rootsWatcherBootstrapped = false;
 
 type DriveWarmupTask = {
@@ -18,13 +18,11 @@ type DriveWarmupTask = {
   promise: Promise<void>;
 };
 const driveWarmupTasks = new Map<string, DriveWarmupTask>();
-const WINDOWS_ROOTS_REFRESH_INTERVAL_MS = 12 * 1000;
 const DRIVE_WARMUP_YIELD_INTERVAL = 120;
 const DRIVE_WARMUP_YIELD_SLEEP_MS = 8;
 const WATCH_REDUCE_WINDOW_MS = 250;
 const WATCH_PARENT_STORM_THRESHOLD = 40;
 const WATCH_MAX_IN_FLIGHT = 6;
-const WATCH_BACKLOG_RECONCILE_THRESHOLD = 300;
 let watchReduceTimer: ReturnType<typeof setTimeout> | null = null;
 const watchReducer = createWatcherEventReducer({
   windowMs: WATCH_REDUCE_WINDOW_MS,
@@ -34,10 +32,7 @@ const RECENT_INDEX_MAX = 30_000;
 export const recentIndex = new Map<string, { path: string; name: string; isDirectory: boolean; timeMs: number }>();
 let recentReconcileInFlight = false;
 let recentReconcileLastAt = 0;
-
-export function normalizeRecentKey(rawPath: string) {
-  return typeof rawPath === "string" ? rawPath.trim().toLowerCase() : "";
-}
+export function normalizeRecentKey(rawPath: string) { return typeof rawPath === "string" ? rawPath.trim().toLowerCase() : ""; }
 
 async function handleWatchRemovePath(fullPath: string) {
   recentIndex.delete(normalizeRecentKey(fullPath));
@@ -94,16 +89,8 @@ async function rescanParentPath(parentPath: string) {
   }
 }
 
-const watchActionQueue = new WatcherActionQueue(WATCH_MAX_IN_FLIGHT, {
-  ingestPath: handleWatchPath,
-  removePath: handleWatchRemovePath,
-  rescanParent: rescanParentPath,
-});
-
-function maybeScheduleReconcileFromBacklog() {
-  if (watchActionQueue.getBacklogSize() < WATCH_BACKLOG_RECONCILE_THRESHOLD) return;
-  void reconcileRecentIndex(700).catch(() => {});
-}
+const watchActionQueue = new WatcherActionQueue(WATCH_MAX_IN_FLIGHT, { ingestPath: handleWatchPath, removePath: handleWatchRemovePath, rescanParent: rescanParentPath });
+function maybeScheduleReconcileFromBacklog() { if (watchActionQueue.getBacklogSize() < WATCH_BACKLOG_RECONCILE_THRESHOLD) return; void reconcileRecentIndex(700).catch(() => {}); }
 
 function flushReducedActions() {
   const reduced = watchReducer.flush();
@@ -195,15 +182,11 @@ export function shouldSkipWatchPath(fullPath: string) {
   );
 }
 
-function isWindowsDriveRoot(root: string) {
-  return /^[a-zA-Z]:\\$/.test(root);
-}
-
+function isWindowsDriveRoot(root: string) { return /^[a-zA-Z]:\\$/.test(root); }
 function cancelDriveWarmupByKey(rootKey: string) {
   const task = driveWarmupTasks.get(rootKey);
   if (!task) return;
-  task.cancelled = true;
-  driveWarmupTasks.delete(rootKey);
+  task.cancelled = true; driveWarmupTasks.delete(rootKey);
 }
 
 function startDriveWarmup(root: string) {
@@ -329,11 +312,7 @@ export async function startUserDirectoryWatchers() {
   const refreshRootsAndWatch = async () => {
     if (process.platform === "win32") {
       try {
-        const now = Date.now();
-        if (now - windowsFileSystemRootsLastAt > WINDOWS_ROOTS_REFRESH_INTERVAL_MS || windowsFileSystemRootsCache.length === 0) {
-          windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
-          windowsFileSystemRootsLastAt = now;
-        }
+        windowsFileSystemRootsCache = await getWindowsFileSystemRoots();
       } catch {
       }
     }
@@ -379,12 +358,31 @@ export async function startUserDirectoryWatchers() {
   await refreshRootsAndWatch();
   if (process.platform === "win32") {
     if (windowsRootsRefreshTimer) {
-      clearInterval(windowsRootsRefreshTimer);
+      clearTimeout(windowsRootsRefreshTimer);
       windowsRootsRefreshTimer = null;
     }
-    windowsRootsRefreshTimer = setInterval(() => {
-      void refreshRootsAndWatch();
-    }, WINDOWS_ROOTS_REFRESH_INTERVAL_MS);
+    /** 根据索引实时状态动态决定下一轮轮询间隔：索引中降频、空闲时恢复快速刷新。 */
+    const resolveDelayMs = async () => {
+      try {
+        const status = await fileIndex.getStatus();
+        return status?.isIndexing ? WINDOWS_ROOTS_REFRESH_INDEXING_INTERVAL_MS : WINDOWS_ROOTS_REFRESH_IDLE_INTERVAL_MS;
+      } catch {
+        return WINDOWS_ROOTS_REFRESH_FAILSAFE_INTERVAL_MS;
+      }
+    };
+    /** 用递归 setTimeout 代替固定 setInterval，确保每次轮询结束后再决定下一次频率。 */
+    const scheduleNextRefresh = (delayMs: number) => {
+      const nextDelayMs = Math.max(1000, Number.isFinite(Number(delayMs)) ? Math.floor(Number(delayMs)) : WINDOWS_ROOTS_REFRESH_FAILSAFE_INTERVAL_MS);
+      windowsRootsRefreshTimer = setTimeout(() => {
+        void (async () => {
+          if (!rootsWatcherBootstrapped) return;
+          await refreshRootsAndWatch();
+          if (!rootsWatcherBootstrapped) return;
+          scheduleNextRefresh(await resolveDelayMs());
+        })();
+      }, nextDelayMs);
+    };
+    scheduleNextRefresh(await resolveDelayMs());
   }
 }
 
@@ -469,7 +467,7 @@ export async function reconcileRecentIndex(budgetMs = 1200) {
 
 export function closeAllWatchers() {
   if (windowsRootsRefreshTimer) {
-    clearInterval(windowsRootsRefreshTimer);
+    clearTimeout(windowsRootsRefreshTimer);
     windowsRootsRefreshTimer = null;
   }
 
@@ -494,5 +492,8 @@ export function closeAllWatchers() {
 
   rootsWatcherBootstrapped = false;
 }
+
+/** 获取 watcher 动作队列积压长度：用于手动刷新时判断是否触发补偿扫描 */
+export function getWatcherBacklogSize() { return watchActionQueue.getBacklogSize(); }
 
 export { getWindowsFileSystemRoots };

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { AppSettings } from "../../appTypes";
+import { DEFAULT_SETTINGS } from "../../constants/initialValues";
 import {
   IconCommand,
   IconClear,
@@ -7,7 +8,7 @@ import {
   IconFolder,
   IconFile,
   IconOpenFolder,
-  IconPinOff,
+  IconPin,
   IconRunAsAdmin,
   IconSearch,
   IconSettings,
@@ -26,10 +27,22 @@ type SearchPreviewSample = {
   path?: string;
 };
 
+// 频次归一化的上限：与运行时评分保持一致
 const SEARCH_PREVIEW_FREQUENCY_CAP = 80;
-const SEARCH_PREVIEW_APP_SOURCE_BONUS = 10_000;
+// 预览评分的归一化基数：将 0~1 评分映射到整数区间
+const SEARCH_PREVIEW_SCORE_NORMALIZED_BASE = 1_000_000;
+// 来源加分系数：与运行时 sourceScore 的量级保持一致
+const SEARCH_PREVIEW_SOURCE_SCORE_FACTOR = 100;
+// 配置文件后缀加分
 const SEARCH_PREVIEW_CONFIG_EXT_BONUS = 3_000;
+// 临时文件后缀扣分
 const SEARCH_PREVIEW_TMP_EXT_BONUS = -5_000;
+// 缺失文件时间时的兜底评分
+const SEARCH_PREVIEW_MISSING_FILE_TIME_FALLBACK_SCORE = 0.04;
+
+// 预览中用于识别图片/视频的扩展名集合
+const SEARCH_PREVIEW_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
+const SEARCH_PREVIEW_VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
 const SEARCH_PREVIEW_CONFIG_EXTS = new Set([
   ".ini",
   ".conf",
@@ -45,6 +58,17 @@ const SEARCH_PREVIEW_CONFIG_EXTS = new Set([
   ".properties",
   ".reg",
 ]);
+
+// 来源基础分：与运行时 sourceScore 的相对关系保持一致
+const SEARCH_PREVIEW_SOURCE_SCORE: Record<SearchPreviewType, number> = {
+  app: 100,
+  settings: 90,
+  command: 80,
+  file: 0,
+  folder: 0,
+  image: 0,
+  video: 0,
+};
 
 const SEARCH_PREVIEW_SAMPLES: SearchPreviewSample[] = [
   {
@@ -119,66 +143,144 @@ type SettingsSearchPreviewProps = {
   currentDefaultTypeLabel: string;
 };
 
+// 评分夹取：保证预览计算落在 0~1
+function clamp01(v: number) {
+  if (!Number.isFinite(v)) return 0;
+  if (v <= 0) return 0;
+  if (v >= 1) return 1;
+  return v;
+}
+
+// 归一化预览用的评分配置：对齐运行时评分逻辑，避免预览与实际差异过大
+function normalizePreviewRanking(raw: AppSettings["searchRanking"]): AppSettings["searchRanking"] {
+  const fallback = DEFAULT_SETTINGS.searchRanking;
+  const clamp = (v: any, min: number, max: number, fallbackValue: number) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (!Number.isFinite(n)) return fallbackValue;
+    return Math.min(max, Math.max(min, n));
+  };
+
+  const signalWeightsRaw = {
+    match: clamp(raw?.signalWeights?.match, 0, 1000, fallback.signalWeights.match),
+    frequency: clamp(raw?.signalWeights?.frequency, 0, 1000, fallback.signalWeights.frequency),
+    recency: clamp(raw?.signalWeights?.recency, 0, 1000, fallback.signalWeights.recency),
+    fileMtime: clamp(raw?.signalWeights?.fileMtime, 0, 1000, fallback.signalWeights.fileMtime),
+  };
+
+  const weightSum =
+    signalWeightsRaw.match + signalWeightsRaw.frequency + signalWeightsRaw.recency + signalWeightsRaw.fileMtime;
+  const safeWeightSum =
+    weightSum > 0
+      ? weightSum
+      : fallback.signalWeights.match +
+        fallback.signalWeights.frequency +
+        fallback.signalWeights.recency +
+        fallback.signalWeights.fileMtime;
+
+  const typePriority = {
+    app: Math.round(clamp(raw?.typePriority?.app, 1, 10, fallback.typePriority.app)),
+    command: Math.round(clamp(raw?.typePriority?.command, 1, 10, fallback.typePriority.command)),
+    settings: Math.round(clamp(raw?.typePriority?.settings, 1, 10, fallback.typePriority.settings)),
+    file: Math.round(clamp(raw?.typePriority?.file, 1, 10, fallback.typePriority.file)),
+    folder: Math.round(clamp(raw?.typePriority?.folder, 1, 10, fallback.typePriority.folder)),
+    image: Math.round(clamp(raw?.typePriority?.image, 1, 10, fallback.typePriority.image)),
+    video: Math.round(clamp(raw?.typePriority?.video, 1, 10, fallback.typePriority.video)),
+    web: Math.round(clamp(raw?.typePriority?.web, 1, 10, fallback.typePriority.web)),
+    plugin: Math.round(clamp(raw?.typePriority?.plugin, 1, 10, fallback.typePriority.plugin)),
+  };
+
+  return {
+    signalWeights: {
+      match: signalWeightsRaw.match / safeWeightSum,
+      frequency: signalWeightsRaw.frequency / safeWeightSum,
+      recency: signalWeightsRaw.recency / safeWeightSum,
+      fileMtime: signalWeightsRaw.fileMtime / safeWeightSum,
+    },
+    frecency: {
+      decayFactor: clamp(raw?.frecency?.decayFactor, 0.0001, 1, fallback.frecency.decayFactor),
+      frequencyWeight: clamp(raw?.frecency?.frequencyWeight, 0, 10, fallback.frecency.frequencyWeight),
+    },
+    typePriority,
+  };
+}
+
+// 提取路径后缀：用于后缀加分与类型识别
+function normalizePathExt(targetPath: string) {
+  const m = String(targetPath || "").toLowerCase().match(/(\.[^./\\]+)$/);
+  return m?.[1] || "";
+}
+
 export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: SettingsSearchPreviewProps) {
   const ranking = draft.searchRanking;
 
+  // 预览列表：基于当前配置计算排序与分数
   const previewRows = useMemo(() => {
+    const runtimeRanking = normalizePreviewRanking(ranking);
+
+    const inferPriorityType = (item: SearchPreviewSample): keyof typeof runtimeRanking.typePriority => {
+      if (item.type === "file") {
+        const ext = normalizePathExt(item.path || "");
+        if (SEARCH_PREVIEW_IMAGE_EXTENSIONS.has(ext)) return "image";
+        if (SEARCH_PREVIEW_VIDEO_EXTENSIONS.has(ext)) return "video";
+      }
+      return item.type;
+    };
+
     const extBonusByPath = (targetPath: string, type: SearchPreviewType) => {
       if (type !== "file") return 0;
-      const extMatch = String(targetPath || "").toLowerCase().match(/(\.[^./\\]+)$/);
-      const ext = extMatch?.[1] || "";
+      const ext = normalizePathExt(targetPath);
       if (!ext) return 0;
       if (ext === ".tmp") return SEARCH_PREVIEW_TMP_EXT_BONUS;
       if (SEARCH_PREVIEW_CONFIG_EXTS.has(ext)) return SEARCH_PREVIEW_CONFIG_EXT_BONUS;
       return 0;
     };
 
-    const weightSum =
-      Math.max(0, Number(ranking.signalWeights.match) || 0) +
-      Math.max(0, Number(ranking.signalWeights.frequency) || 0) +
-      Math.max(0, Number(ranking.signalWeights.recency) || 0) +
-      Math.max(0, Number(ranking.signalWeights.fileMtime) || 0);
-    const normalizedWeights =
-      weightSum > 0
-        ? {
-            match: (Math.max(0, Number(ranking.signalWeights.match) || 0) / weightSum) * 100,
-            frequency: (Math.max(0, Number(ranking.signalWeights.frequency) || 0) / weightSum) * 100,
-            recency: (Math.max(0, Number(ranking.signalWeights.recency) || 0) / weightSum) * 100,
-            fileMtime: (Math.max(0, Number(ranking.signalWeights.fileMtime) || 0) / weightSum) * 100,
-          }
-        : { match: 38, frequency: 27, recency: 17, fileMtime: 18 };
-
-    const decayFactor = Math.min(1, Math.max(0.0001, Number(ranking.frecency.decayFactor) || 0.01));
-    const frequencyWeight = Math.min(10, Math.max(0, Number(ranking.frecency.frequencyWeight) || 0));
+    const getRecencyScoreByHours = (hours: number) => {
+      if (!Number.isFinite(hours)) return 0;
+      return clamp01(Math.exp(-runtimeRanking.frecency.decayFactor * Math.max(0, hours)));
+    };
 
     return SEARCH_PREVIEW_SAMPLES.map((item) => {
-      const typePriorityFactor = Math.min(1, Math.max(0.1, (Number(ranking.typePriority[item.type]) || 1) / 10));
-      const staticScore = Math.min(1, Math.max(0, item.staticScore * typePriorityFactor));
-      const frequencyRaw = Math.log(item.count + 1) / Math.log(SEARCH_PREVIEW_FREQUENCY_CAP + 1);
-      const frequencyScore = Math.min(1, Math.max(0, frequencyWeight * frequencyRaw));
-      const recencyScore = Math.exp(-decayFactor * Math.max(0, item.lastUsedHours));
-      const fileMtimeScore =
-        item.type === "file" || item.type === "folder" || item.type === "image" || item.type === "video"
-          ? Math.exp(-decayFactor * Math.max(0, item.fileMtimeHours ?? 0))
-          : 0;
+      const priorityType = inferPriorityType(item);
+      const typePriorityNorm = clamp01((runtimeRanking.typePriority[priorityType] || 1) / 10);
+      const staticWithType = clamp01(clamp01(item.staticScore) * (0.72 + 0.28 * typePriorityNorm));
 
-      const normalizedScore =
-        (normalizedWeights.match / 100) * staticScore +
-        (normalizedWeights.frequency / 100) * frequencyScore +
-        (normalizedWeights.recency / 100) * recencyScore +
-        (normalizedWeights.fileMtime / 100) * fileMtimeScore;
-      const sourceBonus = item.type === "app" ? SEARCH_PREVIEW_APP_SOURCE_BONUS : 0;
-      const extBonus = extBonusByPath(item.path || "", item.type);
-      const finalScore = normalizedScore * 1_000_000 + sourceBonus + extBonus;
+      const frequencyRaw = Math.log(item.count + 1) / Math.log(SEARCH_PREVIEW_FREQUENCY_CAP + 1);
+      const frequencyScore = clamp01(frequencyRaw * runtimeRanking.frecency.frequencyWeight);
+      const recencyScore = getRecencyScoreByHours(item.lastUsedHours);
+
+      const isFileLike = priorityType === "file" || priorityType === "folder" || priorityType === "image" || priorityType === "video";
+      const hasFileMtimeHours = Number.isFinite(item.fileMtimeHours);
+      const hasLastUsedHours = Number.isFinite(item.lastUsedHours);
+      const fileMtimeScore = (() => {
+        if (!isFileLike) return 0;
+        if (hasFileMtimeHours) return getRecencyScoreByHours(item.fileMtimeHours as number);
+        if (hasLastUsedHours) return getRecencyScoreByHours(item.lastUsedHours);
+        return SEARCH_PREVIEW_MISSING_FILE_TIME_FALLBACK_SCORE;
+      })();
+
+      const scoreByMatch = runtimeRanking.signalWeights.match * staticWithType;
+      const scoreByFrequency = runtimeRanking.signalWeights.frequency * frequencyScore;
+      const scoreByRecency = runtimeRanking.signalWeights.recency * recencyScore;
+      const scoreByFileMtime = runtimeRanking.signalWeights.fileMtime * fileMtimeScore;
+      const normalizedFinalScore = scoreByMatch + scoreByFrequency + scoreByRecency + scoreByFileMtime;
+
+      const sourceBonusScore = (SEARCH_PREVIEW_SOURCE_SCORE[item.type] || 0) * SEARCH_PREVIEW_SOURCE_SCORE_FACTOR;
+      const extBonusScore = extBonusByPath(item.path || "", item.type);
+
+      const finalScore = Math.round(
+        normalizedFinalScore * SEARCH_PREVIEW_SCORE_NORMALIZED_BASE + sourceBonusScore + extBonusScore
+      );
 
       return {
         ...item,
         finalScore,
+        staticWithType,
       };
     })
       .sort((a, b) => {
         if (b.finalScore !== a.finalScore) return b.finalScore - a.finalScore;
-        if (b.staticScore !== a.staticScore) return b.staticScore - a.staticScore;
+        if (b.staticWithType !== a.staticWithType) return b.staticWithType - a.staticWithType;
         if (a.name.length !== b.name.length) return a.name.length - b.name.length;
         return a.name.localeCompare(b.name);
       })
@@ -188,11 +290,13 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
       }));
   }, [ranking]);
 
+  // 受显示上限限制的可见行
   const visibleRows = previewRows.slice(
     0,
     Math.min(Math.max(1, Number(draft.searchDisplayLimit) || previewRows.length), previewRows.length),
   );
 
+  // 计算每行应显示的右侧操作按钮（最多 3 个）
   const getVisibleActionIdsForItem = (item: SearchPreviewSample) => {
     const raw = Array.isArray(draft.resultActionButtons) ? draft.resultActionButtons : [];
     const out: string[] = [];
@@ -206,6 +310,7 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
     return out;
   };
 
+  // 渲染预览区图标：仅用于展示类型差异
   const renderResultIcon = (item: SearchPreviewSample) => {
     if (item.type === "folder") return <IconFolder size={40} className="result-icon" />;
     if (item.type === "settings") return <IconSettings size={40} className="result-icon" />;
@@ -214,6 +319,7 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
     return <IconFile size={40} className="result-icon" />;
   };
 
+  // 是否被显示上限截断：用于底部提示
   const isLimitedByDisplayCount = (Number(draft.searchDisplayLimit) || 0) < previewRows.length;
 
   return (
@@ -237,8 +343,9 @@ export function SettingsSearchPreview({ draft, currentDefaultTypeLabel }: Settin
           <button className="settings-btn" type="button" tabIndex={-1} title="打开设置面板">
             <IconSettings size={20} />
           </button>
-          <button type="button" className="pin-btn" tabIndex={-1} aria-label="固定搜索面板" title="固定 (Alt+T)">
-            <IconPinOff size={20} />
+          <button type="button" className="pin-btn inactive" tabIndex={-1} aria-label="固定搜索面板" title="固定 (Alt+T)">
+            {/* 预览区展示未固定态：同图标、无背景、颜色更暗。 */}
+            <IconPin size={17} />
           </button>
         </div>
 

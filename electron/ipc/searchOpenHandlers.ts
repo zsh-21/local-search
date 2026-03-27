@@ -12,6 +12,7 @@ import { openResolvedTarget } from "../utils/open";
 import { readUrlShortcut, openLnkShortcut } from "../win/shortcuts";
 import { ensureStartMenuShortcutIndex, findStartMenuShortcutByName } from "../win/startMenuShortcutIndex";
 import { searchFilesViaService } from "../search/searchService";
+import { getWorkerCount } from "../file/indexService";
 
 type RegisterSearchOpenIpcHandlersDeps = {
   broadcastHistoryUpdated: () => Promise<{ results: any[] }>;
@@ -61,6 +62,11 @@ async function recordHistoryAndHideWindow(
 }
 
 export function registerSearchOpenIpcHandlers(deps: RegisterSearchOpenIpcHandlersDeps) {
+  ipcMain.handle("get-index-runtime-info", async () => {
+    // 渲染进程调试面板需要知道当前索引并发数，用于定位评分输出差异。
+    return { workerCount: getWorkerCount() };
+  });
+
   ipcMain.handle("clear-cache", async () => {
     await clearLocalCacheAll();
     return { ok: true };

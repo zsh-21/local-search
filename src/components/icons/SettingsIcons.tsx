@@ -4,7 +4,7 @@ type IconProps = {
   className?: string;
   variant?: "mono" | "duotone";
 };
-const ICONFONT_SPRITE = "/iconfont-icons/sprite.svg";
+const ICONFONT_SPRITE = `${String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "/")}iconfont-icons/sprite.svg`;
 const C = {
   blue: "#2f88ff",
   blueDark: "#1e62d0",

@@ -1,14 +1,4 @@
-﻿// 这里集中维护“主进程侧可调的初始默认值”：
-// - 主进程涉及窗口尺寸、快捷键、索引策略等，初始值散落会导致改动容易遗漏
-// - 严格保持与现有逻辑一致：仅抽离常量，不改变原有功能
-
-// =========================
-// 设置默认值（主进程侧）
-// =========================
-
-// 说明：
-// - BASE_SEARCH_TYPE_IDS / DEFAULT_SETTINGS 属于“渲染进程 + 主进程必须一致”的默认值
-// - 统一从 shared/initialValues.ts 引入，避免维护两份导致漂移
+/** 主进程侧默认设置：与渲染侧共享的默认值从 shared 统一导出 */
 export {
   BASE_SEARCH_TYPE_IDS,
   DEFAULT_ACCEPT_SELECTED_RESULT_SHORTCUT,
@@ -18,49 +8,66 @@ export {
   DEFAULT_SETTINGS_SHORTCUT,
 } from "../../shared/initialValues";
 
-// =========================
-// 窗口初始值（主进程侧)
-// =========================
-
-// 搜索窗口初始高度：首次展示只展示输入框（后续由渲染进程动态 resize)
+/** 搜索窗口初始高度：首次仅展示输入区域 */
 export const SEARCH_WINDOW_INITIAL_HEIGHT = 76;
-// 主进程窗口默认背景色：与渲染侧主题保持一致（避免透明/闪烁)
+/** 主进程窗口背景色：避免透明闪烁 */
 export const WINDOW_BACKGROUND_COLOR = "#0f172a";
 
-// 设置窗口初始尺寸与最小限制：避免窗口太小导致设置项布局错乱
+/** 设置窗口初始宽度 */
 export const SETTINGS_WINDOW_INITIAL_WIDTH = 680;
+/** 设置窗口初始高度 */
 export const SETTINGS_WINDOW_INITIAL_HEIGHT = 520;
+/** 设置窗口最小宽度 */
 export const SETTINGS_WINDOW_MIN_WIDTH = 560;
+/** 设置窗口最小高度 */
 export const SETTINGS_WINDOW_MIN_HEIGHT = 520;
 
-// =========================
-// 文件索引初始值（主进程侧)
-// =========================
-
-// 索引版本：结构变更时递增，用于触发重建
+/** 索引版本号：结构变更时递增 */
 export const FILE_INDEX_VERSION = 4;
-// 索引布局版本：涉及快照分桶/迁移规则变更时递增，用于一次性迁移。
+/** 索引布局版本号：布局与迁移规则变更时递增 */
 export const FILE_INDEX_LAYOUT_VERSION = 2;
 
-// Worker 数量限制：避免过多线程竞争导致性能抖动
+/** 索引 Worker 最小数量 */
 export const FILE_INDEX_WORKER_MIN = 1;
-export const FILE_INDEX_WORKER_MAX = 4;
+/** 索引并发计算保留 CPU 核数 */
+export const FILE_INDEX_WORKER_CPU_RESERVE = 1;
+/** 索引并发计算预留内存（MB） */
+export const FILE_INDEX_WORKER_MEMORY_HEADROOM_MB = 1024;
+/** 每个 Worker 最小可用内存预算（MB） */
+export const FILE_INDEX_WORKER_MIN_FREE_MB_PER_WORKER = 512;
 
-// 索引最大条目数上限：防止超大索引导致内存不可控
+/** 索引总条目上限 */
 export const FILE_INDEX_TOTAL_MAX_ENTRIES_CAP = 2_000_000;
+/** 每个 Worker 的目标条目容量 */
 export const FILE_INDEX_ENTRIES_PER_WORKER = 500_000;
 
-// =========================
-// 文件类型/目录过滤初始值（主进程侧)
-// =========================
+/** 盘符根路径刷新间隔（空闲态） */
+export const WINDOWS_ROOTS_REFRESH_IDLE_INTERVAL_MS = 15 * 1000;
+/** 盘符根路径刷新间隔（索引态） */
+export const WINDOWS_ROOTS_REFRESH_INDEXING_INTERVAL_MS = 90 * 1000;
+/** 盘符根路径刷新间隔（失败兜底） */
+export const WINDOWS_ROOTS_REFRESH_FAILSAFE_INTERVAL_MS = 30 * 1000;
+/** watcher backlog 触发补偿扫描阈值 */
+export const WATCH_BACKLOG_RECONCILE_THRESHOLD = 300;
 
-// 图片文件扩展名集合
+/** 索引状态写盘轮询间隔（索引中） */
+export const INDEX_STATS_REFRESH_INDEXING_INTERVAL_MS = 2 * 1000;
+/** 索引状态写盘轮询间隔（完成后冷却） */
+export const INDEX_STATS_REFRESH_COOLDOWN_INTERVAL_MS = 5 * 1000;
+/** 索引状态写盘轮询间隔（稳定空闲） */
+export const INDEX_STATS_REFRESH_IDLE_INTERVAL_MS = 15 * 1000;
+/** 索引状态写盘轮询间隔（异常兜底） */
+export const INDEX_STATS_REFRESH_FAILSAFE_INTERVAL_MS = 10 * 1000;
+/** 索引状态轮询最小驻留时间 */
+export const INDEX_STATS_REFRESH_MIN_STAY_MS = 10 * 1000;
+/** 索引完成后冷却窗口 */
+export const INDEX_STATS_REFRESH_COOLDOWN_WINDOW_MS = 30 * 1000;
+
+/** 图片扩展名集合 */
 export const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".ico", ".svg"]);
-// 视频文件扩展名集合
+/** 视频扩展名集合 */
 export const VIDEO_EXTENSIONS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
-// 快捷方式扩展名集合：跳过可减少搜索结果冗余
+/** 快捷方式扩展名集合 */
 export const SHORTCUT_EXTENSIONS = new Set([".lnk", ".url"]);
-
-// 需要跳过的目录名：过滤开发工具配置目录、版本控制目录、系统回收站/卷信息等
+/** 需要跳过的目录名集合 */
 export const SKIP_DIR_NAMES = new Set(["node_modules", ".git", ".svn", ".idea", "$recycle.bin", "system volume information"]);
-

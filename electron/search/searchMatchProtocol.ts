@@ -1,3 +1,5 @@
+import type { SearchScoreDebugRow } from "../../shared/searchScoreDebug";
+
 export type SearchWorkerInstalledApp = {
   Name: string;
   AppID: string;
@@ -38,6 +40,7 @@ export type SearchWorkerRankPayload = {
 export type SearchWorkerRankResult = {
   items: SearchWorkerCandidate[];
   totalCount: number;
+  scoreDebugRows?: SearchScoreDebugRow[];
   cancelled?: boolean;
 };
 
@@ -50,4 +53,3 @@ export type SearchWorkerRequest =
 export type SearchWorkerResponse =
   | { id: number; ok: true; result?: any }
   | { id: number; ok: false; error: string };
-
