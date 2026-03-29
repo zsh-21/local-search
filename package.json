@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
-    "clear:cache": "electron ./scripts/clear-local-cache.cjs"
+    "clear:cache": "electron ./scripts/clear-local-cache.cjs",
+    "contracts:snapshot": "node scripts/contracts/snapshot-contracts.mjs",
+    "contracts:check": "node scripts/contracts/check-contracts.mjs",
+    "check:all": "npm run contracts:check && npx tsc --noEmit"
   },
   "dependencies": {
     "@fontsource/fira-code": "^5.2.7",

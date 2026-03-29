@@ -15,6 +15,11 @@
       "source": "aj-geddes/useful-ai-prompts",
       "sourceType": "github",
       "computedHash": "edb4b1872292f1f47f12f32ed877991ef3708603b5cff029424c7155fe93f6fd"
+    },
+    "systematic-debugging": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "computedHash": "72e9ab72627e4fd8ed26a582e82309a98ecdc4f6e1c99418430ac05682c9e91d"
     }
   }
 }
