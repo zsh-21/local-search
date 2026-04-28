@@ -41,4 +41,28 @@ out
 # TypeScript
 *.tsbuildinfo
 
-docs
+docs/*
+!docs/archive/
+!docs/archive/**
+!docs/collector-refactor/
+!docs/collector-refactor/**
+
+build
+
+# Native helper 构建产物
+native-helper/target/
+
+# 本地调试输出
+output/
+scripts/tmp-*.cjs
+.tmp-electron-stdout.log
+.tmp-electron-stderr.log
+.tmp-electron-native-client-test.cjs
+.tmp-ts-emit/
+tmp-dev-run*.log
+tmp-dev-smoke*.log
+tmp-dev-verify*.log
+tmp-dev-verify*.err
+tmp/helper-*/
+
+doc
